@@ -27,10 +27,10 @@
           inherit system;
           overlays = [inputs.rust-overlay.overlays.default];
         };
-        rustToolchainFor = p: p.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        rustToolchainFor = p: p.rust-bin.fromRustupToolchainFile ./legacy/rust-toolchain.toml;
         rustToolchain = rustToolchainFor pkgs;
         craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchainFor;
-        reviewr = pkgs.callPackage ./package.nix {inherit craneLib;};
+        reviewr = pkgs.callPackage ./legacy/package.nix {inherit craneLib;};
       in {
         packages = {
           default = reviewr;
@@ -45,11 +45,16 @@
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            actionlint
+            alejandra
+            deadnix
+            gitleaks
             rustToolchain
             go
             git
             just
             pkg-config
+            prek
             python3
           ];
         };

@@ -1,0 +1,18 @@
+schema: spec-driven
+
+context: |
+  reviewr is a Go Bubble Tea TUI for reviewing repository changes beside coding agents.
+  The Go application is the primary development target. A frozen Rust behavioral oracle
+  lives under legacy/ and remains the packaged implementation until parity. Read AGENTS.md
+  before planning work. Preserve No writes, Comments survive, Continuity, semantic input
+  actions, and one shared render/hit-test geometry authority.
+
+rules:
+  proposal:
+    - Keep scope small and state explicit non-goals when a migration boundary could expand.
+  specs:
+    - Specify observable behavior and developer contracts without internal implementation detail.
+  design:
+    - Keep the Bubble Tea root thin and do not recreate the Rust module structure mechanically.
+  tasks:
+    - Include focused tests and finish with just check.

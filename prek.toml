@@ -1,0 +1,72 @@
+exclude = { glob = [
+  ".agents/**",
+  ".direnv/**",
+  "legacy/**",
+  "go.sum",
+] }
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "check-json" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+  { id = "check-case-conflict" },
+  { id = "end-of-file-fixer" },
+  { id = "mixed-line-ending" },
+  { id = "trailing-whitespace" },
+]
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "gofmt"
+name = "gofmt"
+language = "system"
+entry = "gofmt -w"
+priority = 20
+types = ["go"]
+
+[[repos.hooks]]
+id = "go-vet"
+name = "go vet"
+language = "system"
+entry = "go vet -mod=readonly ./..."
+always_run = true
+pass_filenames = false
+require_serial = true
+
+[[repos.hooks]]
+id = "alejandra"
+name = "alejandra"
+language = "system"
+entry = "alejandra"
+priority = 20
+types = ["nix"]
+
+[[repos.hooks]]
+id = "deadnix"
+name = "deadnix"
+language = "system"
+entry = "deadnix --edit"
+priority = 10
+types = ["nix"]
+
+[[repos.hooks]]
+id = "actionlint"
+name = "actionlint"
+language = "system"
+entry = "actionlint"
+files = "^\\.github/workflows/.*\\.ya?ml$"
+priority = 20
+types = ["yaml"]
+
+[[repos.hooks]]
+id = "gitleaks"
+name = "gitleaks"
+language = "system"
+entry = "gitleaks git --pre-commit --staged --redact --no-banner"
+always_run = true
+pass_filenames = false
+require_serial = true
