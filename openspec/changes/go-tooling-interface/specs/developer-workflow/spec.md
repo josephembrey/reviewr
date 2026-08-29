@@ -20,7 +20,7 @@ testing the Go application.
 
 #### Scenario: Application is built
 - **WHEN** a developer runs `just build`
-- **THEN** the Go application is built at `target/go/reviewr`
+- **THEN** the Go application is built at `dist/reviewr`
 
 #### Scenario: Application is run from source
 - **WHEN** a developer runs `just dev` with an optional repository path

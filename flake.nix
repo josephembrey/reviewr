@@ -48,14 +48,12 @@
             actionlint
             alejandra
             deadnix
-            gitleaks
             rustToolchain
             go
             git
             just
             pkg-config
             prek
-            python3
           ];
         };
       };

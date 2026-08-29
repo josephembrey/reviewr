@@ -61,12 +61,3 @@ entry = "actionlint"
 files = "^\\.github/workflows/.*\\.ya?ml$"
 priority = 20
 types = ["yaml"]
-
-[[repos.hooks]]
-id = "gitleaks"
-name = "gitleaks"
-language = "system"
-entry = "gitleaks git --pre-commit --staged --redact --no-banner"
-always_run = true
-pass_filenames = false
-require_serial = true

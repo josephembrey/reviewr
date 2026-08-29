@@ -8,8 +8,8 @@ default:
 
 # build the application
 build:
-    mkdir -p target/go
-    go build -mod=readonly -o target/go/reviewr ./cmd/reviewr
+    mkdir -p dist
+    go build -mod=readonly -o dist/reviewr ./cmd/reviewr
 
 # run hooks and tests
 check:
@@ -25,7 +25,7 @@ dev *args:
 # prepare a new clone
 setup:
     go mod download
-    prek install --hook-type pre-commit
+    prek install --force --hook-type pre-commit
 
 # run tests
 test:

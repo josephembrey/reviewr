@@ -9,7 +9,7 @@ the packaged implementation until packaging migrates separately.
 - `just` — list tasks.
 - `just setup` — download Go modules and install the Prek pre-commit hook. Run this after cloning.
 - `just dev [repository-path]` — run the Go application directly from source.
-- `just build` — build the Go application to `target/go/reviewr`.
+- `just build` — build the Go application to `dist/reviewr`.
 - `just test` — run the Go tests and race detector.
 - `just check` — run all repository hooks, then the tests. This is the only CI command.
 - `just legacy build|dev|run [repository-path]` — build, develop, or run the frozen Rust oracle.
@@ -57,6 +57,6 @@ The legacy runtime remains useful for parity checks. Its architecture and detail
 contracts are recorded in the existing change specs and tests. Preserve **No writes**, **Comments
 survive**, and **Continuity** whenever a legacy correctness fix is unavoidable.
 
-`herdr-plugin.toml`, `herdr/`, and the default Nix package still launch the legacy binary until the
-Go implementation reaches packaging parity. Do not switch those paths as part of ordinary Go
-feature work.
+The default Nix package still launches the legacy binary until the Go implementation reaches
+packaging parity. Herdr is an optional runtime host for the standalone application; do not
+reintroduce plugin manifests, plugin-owned installation, or pane-lifecycle scripts.

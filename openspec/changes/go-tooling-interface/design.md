@@ -16,7 +16,7 @@ product, but the Rust binary must remain runnable and Nix-packaged until parity.
 **Non-Goals:**
 
 - Port more runtime behavior.
-- Switch the Herdr plugin or Nix default package to Go.
+- Switch the Nix default package to Go or add a new distribution integration.
 - Modernize, reformat, or reorganize Rust internals.
 - Preserve the retired Rust benchmark and release automation.
 
@@ -26,7 +26,7 @@ product, but the Rust binary must remain runnable and Nix-packaged until parity.
 
 `legacy/justfile` exposes `build`, `dev`, and `run`, while the root imports it as `legacy`. This
 produces the requested `just legacy <verb>` namespace without a case statement or a long list of
-prefixed root recipes. The legacy target directory stays under root `target/legacy/` so generated
+prefixed root recipes. The legacy target directory stays under `legacy/target/` so generated
 artifacts remain outside source.
 
 ### Use Prek as the hook runner

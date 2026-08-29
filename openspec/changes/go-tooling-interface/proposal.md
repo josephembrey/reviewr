@@ -29,4 +29,4 @@ None.
 
 This changes the root command surface, development-shell tools, Git hooks, GitHub Actions, source
 layout, Nix paths, contributor instructions, and specification workflow. Runtime behavior is not
-changed, and the default Nix/plugin package remains the legacy Rust binary for now.
+changed, and the default Nix package remains the legacy Rust binary for now.
