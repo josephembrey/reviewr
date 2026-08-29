@@ -3,6 +3,7 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,9 @@ import (
 
 // Client invokes the Git executable without permitting optional lock writes.
 type Client struct{}
+
+// ErrOutputTooLarge reports that bounded Git output exceeded its memory budget.
+var ErrOutputTooLarge = errors.New("git output exceeds limit")
 
 // New returns a read-only Git CLI client.
 func New() Client {
@@ -86,6 +90,56 @@ func run(root string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("git %s: %s: %w", args[0], message, err)
 	}
 	return out, nil
+}
+
+func runBounded(root string, maxBytes int64, args ...string) ([]byte, error) {
+	commandArgs := append([]string{"-C", root}, args...)
+	cmd := exec.Command("git", commandArgs...)
+	cmd.Env = withOptionalLocksDisabled(os.Environ())
+	stdout := boundedBuffer{limit: max(0, maxBytes)}
+	stderr := boundedBuffer{limit: 64 << 10}
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if stdout.truncated {
+		return nil, fmt.Errorf("git %s: %w (%d bytes)", args[0], ErrOutputTooLarge, maxBytes)
+	}
+	if err != nil {
+		message := bytes.TrimSpace(stderr.Bytes())
+		if len(message) == 0 {
+			return nil, fmt.Errorf("git %s: %w", args[0], err)
+		}
+		return nil, fmt.Errorf("git %s: %s: %w", args[0], message, err)
+	}
+	return stdout.Bytes(), nil
+}
+
+type boundedBuffer struct {
+	data      bytes.Buffer
+	limit     int64
+	written   int64
+	truncated bool
+}
+
+func (b *boundedBuffer) Write(data []byte) (int, error) {
+	length := len(data)
+	remaining := b.limit - b.written
+	if remaining > 0 {
+		keep := int64(length)
+		if keep > remaining {
+			keep = remaining
+		}
+		_, _ = b.data.Write(data[:keep])
+		b.written += keep
+	}
+	if int64(length) > remaining {
+		b.truncated = true
+	}
+	return length, nil
+}
+
+func (b *boundedBuffer) Bytes() []byte {
+	return b.data.Bytes()
 }
 
 func withOptionalLocksDisabled(env []string) []string {

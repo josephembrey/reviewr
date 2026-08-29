@@ -20,7 +20,7 @@ check:
 dev *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    exec go run -mod=readonly ./cmd/reviewr "$@"
+    exec go run -mod=readonly -tags dev ./cmd/reviewr "$@"
 
 # prepare a new clone
 setup:
@@ -30,6 +30,7 @@ setup:
 # run tests
 test:
     go test -mod=readonly ./...
+    go test -mod=readonly -tags dev ./...
     go test -mod=readonly -race ./...
 
 # frozen Rust oracle: `just legacy build|dev|run`

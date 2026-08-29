@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/josephembrey/reviewr/internal/workspace"
+
 // Rect is a half-open terminal rectangle: [X, X+Width) x [Y, Y+Height).
 type Rect struct {
 	X      int
@@ -15,17 +17,39 @@ func (r Rect) Contains(x, y int) bool {
 
 // Geometry is the single source of pane bounds for render and mouse routing.
 type Geometry struct {
-	Screen        Rect
-	Header        Rect
-	Navigator     Rect
-	NavigatorRows Rect
-	Reader        Rect
-	ReaderRows    Rect
-	Footer        Rect
+	Screen         Rect
+	Header         Rect
+	HeaderSwitcher Rect
+	HeaderFiles    Rect
+	HeaderGit      Rect
+	HeaderScratch  Rect
+	Body           Rect
+	Navigator      Rect
+	NavigatorTitle Rect
+	NavigatorRows  Rect
+	Divider        Rect
+	Reader         Rect
+	ReaderTitle    Rect
+	ReaderRows     Rect
+	Footer         Rect
 }
 
-// Calculate returns responsive pane geometry for a terminal size.
+// MinimumPaneWidth is the draggable split's preferred lower bound. Geometry
+// only relaxes it for tiny component-test surfaces below the app minimum.
+const MinimumPaneWidth = 16
+
+// Calculate returns responsive pane geometry with the default split.
 func Calculate(width, height int) Geometry {
+	return calculate(width, height, 0, false)
+}
+
+// CalculateWithNavigatorWidth returns geometry using a user-selected split,
+// clamped so both panes remain usable.
+func CalculateWithNavigatorWidth(width, height, navigatorWidth int) Geometry {
+	return calculate(width, height, navigatorWidth, true)
+}
+
+func calculate(width, height, requestedNavigatorWidth int, customized bool) Geometry {
 	width = max(0, width)
 	height = max(0, height)
 	headerHeight := min(1, height)
@@ -35,22 +59,57 @@ func Calculate(width, height int) Geometry {
 	}
 	bodyHeight := max(0, height-headerHeight-footerHeight)
 
-	navigatorWidth := splitNavigator(width)
+	body := Rect{Y: headerHeight, Width: width, Height: bodyHeight}
+	dividerWidth := 0
+	contentWidth := width
+	if width >= 3 && bodyHeight > 0 {
+		dividerWidth = 1
+		contentWidth--
+	}
+	navigatorWidth := splitNavigator(contentWidth)
+	if customized {
+		navigatorWidth = clampNavigatorWidth(contentWidth, requestedNavigatorWidth)
+	}
+	readerWidth := contentWidth - navigatorWidth
 	g := Geometry{
 		Screen:    Rect{Width: width, Height: height},
 		Header:    Rect{Width: width, Height: headerHeight},
-		Navigator: Rect{Y: headerHeight, Width: navigatorWidth, Height: bodyHeight},
-		Reader: Rect{
+		Body:      body,
+		Navigator: Rect{Y: body.Y, Width: navigatorWidth, Height: body.Height},
+		Divider: Rect{
 			X:      navigatorWidth,
-			Y:      headerHeight,
-			Width:  width - navigatorWidth,
-			Height: bodyHeight,
+			Y:      body.Y,
+			Width:  dividerWidth,
+			Height: body.Height,
 		},
-		Footer: Rect{Y: headerHeight + bodyHeight, Width: width, Height: footerHeight},
+		Reader: Rect{
+			X:      navigatorWidth + dividerWidth,
+			Y:      body.Y,
+			Width:  readerWidth,
+			Height: body.Height,
+		},
+		Footer: Rect{Y: body.Y + body.Height, Width: width, Height: footerHeight},
 	}
-	g.NavigatorRows = paneRows(g.Navigator)
-	g.ReaderRows = paneRows(g.Reader)
+	g.HeaderSwitcher = clipTo(g.Header, Rect{Width: 30, Height: 1})
+	g.HeaderFiles = clipTo(g.Header, workspaceSwitcherRect(workspace.Files))
+	g.HeaderGit = clipTo(g.Header, workspaceSwitcherRect(workspace.Git))
+	g.HeaderScratch = clipTo(g.Header, workspaceSwitcherRect(workspace.Scratch))
+	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
+	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
 	return g
+}
+
+// workspaceSwitcherRect reserves the cells around a label for the active
+// drawer-style brackets, keeping paint and mouse geometry fixed across views.
+func workspaceSwitcherRect(kind workspace.Kind) Rect {
+	switch kind {
+	case workspace.Git:
+		return Rect{X: 9, Width: 5, Height: 1}
+	case workspace.Scratch:
+		return Rect{X: 21, Width: 9, Height: 1}
+	default:
+		return Rect{X: 2, Width: 7, Height: 1}
+	}
 }
 
 // HitKind identifies mouse targets calculated from Geometry.
@@ -58,6 +117,15 @@ type HitKind uint8
 
 const (
 	HitNone HitKind = iota
+	HitFilesWorkspace
+	HitGitWorkspace
+	HitScratchWorkspace
+	HitSecondaryControl
+	HitTertiaryControl
+	HitComparisonControl
+	HitDivider
+	HitNavigatorScrollbar
+	HitReaderScrollbar
 	HitNavigator
 	HitNavigatorRow
 	HitReader
@@ -65,13 +133,45 @@ const (
 
 // Hit is a mouse target. Index is meaningful only for HitNavigatorRow.
 type Hit struct {
-	Kind  HitKind
-	Index int
+	Kind       HitKind
+	Index      int
+	GrabOffset int
 }
 
 // HitTest resolves a cell using visible Navigator state. A visible row takes
 // precedence over its containing pane.
-func (g Geometry) HitTest(x, y, top, fileCount int) Hit {
+func (g Geometry) HitTest(x, y int, active workspace.Kind, controls workspace.Controls, top, fileCount, readerOffset, readerLineCount int) Hit {
+	if g.HeaderFiles.Contains(x, y) {
+		return Hit{Kind: HitFilesWorkspace}
+	}
+	if g.HeaderGit.Contains(x, y) {
+		return Hit{Kind: HitGitWorkspace}
+	}
+	if g.HeaderScratch.Contains(x, y) {
+		return Hit{Kind: HitScratchWorkspace}
+	}
+	for _, control := range layoutHeaderControls(g, active, controls) {
+		if control.rect.Contains(x, y) {
+			return Hit{Kind: control.hit}
+		}
+	}
+	if g.Header.Contains(x, y) {
+		return Hit{Kind: HitNone}
+	}
+	if g.Divider.Contains(x, y) {
+		if active != workspace.Scratch {
+			return Hit{Kind: HitDivider}
+		}
+		return Hit{Kind: HitNone}
+	}
+	if active != workspace.Scratch {
+		if bar, ok := CalculateScrollbar(g.NavigatorRows, fileCount, top); ok && bar.Track.Contains(x, y) {
+			return Hit{Kind: HitNavigatorScrollbar, GrabOffset: bar.GrabOffset(y)}
+		}
+		if bar, ok := CalculateScrollbar(g.ReaderRows, readerLineCount, readerOffset); ok && bar.Track.Contains(x, y) {
+			return Hit{Kind: HitReaderScrollbar, GrabOffset: bar.GrabOffset(y)}
+		}
+	}
 	if g.NavigatorRows.Contains(x, y) {
 		index := top + y - g.NavigatorRows.Y
 		if index >= 0 && index < fileCount {
@@ -88,6 +188,16 @@ func (g Geometry) HitTest(x, y, top, fileCount int) Hit {
 	return Hit{Kind: HitNone}
 }
 
+func clipTo(bounds, rect Rect) Rect {
+	rightBound := bounds.X + bounds.Width
+	bottomBound := bounds.Y + bounds.Height
+	left := min(max(bounds.X, rect.X), rightBound)
+	top := min(max(bounds.Y, rect.Y), bottomBound)
+	right := max(left, min(rightBound, rect.X+rect.Width))
+	bottom := max(top, min(bottomBound, rect.Y+rect.Height))
+	return Rect{X: left, Y: top, Width: max(0, right-left), Height: max(0, bottom-top)}
+}
+
 func splitNavigator(width int) int {
 	if width <= 1 {
 		return width
@@ -99,11 +209,24 @@ func splitNavigator(width int) int {
 	return min(navigatorWidth, width-16)
 }
 
-func paneRows(pane Rect) Rect {
-	if pane.Width <= 2 || pane.Height <= 3 {
-		return Rect{X: pane.X + min(1, pane.Width), Y: pane.Y + min(2, pane.Height)}
+func clampNavigatorWidth(width, requested int) int {
+	if width <= 1 {
+		return width
 	}
-	return Rect{X: pane.X + 1, Y: pane.Y + 2, Width: pane.Width - 2, Height: pane.Height - 3}
+	minimum := min(MinimumPaneWidth, width/2)
+	return clamp(requested, minimum, width-minimum)
+}
+
+func surfaceRows(surface Rect) (Rect, Rect) {
+	titleHeight := min(1, surface.Height)
+	title := Rect{X: surface.X, Y: surface.Y, Width: surface.Width, Height: titleHeight}
+	rows := Rect{
+		X:      surface.X,
+		Y:      surface.Y + titleHeight,
+		Width:  surface.Width,
+		Height: surface.Height - titleHeight,
+	}
+	return title, rows
 }
 
 func clamp(value, low, high int) int {

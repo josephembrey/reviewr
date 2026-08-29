@@ -9,38 +9,38 @@ const (
 	FocusReader
 )
 
-// State holds stable path selection and both pane offsets.
+// State holds stable item selection and both pane offsets.
 type State struct {
-	Files        []string
+	Items        []string
 	Selected     int
 	Top          int
 	Focus        Focus
 	ReaderOffset int
 }
 
-// SelectedPath returns the raw selected path identity.
-func (s State) SelectedPath() (string, bool) {
-	if s.Selected < 0 || s.Selected >= len(s.Files) {
+// SelectedIdentity returns the selected item's stable identity.
+func (s State) SelectedIdentity() (string, bool) {
+	if s.Selected < 0 || s.Selected >= len(s.Items) {
 		return "", false
 	}
-	return s.Files[s.Selected], true
+	return s.Items[s.Selected], true
 }
 
-// Reconcile replaces the loaded paths while preserving selection and top-row
+// Reconcile replaces the loaded identities while preserving selection and top-row
 // identities, then falling back to the nearest old survivor and finally clamp.
-func (s *State) Reconcile(files []string) {
-	oldFiles := s.Files
+func (s *State) Reconcile(items []string) {
+	oldItems := s.Items
 	oldSelected := s.Selected
 	oldTop := s.Top
-	s.Files = append([]string(nil), files...)
-	if len(files) == 0 {
+	s.Items = append([]string(nil), items...)
+	if len(items) == 0 {
 		s.Selected = 0
 		s.Top = 0
 		return
 	}
 
-	s.Selected = reconcileIndex(oldFiles, oldSelected, files)
-	s.Top = reconcileIndex(oldFiles, oldTop, files)
+	s.Selected = reconcileIndex(oldItems, oldSelected, items)
+	s.Top = reconcileIndex(oldItems, oldTop, items)
 	if s.Top > s.Selected {
 		s.Top = s.Selected
 	}
@@ -52,12 +52,12 @@ func (s *State) SelectDelta(delta int, visibleRows int) bool {
 	return s.SelectIndex(s.Selected+delta, visibleRows)
 }
 
-// SelectIndex applies a user-selected row, clamped to the current file list.
+// SelectIndex applies a user-selected row, clamped to the current item list.
 func (s *State) SelectIndex(index int, visibleRows int) bool {
-	if len(s.Files) == 0 {
+	if len(s.Items) == 0 {
 		return false
 	}
-	index = clamp(index, 0, len(s.Files)-1)
+	index = clamp(index, 0, len(s.Items)-1)
 	if index == s.Selected {
 		return false
 	}
@@ -78,15 +78,15 @@ func (s *State) ToggleFocus() {
 
 // EnsureSelectionVisible reconciles the Navigator offset to its viewport.
 func (s *State) EnsureSelectionVisible(visibleRows int) {
-	if len(s.Files) == 0 {
+	if len(s.Items) == 0 {
 		s.Top = 0
 		return
 	}
 	if visibleRows <= 0 {
-		s.Top = clamp(s.Top, 0, len(s.Files)-1)
+		s.Top = clamp(s.Top, 0, len(s.Items)-1)
 		return
 	}
-	maxTop := max(0, len(s.Files)-visibleRows)
+	maxTop := max(0, len(s.Items)-visibleRows)
 	s.Top = clamp(s.Top, 0, maxTop)
 	if s.Selected < s.Top {
 		s.Top = s.Selected

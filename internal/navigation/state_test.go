@@ -8,56 +8,56 @@ import (
 func TestReconcileSelectionByIdentity(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name        string
-		state       State
-		files       []string
-		wantPath    string
-		wantIndex   int
-		wantTopPath string
+		name         string
+		state        State
+		items        []string
+		wantIdentity string
+		wantIndex    int
+		wantTopPath  string
 	}{
 		{
-			name:        "identity survives reorder",
-			state:       State{Files: []string{"a", "b", "c"}, Selected: 1, Top: 1, ReaderOffset: 7},
-			files:       []string{"c", "a", "b"},
-			wantPath:    "b",
-			wantIndex:   2,
-			wantTopPath: "b",
+			name:         "identity survives reorder",
+			state:        State{Items: []string{"a", "b", "c"}, Selected: 1, Top: 1, ReaderOffset: 7},
+			items:        []string{"c", "a", "b"},
+			wantIdentity: "b",
+			wantIndex:    2,
+			wantTopPath:  "b",
 		},
 		{
-			name:        "removed selection prefers equally near successor",
-			state:       State{Files: []string{"a", "b", "c"}, Selected: 1},
-			files:       []string{"a", "c"},
-			wantPath:    "c",
-			wantIndex:   1,
-			wantTopPath: "a",
+			name:         "removed selection prefers equally near successor",
+			state:        State{Items: []string{"a", "b", "c"}, Selected: 1},
+			items:        []string{"a", "c"},
+			wantIdentity: "c",
+			wantIndex:    1,
+			wantTopPath:  "a",
 		},
 		{
-			name:        "removed selection uses predecessor",
-			state:       State{Files: []string{"a", "b", "c"}, Selected: 2},
-			files:       []string{"a"},
-			wantPath:    "a",
-			wantIndex:   0,
-			wantTopPath: "a",
+			name:         "removed selection uses predecessor",
+			state:        State{Items: []string{"a", "b", "c"}, Selected: 2},
+			items:        []string{"a"},
+			wantIdentity: "a",
+			wantIndex:    0,
+			wantTopPath:  "a",
 		},
 		{
-			name:        "complete replacement clamps old index",
-			state:       State{Files: []string{"a", "b", "c"}, Selected: 2, Top: 1},
-			files:       []string{"x", "y"},
-			wantPath:    "y",
-			wantIndex:   1,
-			wantTopPath: "y",
+			name:         "complete replacement clamps old index",
+			state:        State{Items: []string{"a", "b", "c"}, Selected: 2, Top: 1},
+			items:        []string{"x", "y"},
+			wantIdentity: "y",
+			wantIndex:    1,
+			wantTopPath:  "y",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			state := test.state
-			state.Reconcile(test.files)
-			path, ok := state.SelectedPath()
-			if !ok || path != test.wantPath || state.Selected != test.wantIndex {
-				t.Fatalf("selection = (%q, %d, %v), want (%q, %d, true)", path, state.Selected, ok, test.wantPath, test.wantIndex)
+			state.Reconcile(test.items)
+			identity, ok := state.SelectedIdentity()
+			if !ok || identity != test.wantIdentity || state.Selected != test.wantIndex {
+				t.Fatalf("selection = (%q, %d, %v), want (%q, %d, true)", identity, state.Selected, ok, test.wantIdentity, test.wantIndex)
 			}
-			if got := state.Files[state.Top]; got != test.wantTopPath {
+			if got := state.Items[state.Top]; got != test.wantTopPath {
 				t.Fatalf("top path = %q, want %q", got, test.wantTopPath)
 			}
 			if state.ReaderOffset != test.state.ReaderOffset {
@@ -69,10 +69,10 @@ func TestReconcileSelectionByIdentity(t *testing.T) {
 
 func TestReconcileEmpty(t *testing.T) {
 	t.Parallel()
-	state := State{Files: []string{"a"}, Selected: 0, Top: 0, ReaderOffset: 4, Focus: FocusReader}
+	state := State{Items: []string{"a"}, Selected: 0, Top: 0, ReaderOffset: 4, Focus: FocusReader}
 	state.Reconcile(nil)
-	if _, ok := state.SelectedPath(); ok {
-		t.Fatal("empty state retained a selected path")
+	if _, ok := state.SelectedIdentity(); ok {
+		t.Fatal("empty state retained a selected identity")
 	}
 	if state.Selected != 0 || state.Top != 0 || state.ReaderOffset != 4 || state.Focus != FocusReader {
 		t.Fatalf("unexpected empty reconciliation: %+v", state)
@@ -81,7 +81,7 @@ func TestReconcileEmpty(t *testing.T) {
 
 func TestUserSelectionFocusAndScroll(t *testing.T) {
 	t.Parallel()
-	state := State{Files: []string{"a", "b", "c", "d"}, ReaderOffset: 5}
+	state := State{Items: []string{"a", "b", "c", "d"}, ReaderOffset: 5}
 	if !state.SelectIndex(3, 2) {
 		t.Fatal("selection did not change")
 	}
@@ -108,10 +108,10 @@ func TestUserSelectionFocusAndScroll(t *testing.T) {
 
 func TestViewportReconciliationPreservesValidPlace(t *testing.T) {
 	t.Parallel()
-	state := State{Files: []string{"a", "b", "c", "d", "e"}, Selected: 3, Top: 2, ReaderOffset: 4}
+	state := State{Items: []string{"a", "b", "c", "d", "e"}, Selected: 3, Top: 2, ReaderOffset: 4}
 	state.EnsureSelectionVisible(3)
 	state.ClampReader(20, 8)
-	want := State{Files: state.Files, Selected: 3, Top: 2, ReaderOffset: 4}
+	want := State{Items: state.Items, Selected: 3, Top: 2, ReaderOffset: 4}
 	if !reflect.DeepEqual(state, want) {
 		t.Fatalf("valid place changed on resize: got %+v, want %+v", state, want)
 	}

@@ -37,6 +37,30 @@ type File struct {
 	Err     error
 }
 
+// Commit is one recent current-HEAD history row.
+type Commit struct {
+	OID      string
+	ShortOID string
+	Subject  string
+}
+
+// CommitSummary is bounded metadata and changed-file stat for one commit.
+type CommitSummary struct {
+	OID         string
+	AuthorName  string
+	AuthorEmail string
+	AuthoredAt  string
+	Message     string
+	Stat        string
+}
+
+// ChangeSummary is the aggregate current-worktree diff against HEAD.
+type ChangeSummary struct {
+	Files     uint64
+	Additions uint64
+	Deletions uint64
+}
+
 // Repository is a resolved Git worktree with read-only operations.
 type Repository struct {
 	root     string
@@ -62,6 +86,48 @@ func (r *Repository) Root() string {
 // ListFiles returns tracked and untracked, nonignored raw path identities.
 func (r *Repository) ListFiles() ([]string, error) {
 	return r.git.ListFiles(r.root)
+}
+
+// WorktreeSummary returns aggregate tracked and untracked change counts.
+func (r *Repository) WorktreeSummary() (ChangeSummary, error) {
+	summary, err := r.git.WorktreeSummary(r.root)
+	if err != nil {
+		return ChangeSummary{}, err
+	}
+	return ChangeSummary{
+		Files:     summary.Files,
+		Additions: summary.Additions,
+		Deletions: summary.Deletions,
+	}, nil
+}
+
+// ListCommits returns bounded current-HEAD history ordered newest first.
+func (r *Repository) ListCommits() ([]Commit, error) {
+	commits, err := r.git.ListCommits(r.root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Commit, len(commits))
+	for index, commit := range commits {
+		result[index] = Commit{OID: commit.OID, ShortOID: commit.ShortOID, Subject: commit.Subject}
+	}
+	return result, nil
+}
+
+// ReadCommit reads one exact full object identity without mutating Git state.
+func (r *Repository) ReadCommit(oid string) (CommitSummary, error) {
+	summary, err := r.git.ReadCommit(r.root, oid, r.maxBytes)
+	if err != nil {
+		return CommitSummary{}, err
+	}
+	return CommitSummary{
+		OID:         summary.OID,
+		AuthorName:  summary.AuthorName,
+		AuthorEmail: summary.AuthorEmail,
+		AuthoredAt:  summary.AuthoredAt,
+		Message:     summary.Message,
+		Stat:        summary.Stat,
+	}, nil
 }
 
 // ReadFile reads a single root-relative path without following a final symlink.

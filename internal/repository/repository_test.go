@@ -157,9 +157,90 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 			t.Fatalf("ReadFile(%q) = %+v", path, result)
 		}
 	}
+	commits, err := repo.ListCommits()
+	if err != nil || len(commits) != 1 {
+		t.Fatalf("ListCommits() = (%#v, %v)", commits, err)
+	}
+	if _, err := repo.ReadCommit(commits[0].OID); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := repo.WorktreeSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != (ChangeSummary{Files: 1, Additions: 1}) {
+		t.Fatalf("WorktreeSummary() = %+v", summary)
+	}
 	after := captureGitState(t, root)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("repository operations changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "root.txt", "root\n")
+	runGit(t, root, "add", "root.txt")
+	runGit(t, root, "commit", "-q", "-m", "root subject", "-m", "root body")
+	rootOID := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
+	mainBranch := strings.TrimSpace(string(runGitBytes(t, root, "branch", "--show-current")))
+
+	runGit(t, root, "checkout", "-q", "-b", "feature")
+	writeFile(t, root, "feature.txt", "feature\n")
+	runGit(t, root, "add", "feature.txt")
+	runGit(t, root, "commit", "-q", "-m", "feature subject")
+	runGit(t, root, "checkout", "-q", mainBranch)
+	writeFile(t, root, "main.txt", "main\n")
+	runGit(t, root, "add", "main.txt")
+	runGit(t, root, "commit", "-q", "-m", "main subject")
+	runGit(t, root, "merge", "-q", "--no-ff", "feature", "-m", "merge subject")
+	mergeOID := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err := repo.ListCommits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 4 || commits[0].OID != mergeOID {
+		t.Fatalf("ListCommits() = %#v", commits)
+	}
+	if !slices.ContainsFunc(commits, func(commit Commit) bool { return commit.OID == rootOID }) {
+		t.Fatalf("history omitted root commit %s: %#v", rootOID, commits)
+	}
+
+	rootSummary, err := repo.ReadCommit(rootOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootSummary.OID != rootOID || rootSummary.AuthorName != "Reviewr Tests" ||
+		rootSummary.AuthorEmail != "reviewr@example.invalid" || !strings.Contains(rootSummary.Message, "root body") ||
+		!strings.Contains(rootSummary.Stat, "root.txt") {
+		t.Fatalf("root summary = %+v", rootSummary)
+	}
+	mergeSummary, err := repo.ReadCommit(mergeOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(mergeSummary.Message, "merge subject") || !strings.Contains(mergeSummary.Stat, "feature.txt") {
+		t.Fatalf("merge summary = %+v", mergeSummary)
+	}
+}
+
+func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
+	root := initRepository(t)
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err := repo.ListCommits()
+	if err != nil || len(commits) != 0 {
+		t.Fatalf("unborn ListCommits() = (%#v, %v)", commits, err)
+	}
+	if _, err := repo.ReadCommit(strings.Repeat("f", 40)); err == nil {
+		t.Fatal("ReadCommit() accepted a missing object")
 	}
 }
 
