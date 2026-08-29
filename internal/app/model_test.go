@@ -64,7 +64,7 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 			"b": {Path: "b", Kind: repository.FileReady, Content: "b1\nb2"},
 		},
 	}
-	model := New(source)
+	model := newTestModel(source)
 	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
 
 	initial := model.Init()
@@ -130,7 +130,7 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 
 func TestPrimaryWorkspaceLifecycleAndActiveRefresh(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	if model.active != workspace.Files || !model.files.listLoading || !model.history.listLoading {
 		t.Fatalf("initial workspace state = %+v", model)
 	}
@@ -163,7 +163,7 @@ func TestPrimaryWorkspaceLifecycleAndActiveRefresh(t *testing.T) {
 
 func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 24)
 	model.files.place.Reconcile([]string{"file.go"})
 	filesFrame := ansi.Strip(model.View().Content)
@@ -184,7 +184,7 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 
 func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	model.files.place = navigation.State{Items: []string{"a", "b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 
@@ -210,7 +210,7 @@ func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
 
 func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: ui.MinimumWidth - 1, Height: ui.MinimumHeight - 1})
 
 	frame := ansi.Strip(model.View().Content)
@@ -254,7 +254,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 
 func TestDividerDragClampsAndPersistsTheUserSplit(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	original := model.geometry.Divider.X
 
@@ -294,7 +294,7 @@ func TestDividerDragClampsAndPersistsTheUserSplit(t *testing.T) {
 
 func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	model.files.place.Items = make([]string, 100)
 	model.files.reader = repository.File{
@@ -335,7 +335,7 @@ func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 
 func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: ui.MinimumWidth, Height: ui.MinimumHeight})
 	press := func(key rune) tea.Cmd {
 		next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: key, Text: string(key)}))
@@ -399,7 +399,7 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	t.Parallel()
 	const oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 20)
 	first := model.apply(Action{Kind: ShowGit})
 	second := model.apply(Action{Kind: Reload})
@@ -459,7 +459,7 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 
 func TestWorkspacesKeepIndependentPlace(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 12)
 	model.files.place = navigation.State{Items: []string{"a", "b", "c"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 4}
 	model.history.place = navigation.State{Items: []string{"oid-1", "oid-2"}, Selected: 0, Focus: navigation.FocusNavigator, ReaderOffset: 2}
@@ -520,7 +520,7 @@ func TestHistoryPresentationCoversLoadingEmptyAndErrors(t *testing.T) {
 
 func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	first := model.apply(Action{Kind: Reload})
 	second := model.apply(Action{Kind: Reload})
 	if first.generation >= second.generation {

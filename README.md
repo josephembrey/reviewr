@@ -6,6 +6,9 @@ reviewr is being built from the ground up in Go with Bubble Tea. The current sli
 read-only repository navigator and file reader with keyboard and mouse navigation, stable selection
 across reloads, and shared render/hit-test geometry.
 
+When launched inside Herdr, reviewr automatically uses the injected host context and labels an
+otherwise-unlabeled current pane `reviewr`. Standalone launches require no Herdr installation.
+
 ## Development
 
 ```bash

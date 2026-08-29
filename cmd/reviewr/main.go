@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/app"
+	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/repository"
 )
 
@@ -29,6 +30,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = tea.NewProgram(app.New(repo)).Run()
+	host := herdr.NewRuntime(herdr.Detect(os.LookupEnv))
+	host.Start()
+	defer host.Close()
+	_, err = tea.NewProgram(app.New(repo, host.Context())).Run()
 	return err
 }

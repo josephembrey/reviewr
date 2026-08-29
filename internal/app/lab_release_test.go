@@ -10,7 +10,7 @@ import (
 
 func TestReleaseBuildHasNoLabRoute(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	if handled, command := model.updateLab(tea.KeyPressMsg(tea.Key{Code: 'l', Mod: tea.ModCtrl})); handled || command != nil {
 		t.Fatalf("release lab hook = handled %v command=%v", handled, command != nil)
 	}

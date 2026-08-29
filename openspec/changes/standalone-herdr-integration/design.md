@@ -15,6 +15,7 @@ environment is sufficient to identify the host without a subprocess or plugin co
 **Goals:**
 
 - Establish one tested startup seam for optional Herdr context.
+- Establish a reusable Herdr runtime module and an ownership-safe current-pane label lifecycle.
 - Remove all active plugin distribution and pane-lifecycle artifacts.
 - Keep standalone startup independent of Herdr availability and latency.
 - Give later agent/comment features a narrow host context instead of direct global environment reads.
@@ -23,6 +24,7 @@ environment is sufficient to identify the host without a subprocess or plugin co
 
 - Reimplement plugin toggle, open, close, placement, or worktree auto-open behavior.
 - Port comment export, turn tracking, or other Rust Herdr features in this change.
+- Reintroduce plugin-owned pane creation, layout, toggle, open, or close behavior.
 - Switch the default Nix package from the Rust oracle to Go.
 - Add a generalized plugin/host framework before a second host exists.
 
@@ -58,6 +60,19 @@ Alternatives considered:
 - Defer the context until the first Herdr feature: would remove the plugin but fail to establish the
   requested automatic host boundary now.
 
+### Keep host capabilities behind one runtime owner
+
+`internal/herdr.Runtime` will receive the immutable context and own Herdr-specific effects. Its first
+capability inspects the current pane label with `herdr pane get`, applies `herdr pane rename <id>
+reviewr` only when the label is empty, and conditionally clears that label on normal shutdown. It
+uses the captured absolute `HERDR_BIN_PATH`; it never searches `PATH` or invokes the CLI to decide
+whether Herdr is active.
+
+Label setup runs asynchronously with a bounded command context so Herdr latency cannot delay the
+first Bubble Tea frame. Shutdown waits only within the same bound, then clears the label when this
+runtime claimed it and no other actor replaced it. This retains the Rust oracle's respectful label
+ownership while giving future Herdr features a single module rather than scattered subprocesses.
+
 ### Delete plugin lifecycle assets instead of preserving compatibility wrappers
 
 The root manifest and `herdr/` scripts will be deleted. Active docs will describe the executable as
@@ -74,17 +89,20 @@ continue carrying hundreds of lines of shell lifecycle logic.
   migration and document standalone launch through a shell, layout, or Herdr user configuration.
 - [A hosted process can have partial context] → Preserve hosted mode and represent individual values
   as optional; features validate only the fields they consume.
-- [The first Go slice does not yet visibly use Herdr context] → Keep the seam minimal and tested; do
-  not add placeholder agent or pane services.
+- [A Herdr command can fail or stall] → Keep cosmetic title work asynchronous and bounded; failure
+  never prevents repository browsing or shutdown.
+- [A pane label may belong to the user or another tool] → Claim only an empty label and clear only a
+  still-matching label this runtime set.
 - [Legacy documentation still mentions the former plugin] → Keep `legacy/` explicitly historical and
   exclude it from active-reference audits.
 
 ## Migration Plan
 
-1. Add and test the pure context detector and composition-root injection.
-2. Delete the root plugin manifest and `herdr/` plugin scripts.
-3. Remove active plugin references and document standalone optional-host behavior.
-4. Run repository checks, ensure no active plugin identifiers remain, and smoke both Herdr and
+1. Add and test the pure context detector, runtime owner, and composition-root injection.
+2. Add the bounded, ownership-safe current-pane label lifecycle.
+3. Delete the root plugin manifest and `herdr/` plugin scripts.
+4. Remove active plugin references and document standalone optional-host behavior.
+5. Run repository checks, ensure no active plugin identifiers remain, and smoke both Herdr and
    non-Herdr detection inputs.
 
 Rollback is a normal commit revert: the removed manifest and scripts remain recoverable from Git

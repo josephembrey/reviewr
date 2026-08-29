@@ -46,9 +46,34 @@ binary is launched rather than by controlling its installation or pane lifecycle
 
 ### Requirement: Detection has no external side effects
 Host detection SHALL NOT mutate Git state, send agent input, alter Herdr layout, or write application
-state. Later user-initiated host features MUST remain separate explicit actions and preserve the
-**No writes** and **Comments survive** invariants.
+state. Host capabilities MUST remain separate from detection and preserve the **No writes** and
+**Comments survive** invariants.
 
 #### Scenario: Startup detects Herdr
 - **WHEN** reviewr recognizes a Herdr environment during startup
-- **THEN** detection completes without Git writes, Herdr CLI mutations, pane changes, or agent messages
+- **THEN** detection itself completes without Git writes, Herdr CLI calls, pane changes, or agent messages
+
+### Requirement: Hosted pane labeling is ownership-safe
+When hosted context includes a Herdr binary path and pane identity, reviewr SHALL asynchronously label
+an otherwise-unlabeled current pane `reviewr`. It SHALL NOT replace a pre-existing label. On normal
+exit, it SHALL clear the label only when this process set it and the label remains `reviewr`.
+
+#### Scenario: Hosted pane has no label
+- **WHEN** reviewr starts with pane-label capability and the current pane is unlabeled
+- **THEN** reviewr labels that pane `reviewr` without delaying the first application frame
+
+#### Scenario: Hosted pane has a custom label
+- **WHEN** reviewr starts and the current pane already has a label
+- **THEN** reviewr leaves that label unchanged and does not claim ownership of it
+
+#### Scenario: Owned label remains at normal exit
+- **WHEN** reviewr set the pane label and it still equals `reviewr` during normal shutdown
+- **THEN** reviewr clears the label
+
+#### Scenario: Owned label was replaced externally
+- **WHEN** reviewr set the pane label but another actor subsequently changes it
+- **THEN** reviewr leaves the replacement label unchanged during shutdown
+
+#### Scenario: Pane-label capability is unavailable
+- **WHEN** reviewr runs standalone or hosted context lacks either the Herdr binary path or pane identity
+- **THEN** reviewr performs no pane-label command and otherwise behaves normally

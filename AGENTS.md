@@ -39,6 +39,7 @@ Load-bearing invariants:
 - `internal/app/` — thin Bubble Tea root, semantic actions, and effect routing.
 - `internal/repository/` — repository resolution and bounded file reads.
 - `internal/git/` — read-only Git CLI adapter.
+- `internal/herdr/` — immutable host detection and bounded Herdr-only runtime capabilities.
 - `internal/navigation/` — file identity, selection, scroll, and Continuity reconciliation.
 - `internal/ui/` — shared geometry, hit testing, and rendering.
 

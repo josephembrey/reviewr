@@ -11,7 +11,7 @@ import (
 
 func TestDevLabTogglesWithoutChangingApplicationPlace(t *testing.T) {
 	t.Parallel()
-	model := New(&fakeSource{})
+	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 100, Height: 24})
 	before := model.controls
 

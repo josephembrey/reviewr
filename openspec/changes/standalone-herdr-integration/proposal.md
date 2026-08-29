@@ -13,6 +13,8 @@ the application is installed or launched.
   reports whether reviewr is running inside Herdr.
 - Automatically make detected Herdr context available to application services; standalone launches
   continue with the same behavior when no Herdr context is present.
+- Add a reusable Herdr runtime module that can own hosted capabilities. Its first capability labels an
+  otherwise-unlabeled current pane `reviewr` for the process lifetime without replacing custom labels.
 - Treat the standalone `reviewr` binary as the sole application entry point. Herdr layouts or user
   configuration may launch it, but reviewr no longer opens, closes, toggles, or auto-opens panes.
 - Keep the frozen plugin implementation only as historical material under `legacy/` where it is
@@ -33,7 +35,8 @@ None.
 
 - Removes the root plugin manifest and `herdr/` scripts.
 - Adds a focused Go package for immutable runtime-host context and wires it through executable
-  startup without coupling the Bubble Tea root to environment reads.
+  startup without coupling the Bubble Tea root to environment reads. The package also owns the
+  bounded, asynchronous lifecycle of Herdr-specific capabilities such as the current pane label.
 - Updates active repository guidance, security language, and packaging boundaries.
 - Existing `herdr plugin install`, plugin actions, and worktree-created auto-open behavior stop being
   supported. Launching reviewr remains the responsibility of the user, shell, layout, or future

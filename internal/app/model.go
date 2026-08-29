@@ -3,6 +3,7 @@ package app
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -22,6 +23,7 @@ type Source interface {
 // semantic actions and workspace-scoped transitions.
 type Model struct {
 	source    Source
+	host      herdr.Context
 	active    workspace.Kind
 	scratch   bool
 	controls  workspace.Controls
@@ -85,9 +87,10 @@ type commitLoadedMsg struct {
 
 // New creates a model with both primary workspaces ready for their tagged
 // startup loads. History is warmed while Files remains the visible workspace.
-func New(source Source) Model {
+func New(source Source, host herdr.Context) Model {
 	return Model{
 		source:  source,
+		host:    host,
 		active:  workspace.Files,
 		lab:     newLabState(),
 		files:   newFilesState(),
