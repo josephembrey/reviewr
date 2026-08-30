@@ -35,6 +35,7 @@ func (s *State) Reconcile(items []string) {
 	oldItems := s.Items
 	oldSelected := s.Selected
 	oldTop := s.Top
+	currentIndices := indexIdentities(items)
 	s.Items = append([]string(nil), items...)
 	if len(items) == 0 {
 		s.Selected = 0
@@ -42,8 +43,8 @@ func (s *State) Reconcile(items []string) {
 		return
 	}
 
-	s.Selected = reconcileIndex(oldItems, oldSelected, items)
-	s.Top = reconcileIndex(oldItems, oldTop, items)
+	s.Selected = reconcileIndex(oldItems, oldSelected, items, currentIndices)
+	s.Top = reconcileIndex(oldItems, oldTop, items, currentIndices)
 	if s.Top > s.Selected {
 		s.Top = s.Selected
 	}
@@ -116,7 +117,7 @@ func (s *State) ClampReaderSource(lineCount int) {
 	s.ReaderOffset = clamp(s.ReaderOffset, 0, lineCount-1)
 }
 
-func reconcileIndex(old []string, oldIndex int, current []string) int {
+func reconcileIndex(old []string, oldIndex int, current []string, currentIndices map[string]int) int {
 	if len(current) == 0 {
 		return 0
 	}
@@ -124,26 +125,29 @@ func reconcileIndex(old []string, oldIndex int, current []string) int {
 		return clamp(oldIndex, 0, len(current)-1)
 	}
 	oldIndex = clamp(oldIndex, 0, len(old)-1)
-	currentIndices := make(map[string]int, len(current))
-	for index, path := range current {
-		currentIndices[path] = index
-	}
 	if index, ok := currentIndices[old[oldIndex]]; ok {
 		return index
 	}
+	if index, ok := nearestSurvivor(old, oldIndex, currentIndices); ok {
+		return index
+	}
+	return clamp(oldIndex, 0, len(current)-1)
+}
+
+func nearestSurvivor(old []string, oldIndex int, currentIndices map[string]int) (int, bool) {
 	for distance := 1; distance < len(old); distance++ {
 		if next := oldIndex + distance; next < len(old) {
 			if index, ok := currentIndices[old[next]]; ok {
-				return index
+				return index, true
 			}
 		}
 		if previous := oldIndex - distance; previous >= 0 {
 			if index, ok := currentIndices[old[previous]]; ok {
-				return index
+				return index, true
 			}
 		}
 	}
-	return clamp(oldIndex, 0, len(current)-1)
+	return 0, false
 }
 
 // ReconcileIdentity preserves one identity across a replacement sequence,
@@ -152,22 +156,32 @@ func ReconcileIdentity(old []string, identity string, current []string) (string,
 	if len(current) == 0 {
 		return "", false
 	}
-	for _, candidate := range current {
-		if candidate == identity {
-			return identity, true
-		}
+	currentIndices := indexIdentities(current)
+	if _, exists := currentIndices[identity]; exists {
+		return identity, true
 	}
-	oldIndex := -1
-	for index, candidate := range old {
-		if candidate == identity {
-			oldIndex = index
-			break
-		}
-	}
+	oldIndex := identityIndex(old, identity)
 	if oldIndex < 0 {
 		return current[0], true
 	}
-	return current[reconcileIndex(old, oldIndex, current)], true
+	return current[reconcileIndex(old, oldIndex, current, currentIndices)], true
+}
+
+func identityIndex(items []string, identity string) int {
+	for index, candidate := range items {
+		if candidate == identity {
+			return index
+		}
+	}
+	return -1
+}
+
+func indexIdentities(items []string) map[string]int {
+	indices := make(map[string]int, len(items))
+	for index, identity := range items {
+		indices[identity] = index
+	}
+	return indices
 }
 
 func clamp(value, low, high int) int {
