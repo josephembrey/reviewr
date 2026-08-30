@@ -38,6 +38,9 @@ const (
 	ExpandReaderContext
 	CollapseReaderContext
 	ToggleReaderContext
+	ToggleReaderFold
+	SelectNextHunk
+	SelectPreviousHunk
 	FocusNavigator
 	FocusReader
 	SwapPanes
@@ -78,11 +81,12 @@ const (
 
 // Action carries the small amount of data needed by a semantic intent.
 type Action struct {
-	Kind   ActionKind
-	Index  int
-	Amount int
-	Width  int
-	Height int
+	Kind     ActionKind
+	Identity string
+	Index    int
+	Amount   int
+	Width    int
+	Height   int
 	// Position is an absolute terminal column for geometry actions.
 	Position  int
 	Pane      navigation.Focus
@@ -371,6 +375,14 @@ func routeBrowserNavigationKey(msg tea.KeyPressMsg, context browserRouteContext)
 		return Action{Kind: SelectNextFile}, true
 	case "F":
 		return Action{Kind: SelectPreviousFile}, true
+	case "]":
+		if context.controls.RichDiff {
+			return Action{Kind: SelectNextHunk}, true
+		}
+	case "[":
+		if context.controls.RichDiff {
+			return Action{Kind: SelectPreviousHunk}, true
+		}
 	case "j", "down":
 		if context.focus == navigation.FocusNavigator {
 			return Action{Kind: SelectNext}, true
@@ -559,8 +571,10 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 			readerOffset = m.activeReaderVisualOffset()
 			readerLineCount = m.activeReaderLineCount()
 			if mouse.Button == tea.MouseLeft {
-				if layout, ok := m.activeReaderLayout(); ok && layout.HitFold(mouse.X, mouse.Y, readerOffset) {
-					return Action{Kind: ToggleReaderContext}, true
+				if layout, ok := m.activeReaderLayout(); ok {
+					if identity, fold := layout.FoldAt(mouse.X, mouse.Y, readerOffset); fold {
+						return Action{Kind: ToggleReaderFold, Identity: identity}, true
+					}
 				}
 			}
 		}

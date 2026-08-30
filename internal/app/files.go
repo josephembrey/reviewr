@@ -22,41 +22,39 @@ type filesState struct {
 	entriesByPath    map[string]repository.Entry
 	directoryIgnored map[string]bool
 
-	readerEntry             repository.Entry
-	readerMode              workspace.ReaderMode
-	reader                  repository.File
-	diff                    repository.Diff
-	readerPresentation      *ui.ReaderDocument
-	readerContextExpanded   bool
-	readerContextProgress   int
-	readerContextGeneration uint64
-	restoredReaderRows      []string
-	reviewSnapshot          review.Snapshot
-	ledger                  review.Ledger
-	store                   *review.Store
-	reviewDocument          review.Document
-	reviewFile              review.Content
-	reviewFileDiff          review.Document
-	displayedComparison     *review.FileComparison
-	displayedBounds         *review.Bounds
-	requestedComparison     *review.FileComparison
-	requestedBounds         *review.Bounds
-	reviewScope             string
-	reviewWarning           string
-	comparisonWarning       string
-	reviewFull              map[string]bool
-	reviewQueue             []review.Delta
-	sessionDeltas           []review.Delta
-	reviewPersisting        bool
-	reviewLoaded            bool
-	reviewCursor            int
-	reviewSelectionAnchor   int
-	reviewAssessments       map[string]review.Assessment
-	reviewProgress          map[string]reviewRollup
-	comparisonCache         map[string]comparisonCacheEntry
-	readerCache             map[readerCacheSlot]readerCacheEntry
-	readerRequestKey        readerCacheKey
-	readerLoadedKey         readerCacheKey
+	readerEntry           repository.Entry
+	readerMode            workspace.ReaderMode
+	reader                repository.File
+	diff                  repository.Diff
+	readerPresentation    *ui.ReaderDocument
+	readerContext         readerContextState
+	restoredReaderRows    []string
+	reviewSnapshot        review.Snapshot
+	ledger                review.Ledger
+	store                 *review.Store
+	reviewDocument        review.Document
+	reviewFile            review.Content
+	reviewFileDiff        review.Document
+	displayedComparison   *review.FileComparison
+	displayedBounds       *review.Bounds
+	requestedComparison   *review.FileComparison
+	requestedBounds       *review.Bounds
+	reviewScope           string
+	reviewWarning         string
+	comparisonWarning     string
+	reviewFull            map[string]bool
+	reviewQueue           []review.Delta
+	sessionDeltas         []review.Delta
+	reviewPersisting      bool
+	reviewLoaded          bool
+	reviewCursor          int
+	reviewSelectionAnchor int
+	reviewAssessments     map[string]review.Assessment
+	reviewProgress        map[string]reviewRollup
+	comparisonCache       map[string]comparisonCacheEntry
+	readerCache           map[readerCacheSlot]readerCacheEntry
+	readerRequestKey      readerCacheKey
+	readerLoadedKey       readerCacheKey
 
 	listGeneration    uint64
 	contentGeneration uint64

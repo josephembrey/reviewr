@@ -65,14 +65,15 @@ type Folds struct {
 }
 
 type Files struct {
-	Place           Place            `json:"place,omitempty"`
-	ReaderPath      string           `json:"reader_path,omitempty"`
-	ReaderRows      []string         `json:"reader_rows,omitempty"`
-	ContextExpanded bool             `json:"context_expanded,omitempty"`
-	Folds           map[string]Folds `json:"folds,omitempty"`
-	ReviewFull      map[string]bool  `json:"review_full,omitempty"`
-	ReviewCursor    int              `json:"review_cursor,omitempty"`
-	ReviewAnchor    int              `json:"review_anchor,omitempty"`
+	Place                Place            `json:"place,omitempty"`
+	ReaderPath           string           `json:"reader_path,omitempty"`
+	ReaderRows           []string         `json:"reader_rows,omitempty"`
+	ContextExpanded      bool             `json:"context_expanded,omitempty"`
+	ContextFoldOverrides map[string]bool  `json:"context_fold_overrides,omitempty"`
+	Folds                map[string]Folds `json:"folds,omitempty"`
+	ReviewFull           map[string]bool  `json:"review_full,omitempty"`
+	ReviewCursor         int              `json:"review_cursor,omitempty"`
+	ReviewAnchor         int              `json:"review_anchor,omitempty"`
 }
 
 type Refs struct {
@@ -87,10 +88,11 @@ type StashReaderPlace struct {
 }
 
 type Stashes struct {
-	Place           Place                       `json:"place,omitempty"`
-	ReaderRows      []string                    `json:"reader_rows,omitempty"`
-	ContextExpanded bool                        `json:"context_expanded,omitempty"`
-	ReaderPlaces    map[string]StashReaderPlace `json:"reader_places,omitempty"`
+	Place                Place                       `json:"place,omitempty"`
+	ReaderRows           []string                    `json:"reader_rows,omitempty"`
+	ContextExpanded      bool                        `json:"context_expanded,omitempty"`
+	ContextFoldOverrides map[string]bool             `json:"context_fold_overrides,omitempty"`
+	ReaderPlaces         map[string]StashReaderPlace `json:"reader_places,omitempty"`
 }
 
 type Notes struct {

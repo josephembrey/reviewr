@@ -13,7 +13,7 @@ type readerViewportKey struct {
 	workspace       workspace.Kind
 	rows            ui.Rect
 	source          *ui.ReaderDocument
-	contextProgress int
+	contextRevision uint64
 }
 
 // readerViewport keeps input routing and painting on one wrapped geometry.
@@ -31,10 +31,10 @@ func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
 	switch {
 	case m.gitStashesActive():
 		key.source = m.stashes.readerPresentation
-		key.contextProgress = m.stashes.readerContextProgress
+		key.contextRevision = m.stashes.readerContext.revision
 	case m.active == workspace.Files:
 		key.source = m.files.readerPresentation
-		key.contextProgress = m.files.readerContextProgress
+		key.contextRevision = m.files.readerContext.revision
 	default:
 		return readerViewportKey{}, false
 	}
@@ -141,6 +141,41 @@ func (m *Model) setActiveReaderVisualOffset(offset int) {
 
 func (m *Model) scrollActiveReader(delta int) {
 	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
+}
+
+func (m *Model) selectActiveReaderHunk(delta int) {
+	document, ok := m.activeReaderDocument()
+	if !ok || delta == 0 {
+		return
+	}
+	starts := document.HunkStarts()
+	if len(starts) == 0 {
+		return
+	}
+	current := m.activePlace().ReaderOffset
+	target := -1
+	if delta > 0 {
+		for _, start := range starts {
+			if start > current {
+				target = start
+				break
+			}
+		}
+	} else {
+		for index := len(starts) - 1; index >= 0; index-- {
+			if starts[index] < current {
+				target = starts[index]
+				break
+			}
+		}
+	}
+	if target < 0 {
+		return
+	}
+	place := m.activePlace()
+	place.ReaderOffset = target
+	place.ReaderColumn = 0
+	m.clampDocumentReader(place, document)
 }
 
 func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {

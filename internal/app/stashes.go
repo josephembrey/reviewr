@@ -17,19 +17,17 @@ type stashReaderPlace struct {
 type stashState struct {
 	place navigation.State
 
-	stashes                 []repository.Stash
-	files                   []repository.ChangedFile
-	fileSelected            int
-	filesOID                string
-	reader                  repository.ChangeDocument
-	readerPresentation      *ui.ReaderDocument
-	readerContextExpanded   bool
-	readerContextProgress   int
-	readerContextGeneration uint64
-	restoredReaderRows      []string
-	readerOID               string
-	readerFileID            string
-	readerPlaces            map[string]stashReaderPlace
+	stashes            []repository.Stash
+	files              []repository.ChangedFile
+	fileSelected       int
+	filesOID           string
+	reader             repository.ChangeDocument
+	readerPresentation *ui.ReaderDocument
+	readerContext      readerContextState
+	restoredReaderRows []string
+	readerOID          string
+	readerFileID       string
+	readerPlaces       map[string]stashReaderPlace
 
 	listGeneration   uint64
 	filesGeneration  uint64

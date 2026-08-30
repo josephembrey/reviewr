@@ -106,6 +106,62 @@ func TestReaderContextFoldsLeaveSmallRunsAlone(t *testing.T) {
 	}
 }
 
+func TestReaderContextGapsExpandIndependentlyAndDefineHunks(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument}
+	appendContext := func(start, count int) {
+		for line := start; line < start+count; line++ {
+			document.Rows = append(document.Rows, ReaderRow{
+				Identity: fmt.Sprintf("context:%d", line), Kind: ReaderContext,
+				Text: fmt.Sprintf("context %d", line), OldLine: uint64(line), NewLine: uint64(line),
+			})
+		}
+	}
+	appendContext(1, 10)
+	document.Rows = append(document.Rows, ReaderRow{Identity: "change:1", Kind: ReaderInsertion, Text: "first", NewLine: 11})
+	appendContext(12, 20)
+	document.Rows = append(document.Rows, ReaderRow{Identity: "change:2", Kind: ReaderInsertion, Text: "second", NewLine: 32})
+	appendContext(33, 10)
+
+	identities := document.ContextFoldIdentities()
+	if len(identities) != 3 {
+		t.Fatalf("fold identities = %#v, want leading, inter-hunk, and trailing gaps", identities)
+	}
+	compact := document.WithContextFolds(false)
+	starts := compact.HunkStarts()
+	if len(starts) != 2 || starts[0] >= starts[1] {
+		t.Fatalf("compact hunk starts = %#v", starts)
+	}
+	expanded := document.WithContextFoldProgresses(map[string]int{identities[1]: 8}, 0, 8)
+	states := make(map[string]bool)
+	for _, row := range expanded.Rows {
+		if row.Kind == ReaderFold {
+			states[row.Identity] = row.FoldExpanded
+		}
+	}
+	if states[identities[0]] || !states[identities[1]] || states[identities[2]] {
+		t.Fatalf("independent fold states = %#v", states)
+	}
+	if near, ok := expanded.ContextFoldNear(expanded.HunkStarts()[1]); !ok || near != identities[1] {
+		t.Fatalf("second hunk context = %q, %v; want %q", near, ok, identities[1])
+	}
+}
+
+func TestExplicitUnifiedDiffHeadersRemainHunkNavigationTargets(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
+		{Kind: ReaderMetadata, Text: "@@ -1,2 +1,2 @@"},
+		{Kind: ReaderDeletion, Text: "old", OldLine: 1},
+		{Kind: ReaderInsertion, Text: "new", NewLine: 1},
+		{Kind: ReaderMetadata, Text: "@@ -20,2 +20,2 @@"},
+		{Kind: ReaderDeletion, Text: "old again", OldLine: 20},
+		{Kind: ReaderInsertion, Text: "new again", NewLine: 20},
+	}}
+	if starts := document.HunkStarts(); !reflect.DeepEqual(starts, []int{0, 3}) {
+		t.Fatalf("explicit hunk starts = %#v", starts)
+	}
+}
+
 func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	t.Parallel()
 	const width = 44
@@ -163,17 +219,17 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 func TestReaderLayoutHitFoldUsesPaintedRowsAndExcludesScrollbar(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
-		{Kind: ReaderFold, Text: "12 unchanged lines"},
+		{Identity: "fold:1", Kind: ReaderFold, Text: "12 unchanged lines"},
 		{Kind: ReaderInsertion, Text: "changed", NewLine: 20},
 	}}
 	layout := CalculateReaderLayout(Rect{X: 30, Y: 4, Width: 20, Height: 1}, document)
-	if !layout.HitFold(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 0) {
-		t.Fatal("painted fold row is not clickable")
+	if identity, ok := layout.FoldAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 0); !ok || identity != "fold:1" {
+		t.Fatalf("fold target = %q, %v; want stable row identity", identity, ok)
 	}
-	if layout.HitFold(layout.Geometry.Scrollbar.X, layout.Geometry.Rows.Y, 0) {
+	if _, ok := layout.FoldAt(layout.Geometry.Scrollbar.X, layout.Geometry.Rows.Y, 0); ok {
 		t.Fatal("fold target claimed the scrollbar lane")
 	}
-	if layout.HitFold(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 1) {
+	if _, ok := layout.FoldAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 1); ok {
 		t.Fatal("non-fold row was clickable after scrolling")
 	}
 }

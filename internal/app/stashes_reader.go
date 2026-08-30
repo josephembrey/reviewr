@@ -24,6 +24,7 @@ func (state stashState) landReader(msg stashFileLoadedMsg) stashState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
+	state.readerContext.reconcile(presentation)
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
 	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
@@ -100,7 +101,7 @@ func (state *stashState) clearReader() {
 }
 
 func (state stashState) readerDocument() ui.ReaderDocument {
-	return state.rawReaderDocument().WithContextFoldProgress(state.readerContextProgress, readerContextAnimationSteps)
+	return state.readerContext.document(state.rawReaderDocument())
 }
 
 func (state stashState) rawReaderDocument() ui.ReaderDocument {
@@ -111,27 +112,52 @@ func (state stashState) rawReaderDocument() ui.ReaderDocument {
 }
 
 func (state *stashState) setReaderContextExpanded(expanded bool) (bool, bool) {
-	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
-		return false, false
+	oldRows := readerRowIdentities(state.readerRows())
+	oldOffset := state.place.ReaderOffset
+	changed, animating := state.readerContext.setAll(state.rawReaderDocument(), expanded)
+	if changed {
+		state.reconcileReaderContextPlace(oldRows, oldOffset)
 	}
-	state.readerContextExpanded = expanded
-	state.readerContextGeneration++
-	state.advanceReaderContextPresentation()
-	return true, readerContextAnimating(state.readerContextProgress, expanded)
+	return changed, animating
+}
+
+func (state *stashState) toggleReaderContextFold(identity string) (bool, bool) {
+	return state.changeReaderContextFold(identity, nil)
+}
+
+func (state *stashState) setReaderContextFold(identity string, expanded bool) (bool, bool) {
+	return state.changeReaderContextFold(identity, &expanded)
+}
+
+func (state *stashState) changeReaderContextFold(identity string, expanded *bool) (bool, bool) {
+	oldRows := readerRowIdentities(state.readerRows())
+	oldOffset := state.place.ReaderOffset
+	var changed, animating bool
+	if expanded == nil {
+		changed, animating = state.readerContext.toggleFold(state.rawReaderDocument(), identity)
+	} else {
+		changed, animating = state.readerContext.setFold(state.rawReaderDocument(), identity, *expanded)
+	}
+	if changed {
+		state.reconcileReaderContextPlace(oldRows, oldOffset)
+	}
+	return changed, animating
 }
 
 func (state *stashState) advanceReaderContext(generation uint64) (bool, bool) {
-	if generation != state.readerContextGeneration || !readerContextAnimating(state.readerContextProgress, state.readerContextExpanded) {
+	if generation != state.readerContext.generation || !state.readerContext.animating(state.rawReaderDocument()) {
 		return false, false
 	}
-	state.advanceReaderContextPresentation()
-	return true, readerContextAnimating(state.readerContextProgress, state.readerContextExpanded)
-}
-
-func (state *stashState) advanceReaderContextPresentation() {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
-	state.readerContextProgress = stepReaderContext(state.readerContextProgress, state.readerContextExpanded)
+	if !state.readerContext.advance(state.rawReaderDocument()) {
+		return false, false
+	}
+	state.reconcileReaderContextPlace(oldRows, oldOffset)
+	return true, state.readerContext.animating(state.rawReaderDocument())
+}
+
+func (state *stashState) reconcileReaderContextPlace(oldRows []string, oldOffset int) {
 	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
 	if state.place.ReaderOffset != oldOffset {
 		state.place.ReaderColumn = 0
@@ -141,9 +167,7 @@ func (state *stashState) advanceReaderContextPresentation() {
 }
 
 func (state *stashState) resetReaderContext() {
-	state.readerContextExpanded = false
-	state.readerContextProgress = 0
-	state.readerContextGeneration++
+	state.readerContext.reset()
 }
 
 func (state stashState) readerRows() []ui.ReaderRow {

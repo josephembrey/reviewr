@@ -17,15 +17,6 @@ var (
 		{key: "j/k or ↑/↓", label: "navigate"},
 		{key: "z", label: "swap"},
 	}
-	filesFooterEntries = []footerEntry{
-		{key: "tab", label: "focus"},
-		{key: "j/k", label: "move"},
-		{key: "h/l", label: "less/more"},
-		{key: "z", label: "swap"},
-		{key: "x", label: "review"},
-		{key: "R", label: "bounds"},
-		{key: "X", label: "next gap"},
-	}
 )
 
 func renderFooter(model Model) string {
@@ -38,9 +29,9 @@ func renderFooter(model Model) string {
 		case model.Workspace == workspace.Notes:
 			content = renderNotesFooter(model)
 		case model.Workspace == workspace.Files:
-			entries = filesFooterEntries
+			entries = fileFooterEntries(model.Controls.RichDiff)
 		case model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes:
-			entries = stashFooterEntries(model.ReaderContextFoldable)
+			entries = stashFooterEntries(model.Controls.RichDiff, model.ReaderContextFoldable)
 		default:
 			entries = standardFooterEntries
 		}
@@ -49,6 +40,23 @@ func renderFooter(model Model) string {
 		}
 	}
 	return renderFooterHelp(content, model.Geometry)
+}
+
+func fileFooterEntries(richDiff bool) []footerEntry {
+	entries := []footerEntry{
+		{key: "tab", label: "focus"},
+		{key: "j/k", label: "move"},
+		{key: "h/l", label: "less/more"},
+	}
+	if richDiff {
+		entries = append(entries, footerEntry{key: "[]", label: "hunks"})
+	}
+	return append(entries,
+		footerEntry{key: "z", label: "swap"},
+		footerEntry{key: "x", label: "review"},
+		footerEntry{key: "R", label: "bounds"},
+		footerEntry{key: "X", label: "next gap"},
+	)
 }
 
 func renderFooterHelp(content string, geometry Geometry) string {
@@ -86,11 +94,14 @@ func renderNotesFooter(model Model) string {
 	return footer + renderFooterSeparator() + status
 }
 
-func stashFooterEntries(contextFoldable bool) []footerEntry {
+func stashFooterEntries(richDiff, contextFoldable bool) []footerEntry {
 	entries := []footerEntry{
 		{key: "tab", label: "focus"},
 		{key: "j/k", label: "move stashes"},
 		{key: "f/F", label: "move files"},
+	}
+	if richDiff {
+		entries = append(entries, footerEntry{key: "[]", label: "hunks"})
 	}
 	if contextFoldable {
 		entries = append(entries, footerEntry{key: "h/l", label: "context"})

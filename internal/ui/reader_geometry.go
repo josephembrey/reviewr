@@ -115,18 +115,18 @@ func (layout ReaderLayout) Row(visual int) (ReaderRow, bool) {
 	return row, continuation > 0
 }
 
-// HitFold reports whether a terminal cell lands on a painted fold-control row.
+// FoldAt returns the stable context-gap identity painted at one terminal cell.
 // visualOffset is the same viewport offset used by renderReader.
-func (layout ReaderLayout) HitFold(x, y, visualOffset int) bool {
+func (layout ReaderLayout) FoldAt(x, y, visualOffset int) (string, bool) {
 	if !layout.Geometry.Content.Contains(x, y) || layout.Total == 0 {
-		return false
+		return "", false
 	}
 	visual := visualOffset + y - layout.Geometry.Rows.Y
 	if visual < 0 || visual >= layout.Total {
-		return false
+		return "", false
 	}
 	row, _ := layout.Row(visual)
-	return row.Kind == ReaderFold
+	return row.Identity, row.Kind == ReaderFold && row.Identity != ""
 }
 
 // readerWrapRanges prefers whitespace and common code punctuation, then falls

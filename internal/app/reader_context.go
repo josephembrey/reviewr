@@ -1,6 +1,10 @@
 package app
 
-import "time"
+import (
+	"time"
+
+	"github.com/josephembrey/reviewr/internal/workspace"
+)
 
 const (
 	readerContextAnimationSteps = 8
@@ -54,7 +58,7 @@ func (m *Model) setFilesReaderContext(expanded bool) effect {
 		return effect{}
 	}
 	m.clampDocumentReader(&m.files.place, m.files.readerDocument())
-	return readerContextAnimationEffect(readerContextFiles, m.files.readerContextGeneration, animating)
+	return readerContextAnimationEffect(readerContextFiles, m.files.readerContext.generation, animating)
 }
 
 func (m *Model) setStashReaderContext(expanded bool) effect {
@@ -63,7 +67,54 @@ func (m *Model) setStashReaderContext(expanded bool) effect {
 		return effect{}
 	}
 	m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
-	return readerContextAnimationEffect(readerContextStashes, m.stashes.readerContextGeneration, animating)
+	return readerContextAnimationEffect(readerContextStashes, m.stashes.readerContext.generation, animating)
+}
+
+func (m *Model) toggleActiveReaderContextFold(identity string) effect {
+	return m.changeActiveReaderContextFold(identity, nil)
+}
+
+func (m *Model) setActiveReaderContextFold(expanded bool) effect {
+	document, ok := m.activeReaderDocument()
+	if !ok {
+		return effect{}
+	}
+	identity, ok := document.ContextFoldNear(m.activePlace().ReaderOffset)
+	if !ok {
+		return effect{}
+	}
+	return m.changeActiveReaderContextFold(identity, &expanded)
+}
+
+func (m *Model) changeActiveReaderContextFold(identity string, expanded *bool) effect {
+	var changed, animating bool
+	var owner readerContextOwner
+	switch {
+	case m.gitStashesActive():
+		if expanded == nil {
+			changed, animating = m.stashes.toggleReaderContextFold(identity)
+		} else {
+			changed, animating = m.stashes.setReaderContextFold(identity, *expanded)
+		}
+		owner = readerContextStashes
+	case m.active == workspace.Files:
+		if expanded == nil {
+			changed, animating = m.files.toggleReaderContextFold(identity)
+		} else {
+			changed, animating = m.files.setReaderContextFold(identity, *expanded)
+		}
+		owner = readerContextFiles
+	}
+	if !changed {
+		return effect{}
+	}
+	document, _ := m.activeReaderDocument()
+	m.clampDocumentReader(m.activePlace(), document)
+	generation := m.files.readerContext.generation
+	if owner == readerContextStashes {
+		generation = m.stashes.readerContext.generation
+	}
+	return readerContextAnimationEffect(owner, generation, animating)
 }
 
 func (m *Model) landReaderContextFrame(msg readerContextFrameMsg) effect {

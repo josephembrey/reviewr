@@ -79,7 +79,8 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 		Files: session.Files{
 			Place:      session.Place{Items: []string{"file:a.go"}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 8},
 			ReaderPath: "a.go", ReaderRows: []string{"old-a", "old-b"}, ContextExpanded: true,
-			ReviewFull: map[string]bool{"a.go": true}, ReviewCursor: 2, ReviewAnchor: 1,
+			ContextFoldOverrides: map[string]bool{"fold:1": false},
+			ReviewFull:           map[string]bool{"a.go": true}, ReviewCursor: 2, ReviewAnchor: 1,
 		},
 		History: session.Place{Items: []string{"commit-1"}, Focus: "reader", ReaderOffset: 5},
 		Refs: session.Refs{
@@ -89,6 +90,7 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 		Stashes: session.Stashes{
 			Place:      session.Place{Items: []string{"stash-1"}, Focus: "reader", ReaderOffset: 7},
 			ReaderRows: []string{"stash-row"}, ContextExpanded: true,
+			ContextFoldOverrides: map[string]bool{"fold:2": false},
 			ReaderPlaces: map[string]session.StashReaderPlace{
 				"stash-1": {FileIdentity: "\x00a.go", ReaderOffset: 7, ReaderColumn: 2},
 			},
@@ -214,8 +216,7 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 		generation: filesEffect.generation, oid: oid, files: []repository.ChangedFile{file},
 	})
 	if readerEffect.kind != effectLoadStashFile || model.stashes.selectedFileIdentity() != file.Identity() ||
-		model.stashes.place.ReaderOffset != 4 || !model.stashes.readerContextExpanded ||
-		model.stashes.readerContextProgress != readerContextAnimationSteps {
+		model.stashes.place.ReaderOffset != 4 || !model.stashes.readerContext.defaultExpanded {
 		t.Fatalf("restored stash state = effect %+v state %+v", readerEffect, model.stashes)
 	}
 }
