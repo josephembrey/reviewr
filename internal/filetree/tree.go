@@ -103,6 +103,15 @@ func (t Tree) FirstVisibleFile() (Row, bool) {
 	return Row{}, false
 }
 
+// CollapseAll hides every directory subtree, including directories that are
+// already hidden below another collapsed directory.
+func (t *Tree) CollapseAll() {
+	for path := range t.directories {
+		t.collapsed[path] = struct{}{}
+	}
+	t.derive()
+}
+
 // Collapse hides the selected directory's descendants.
 func (t *Tree) Collapse(identity string) bool {
 	row, ok := t.allRows[identity]

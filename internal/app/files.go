@@ -101,6 +101,9 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 
 	entries := entriesForScope(state.snapshot, scope)
 	state.tree.Rebuild(entryPaths(entries))
+	if firstLoad {
+		state.tree.CollapseAll()
+	}
 	state.reconcileCursor(oldRows)
 	state.entries = orderEntries(entries, state.tree.Files())
 	if firstLoad {

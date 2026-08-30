@@ -307,6 +307,7 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 			repository.Entry{Path: "root.go"},
 		),
 	}, workspace.AllFiles, workspace.FileReader, model.geometry.NavigatorRows.Height)
+	model.files.readerEntry = repository.Entry{Path: "src/a.go"}
 	model.files.reader = repository.File{Path: "src/a.go", Kind: repository.FileReady, Content: strings.Repeat("line\n", 20)}
 	model.files.readerLoading = false
 	model.files.place.ReaderOffset = 3
@@ -324,19 +325,24 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 		t.Fatalf("directory selection = %q files %+v", selected, model.files)
 	}
 
-	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
 	row, _ := model.files.tree.Row(filetree.DirectoryIdentity("src"))
 	if row.Expanded || len(model.files.place.Items) != 2 || model.files.readerEntry.Path != "src/a.go" || model.files.place.ReaderOffset != 3 {
-		t.Fatalf("collapsed tree = row %+v files %+v", row, model.files)
-	}
-	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
-	if len(model.files.place.Items) != 2 {
-		t.Fatal("repeated collapse changed visible rows")
+		t.Fatalf("initially collapsed tree = row %+v files %+v", row, model.files)
 	}
 	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
 	if !row.Expanded || len(model.files.place.Items) != 4 {
 		t.Fatalf("expanded tree = row %+v items %#v", row, model.files.place.Items)
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if row.Expanded || len(model.files.place.Items) != 2 {
+		t.Fatalf("collapsed tree = row %+v items %#v", row, model.files.place.Items)
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: 'l', Text: "l"}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if !row.Expanded || len(model.files.place.Items) != 4 {
+		t.Fatalf("re-expanded tree = row %+v items %#v", row, model.files.place.Items)
 	}
 
 	directoryY := model.geometry.NavigatorRows.Y + model.files.place.Selected - model.files.place.Top
