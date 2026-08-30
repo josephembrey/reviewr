@@ -204,11 +204,10 @@ var (
 	fileIconCyanColor   = lipgloss.Color("#56B6C2")
 	nixIconBlueColor    = lipgloss.Color("#7EBAE4")
 	// File-type icons above intentionally punch through the terminal palette.
-	// Folders and ignored content remain structural and terminal-owned.
-	directoryTreeColor     = lipgloss.BrightBlack
-	ignoredTreeColor       = lipgloss.BrightBlack
-	directoryTreeNameStyle = lipgloss.NewStyle().Foreground(directoryTreeColor)
-	ignoredTreeStyle       = lipgloss.NewStyle().Foreground(ignoredTreeColor).Faint(true)
+	// Ordinary folders use the terminal's default foreground; only ignored
+	// content is deliberately de-emphasized.
+	ignoredTreeColor = lipgloss.BrightBlack
+	ignoredTreeStyle = lipgloss.NewStyle().Foreground(ignoredTreeColor).Faint(true)
 )
 
 // treeRowStyleLayers is the narrow merge seam for later status and ignored metadata. Status owns
@@ -246,7 +245,8 @@ func resolveTreeRowStyles(item NavigatorRow, icon fileTreeIcon, layers treeRowSt
 		icon:   lipgloss.NewStyle().Foreground(fileTreeIconColor(icon.tone)),
 	}
 	if item.Directory {
-		styles.filename = directoryTreeNameStyle
+		styles.marker = chromeStyle
+		styles.filename = chromeStyle
 	}
 	if color, ok := treeStatusColor(layers.statusAccent); ok {
 		styles.marker = lipgloss.NewStyle().Foreground(color)
@@ -289,7 +289,7 @@ func fileTreeIconColor(tone fileIconTone) color.Color {
 	case fileIconNix:
 		return nixIconBlueColor
 	case fileIconDirectory:
-		return directoryTreeColor
+		return lipgloss.NoColor{}
 	default:
 		return dimColor
 	}

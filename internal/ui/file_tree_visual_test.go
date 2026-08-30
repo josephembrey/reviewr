@@ -122,13 +122,12 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			filenameHasColor: false,
 		},
 		{
-			name:             "directory is quiet but readable",
+			name:             "ordinary directory uses terminal foreground",
 			item:             NavigatorRow{Tree: true, Label: "src", Directory: true},
 			icon:             treeDirectoryIcon(false),
-			wantMarker:       dimColor,
-			wantIcon:         directoryTreeColor,
-			wantFilename:     directoryTreeColor,
-			filenameHasColor: true,
+			wantMarker:       lipgloss.NoColor{},
+			wantIcon:         lipgloss.NoColor{},
+			filenameHasColor: false,
 		},
 		{
 			name:             "status accents marker and filename only",
@@ -166,6 +165,17 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			styles := resolveTreeRowStyles(test.item, test.icon, test.layers)
+			if test.item.Directory && !test.layers.ignored {
+				for name, foreground := range map[string]color.Color{
+					"marker": styles.marker.GetForeground(),
+					"icon":   styles.icon.GetForeground(),
+					"name":   styles.filename.GetForeground(),
+				} {
+					if _, ok := foreground.(lipgloss.NoColor); !ok {
+						t.Fatalf("ordinary directory %s foreground = %T, want terminal default", name, foreground)
+					}
+				}
+			}
 			assertSameColor(t, styles.marker.GetForeground(), test.wantMarker)
 			assertSameColor(t, styles.icon.GetForeground(), test.wantIcon)
 			_, filenameHasColor := styles.filename.GetForeground().(lipgloss.NoColor)
