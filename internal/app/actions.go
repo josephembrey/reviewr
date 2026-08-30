@@ -41,6 +41,8 @@ const (
 	ToggleReaderFold
 	SelectNextHunk
 	SelectPreviousHunk
+	MoveReaderSelection
+	SelectReaderLine
 	FocusNavigator
 	FocusReader
 	SwapPanes
@@ -387,12 +389,12 @@ func routeBrowserNavigationKey(msg tea.KeyPressMsg, context browserRouteContext)
 		if context.focus == navigation.FocusNavigator {
 			return Action{Kind: SelectNext}, true
 		}
-		return Action{Kind: ScrollReader, Amount: 1}, true
+		return Action{Kind: MoveReaderSelection, Amount: 1}, true
 	case "k", "up":
 		if context.focus == navigation.FocusNavigator {
 			return Action{Kind: SelectPrevious}, true
 		}
-		return Action{Kind: ScrollReader, Amount: -1}, true
+		return Action{Kind: MoveReaderSelection, Amount: -1}, true
 	case "l", "right":
 		if context.active == workspace.Files && context.focus == navigation.FocusNavigator {
 			return Action{Kind: ExpandNavigatorSelection}, true
@@ -572,8 +574,12 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 			readerLineCount = m.activeReaderLineCount()
 			if mouse.Button == tea.MouseLeft {
 				if layout, ok := m.activeReaderLayout(); ok {
-					if identity, fold := layout.FoldAt(mouse.X, mouse.Y, readerOffset); fold {
-						return Action{Kind: ToggleReaderFold, Identity: identity}, true
+					if source, hit := layout.SourceAt(mouse.X, mouse.Y, readerOffset); hit {
+						row, _ := layout.Row(readerOffset + mouse.Y - layout.Geometry.Rows.Y)
+						if row.Kind == ui.ReaderFold {
+							return Action{Kind: ToggleReaderFold, Identity: row.Identity, Index: source}, true
+						}
+						return Action{Kind: SelectReaderLine, Index: source}, true
 					}
 				}
 			}

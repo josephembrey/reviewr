@@ -22,39 +22,37 @@ type filesState struct {
 	entriesByPath    map[string]repository.Entry
 	directoryIgnored map[string]bool
 
-	readerEntry           repository.Entry
-	readerMode            workspace.ReaderMode
-	reader                repository.File
-	diff                  repository.Diff
-	readerPresentation    *ui.ReaderDocument
-	readerContext         readerContextState
-	restoredReaderRows    []string
-	reviewSnapshot        review.Snapshot
-	ledger                review.Ledger
-	store                 *review.Store
-	reviewDocument        review.Document
-	reviewFile            review.Content
-	reviewFileDiff        review.Document
-	displayedComparison   *review.FileComparison
-	displayedBounds       *review.Bounds
-	requestedComparison   *review.FileComparison
-	requestedBounds       *review.Bounds
-	reviewScope           string
-	reviewWarning         string
-	comparisonWarning     string
-	reviewFull            map[string]bool
-	reviewQueue           []review.Delta
-	sessionDeltas         []review.Delta
-	reviewPersisting      bool
-	reviewLoaded          bool
-	reviewCursor          int
-	reviewSelectionAnchor int
-	reviewAssessments     map[string]review.Assessment
-	reviewProgress        map[string]reviewRollup
-	comparisonCache       map[string]comparisonCacheEntry
-	readerCache           map[readerCacheSlot]readerCacheEntry
-	readerRequestKey      readerCacheKey
-	readerLoadedKey       readerCacheKey
+	readerEntry         repository.Entry
+	readerMode          workspace.ReaderMode
+	reader              repository.File
+	diff                repository.Diff
+	readerPresentation  *ui.ReaderDocument
+	readerContext       readerContextState
+	restoredReaderRows  []string
+	reviewSnapshot      review.Snapshot
+	ledger              review.Ledger
+	store               *review.Store
+	reviewDocument      review.Document
+	reviewFile          review.Content
+	reviewFileDiff      review.Document
+	displayedComparison *review.FileComparison
+	displayedBounds     *review.Bounds
+	requestedComparison *review.FileComparison
+	requestedBounds     *review.Bounds
+	reviewScope         string
+	reviewWarning       string
+	comparisonWarning   string
+	reviewFull          map[string]bool
+	reviewQueue         []review.Delta
+	sessionDeltas       []review.Delta
+	reviewPersisting    bool
+	reviewLoaded        bool
+	reviewAssessments   map[string]review.Assessment
+	reviewProgress      map[string]reviewRollup
+	comparisonCache     map[string]comparisonCacheEntry
+	readerCache         map[readerCacheSlot]readerCacheEntry
+	readerRequestKey    readerCacheKey
+	readerLoadedKey     readerCacheKey
 
 	listGeneration    uint64
 	contentGeneration uint64
@@ -209,6 +207,7 @@ func (state *filesState) selectDelta(delta, visibleRows int, mode workspace.Read
 func (state *filesState) selectIndex(index, visibleRows int, mode workspace.ReaderMode) effect {
 	readerOffset := state.place.ReaderOffset
 	readerColumn := state.place.ReaderColumn
+	readerCursor := state.place.ReaderCursor
 	if !state.place.SelectIndex(index, visibleRows) {
 		return effect{}
 	}
@@ -217,12 +216,14 @@ func (state *filesState) selectIndex(index, visibleRows int, mode workspace.Read
 	if !ok || row.Kind == filetree.Directory {
 		state.place.ReaderOffset = readerOffset
 		state.place.ReaderColumn = readerColumn
+		state.place.ReaderCursor = readerCursor
 		return effect{}
 	}
 	entry, ok := state.entry(row.Path)
 	if !ok {
 		state.place.ReaderOffset = readerOffset
 		state.place.ReaderColumn = readerColumn
+		state.place.ReaderCursor = readerCursor
 		return effect{}
 	}
 	return state.requestReader(entry, mode)

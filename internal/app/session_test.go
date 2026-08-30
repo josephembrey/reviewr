@@ -35,7 +35,7 @@ func TestWorktreeSessionRestoresFilesByIdentityBeforeFreshLoads(t *testing.T) {
 		Files: session.Files{
 			Place: session.Place{
 				Items:    []string{filetree.DirectoryIdentity("src"), filetree.FileIdentity("root.go")},
-				Selected: 1, Top: 0, Focus: "reader", ReaderOffset: 3,
+				Selected: 1, Top: 0, Focus: "reader", ReaderOffset: 3, ReaderCursor: 5,
 			},
 			ReaderPath: "src/a.go", ReaderRows: oldRows,
 			Folds: map[string]session.Folds{
@@ -59,8 +59,8 @@ func TestWorktreeSessionRestoresFilesByIdentityBeforeFreshLoads(t *testing.T) {
 	}
 	next, _ := model.Update(model.command(pending)())
 	model = next.(Model)
-	if model.files.place.ReaderOffset != 3 || model.files.place.ReaderColumn != 0 {
-		t.Fatalf("restored reader place = %d:%d, want 3:0", model.files.place.ReaderOffset, model.files.place.ReaderColumn)
+	if model.files.place.ReaderOffset != 3 || model.files.place.ReaderColumn != 0 || model.files.place.ReaderCursor != 5 {
+		t.Fatalf("restored reader place = %+v, want offset 3 cursor 5", model.files.place)
 	}
 	if !model.layout.swapped || !model.layout.customized || model.layout.navigatorWidth != 29 ||
 		model.controls.DiffHighlight != workspace.DiffHighlightBackground {
@@ -77,10 +77,10 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 			Git: "stashes", Traversal: "first-parent", DiffHighlight: "background",
 		},
 		Files: session.Files{
-			Place:      session.Place{Items: []string{"file:a.go"}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 8},
+			Place:      session.Place{Items: []string{"file:a.go"}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 8, ReaderCursor: 6},
 			ReaderPath: "a.go", ReaderRows: []string{"old-a", "old-b"}, ContextExpanded: true,
 			ContextFoldOverrides: map[string]bool{"fold:1": false},
-			ReviewFull:           map[string]bool{"a.go": true}, ReviewCursor: 2, ReviewAnchor: 1,
+			ReviewFull:           map[string]bool{"a.go": true},
 		},
 		History: session.Place{Items: []string{"commit-1"}, Focus: "reader", ReaderOffset: 5},
 		Refs: session.Refs{
@@ -88,11 +88,11 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 			PreviewRows: []string{"commit-1", "commit-0"},
 		},
 		Stashes: session.Stashes{
-			Place:      session.Place{Items: []string{"stash-1"}, Focus: "reader", ReaderOffset: 7},
+			Place:      session.Place{Items: []string{"stash-1"}, Focus: "reader", ReaderOffset: 7, ReaderCursor: 8},
 			ReaderRows: []string{"stash-row"}, ContextExpanded: true,
 			ContextFoldOverrides: map[string]bool{"fold:2": false},
 			ReaderPlaces: map[string]session.StashReaderPlace{
-				"stash-1": {FileIdentity: "\x00a.go", ReaderOffset: 7, ReaderColumn: 2},
+				"stash-1": {FileIdentity: "\x00a.go", ReaderOffset: 7, ReaderColumn: 2, ReaderCursor: 9},
 			},
 		},
 	})
@@ -189,10 +189,10 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 		Active:   "git",
 		Controls: session.Controls{Git: "stashes"},
 		Stashes: session.Stashes{
-			Place:      session.Place{Items: []string{oid}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 2},
+			Place:      session.Place{Items: []string{oid}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
 			ReaderRows: []string{"row-0", "keep-row"}, ContextExpanded: true,
 			ReaderPlaces: map[string]session.StashReaderPlace{
-				oid: {FileIdentity: file.Identity(), ReaderOffset: 4, ReaderColumn: 2},
+				oid: {FileIdentity: file.Identity(), ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
 			},
 		},
 	})
@@ -216,7 +216,7 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 		generation: filesEffect.generation, oid: oid, files: []repository.ChangedFile{file},
 	})
 	if readerEffect.kind != effectLoadStashFile || model.stashes.selectedFileIdentity() != file.Identity() ||
-		model.stashes.place.ReaderOffset != 4 || !model.stashes.readerContext.defaultExpanded {
+		model.stashes.place.ReaderOffset != 4 || model.stashes.place.ReaderCursor != 5 || !model.stashes.readerContext.defaultExpanded {
 		t.Fatalf("restored stash state = effect %+v state %+v", readerEffect, model.stashes)
 	}
 }

@@ -122,45 +122,6 @@ func (document ReaderDocument) HunkStarts() []int {
 	return starts
 }
 
-// ContextFoldNear returns the local context control associated with row. The
-// leading gap of the current hunk wins; the following gap is the fallback for
-// the first hunk and for trailing context.
-func (document ReaderDocument) ContextFoldNear(row int) (string, bool) {
-	if len(document.Rows) == 0 {
-		return "", false
-	}
-	row = max(0, min(row, len(document.Rows)-1))
-	if document.Rows[row].Kind == ReaderFold {
-		return document.Rows[row].Identity, true
-	}
-	starts := document.HunkStarts()
-	if len(starts) == 0 {
-		return nearestContextFold(document.Rows, row)
-	}
-	hunk := 0
-	for index, start := range starts {
-		if start > row {
-			break
-		}
-		hunk = index
-	}
-	for index := starts[hunk] - 1; index >= 0; index-- {
-		if document.Rows[index].Kind == ReaderFold {
-			return document.Rows[index].Identity, true
-		}
-	}
-	end := len(document.Rows)
-	if hunk+1 < len(starts) {
-		end = starts[hunk+1]
-	}
-	for index := starts[hunk]; index < end; index++ {
-		if document.Rows[index].Kind == ReaderFold {
-			return document.Rows[index].Identity, true
-		}
-	}
-	return nearestContextFold(document.Rows, row)
-}
-
 func (document ReaderDocument) contextFoldRows(progresses map[string]int, defaultProgress, steps int) []ReaderRow {
 	if document.Kind != ReaderDiffDocument || len(document.Rows) == 0 {
 		return document.Rows
@@ -228,18 +189,6 @@ func hunkStartInSegment(rows []ReaderRow, start, end int) (int, bool) {
 		}
 	}
 	return firstCode, changed && firstCode >= 0
-}
-
-func nearestContextFold(rows []ReaderRow, row int) (string, bool) {
-	for distance := 1; distance < len(rows); distance++ {
-		if before := row - distance; before >= 0 && rows[before].Kind == ReaderFold {
-			return rows[before].Identity, true
-		}
-		if after := row + distance; after < len(rows) && rows[after].Kind == ReaderFold {
-			return rows[after].Identity, true
-		}
-	}
-	return "", false
 }
 
 func contextFoldVisibleRows(hidden, progress, steps int) int {

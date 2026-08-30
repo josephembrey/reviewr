@@ -258,6 +258,7 @@ func TestBackgroundSnapshotPreservesPlaceAndReconcilesReaderByLineIdentity(t *te
 	state.readerLoading = false
 	state.place.Focus = navigation.FocusReader
 	state.place.ReaderOffset = 1
+	state.place.ReaderCursor = 1
 	beforePlace := state.place
 
 	poll := state.poll("uncommitted")
@@ -277,7 +278,7 @@ func TestBackgroundSnapshotPreservesPlaceAndReconcilesReaderByLineIdentity(t *te
 	selected, _ := state.place.SelectedIdentity()
 	src, _ := state.tree.Row(filetree.DirectoryIdentity("src"))
 	if selected != filetree.FileIdentity("src/a.go") || !src.Expanded || state.place.Focus != navigation.FocusReader ||
-		state.place.ReaderOffset != 1 || state.readerLoading || state.reader.Content != "zero\nanchor\ntail" {
+		state.place.ReaderOffset != 1 || state.place.ReaderCursor != 1 || state.readerLoading || state.reader.Content != "zero\nanchor\ntail" {
 		t.Fatalf("background snapshot changed visible place: selected=%q src=%+v state=%+v", selected, src, state)
 	}
 	if reader.kind != effectLoadFile || reader.entry.Path != "src/a.go" {
@@ -291,7 +292,7 @@ func TestBackgroundSnapshotPreservesPlaceAndReconcilesReaderByLineIdentity(t *te
 		file:         updated,
 		presentation: fileReaderDocument(updated, reader.entry),
 	})
-	if state.place.ReaderOffset != 2 || state.readerRows()[state.place.ReaderOffset].Text != "anchor" || state.place.Focus != navigation.FocusReader {
-		t.Fatalf("reader anchor was not reconciled: offset=%d line=%q focus=%v", state.place.ReaderOffset, state.readerRows()[state.place.ReaderOffset].Text, state.place.Focus)
+	if state.place.ReaderOffset != 2 || state.place.ReaderCursor != 2 || state.readerRows()[state.place.ReaderOffset].Text != "anchor" || state.place.Focus != navigation.FocusReader {
+		t.Fatalf("reader anchor was not reconciled: place=%+v line=%q", state.place, state.readerRows()[state.place.ReaderOffset].Text)
 	}
 }

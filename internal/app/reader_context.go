@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -79,11 +80,11 @@ func (m *Model) setActiveReaderContextFold(expanded bool) effect {
 	if !ok {
 		return effect{}
 	}
-	identity, ok := document.ContextFoldNear(m.activePlace().ReaderOffset)
-	if !ok {
+	cursor := m.activePlace().ReaderCursor
+	if cursor < 0 || cursor >= len(document.Rows) || document.Rows[cursor].Kind != ui.ReaderFold {
 		return effect{}
 	}
-	return m.changeActiveReaderContextFold(identity, &expanded)
+	return m.changeActiveReaderContextFold(document.Rows[cursor].Identity, &expanded)
 }
 
 func (m *Model) changeActiveReaderContextFold(identity string, expanded *bool) effect {

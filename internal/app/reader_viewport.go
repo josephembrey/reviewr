@@ -143,6 +143,41 @@ func (m *Model) scrollActiveReader(delta int) {
 	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
 }
 
+func (m *Model) moveActiveReaderSelection(delta int) {
+	document, ok := m.activeReaderDocument()
+	if !ok || document.Kind == ui.ReaderDocumentNone {
+		m.scrollActiveReader(delta)
+		return
+	}
+	m.selectActiveReaderLine(m.activePlace().ReaderCursor + delta)
+}
+
+func (m *Model) selectActiveReaderLine(index int) {
+	document, ok := m.activeReaderDocument()
+	if !ok || len(document.Rows) == 0 {
+		return
+	}
+	place := m.activePlace()
+	place.ReaderCursor = max(0, min(index, len(document.Rows)-1))
+	m.ensureActiveReaderSelectionVisible()
+}
+
+func (m *Model) ensureActiveReaderSelectionVisible() {
+	layout, ok := m.activeReaderLayout()
+	if !ok || layout.Total == 0 || m.geometry.ReaderRows.Height <= 0 {
+		return
+	}
+	cursor := layout.VisualOffset(m.activePlace().ReaderCursor, 0)
+	top := m.activeReaderVisualOffset()
+	bottom := top + m.geometry.ReaderRows.Height
+	switch {
+	case cursor < top:
+		m.setActiveReaderVisualOffset(cursor)
+	case cursor >= bottom:
+		m.setActiveReaderVisualOffset(cursor - m.geometry.ReaderRows.Height + 1)
+	}
+}
+
 func (m *Model) selectActiveReaderHunk(delta int) {
 	document, ok := m.activeReaderDocument()
 	if !ok || delta == 0 {
@@ -152,7 +187,7 @@ func (m *Model) selectActiveReaderHunk(delta int) {
 	if len(starts) == 0 {
 		return
 	}
-	current := m.activePlace().ReaderOffset
+	current := m.activePlace().ReaderCursor
 	target := -1
 	if delta > 0 {
 		for _, start := range starts {
@@ -172,10 +207,7 @@ func (m *Model) selectActiveReaderHunk(delta int) {
 	if target < 0 {
 		return
 	}
-	place := m.activePlace()
-	place.ReaderOffset = target
-	place.ReaderColumn = 0
-	m.clampDocumentReader(place, document)
+	m.selectActiveReaderLine(target)
 }
 
 func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
@@ -183,6 +215,7 @@ func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderD
 		place.ClampReader(0, m.geometry.ReaderRows.Height)
 		return
 	}
+	place.ClampReaderSource(len(document.Rows))
 	layout := ui.CalculateReaderLayout(m.geometry.ReaderRows, document)
 	maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
 	source, column := layout.SourceOffset(min(layout.VisualOffset(place.ReaderOffset, place.ReaderColumn), maximum))

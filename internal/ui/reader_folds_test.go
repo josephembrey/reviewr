@@ -142,9 +142,6 @@ func TestReaderContextGapsExpandIndependentlyAndDefineHunks(t *testing.T) {
 	if states[identities[0]] || !states[identities[1]] || states[identities[2]] {
 		t.Fatalf("independent fold states = %#v", states)
 	}
-	if near, ok := expanded.ContextFoldNear(expanded.HunkStarts()[1]); !ok || near != identities[1] {
-		t.Fatalf("second hunk context = %q, %v; want %q", near, ok, identities[1])
-	}
 }
 
 func TestExplicitUnifiedDiffHeadersRemainHunkNavigationTargets(t *testing.T) {
@@ -216,20 +213,20 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 	}
 }
 
-func TestReaderLayoutHitFoldUsesPaintedRowsAndExcludesScrollbar(t *testing.T) {
+func TestReaderLayoutSourceTargetUsesPaintedRowsAndExcludesScrollbar(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
 		{Identity: "fold:1", Kind: ReaderFold, Text: "12 unchanged lines"},
 		{Kind: ReaderInsertion, Text: "changed", NewLine: 20},
 	}}
 	layout := CalculateReaderLayout(Rect{X: 30, Y: 4, Width: 20, Height: 1}, document)
-	if identity, ok := layout.FoldAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 0); !ok || identity != "fold:1" {
-		t.Fatalf("fold target = %q, %v; want stable row identity", identity, ok)
+	if source, ok := layout.SourceAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 0); !ok || source != 0 {
+		t.Fatalf("fold source = %d, %v; want row zero", source, ok)
 	}
-	if _, ok := layout.FoldAt(layout.Geometry.Scrollbar.X, layout.Geometry.Rows.Y, 0); ok {
-		t.Fatal("fold target claimed the scrollbar lane")
+	if _, ok := layout.SourceAt(layout.Geometry.Scrollbar.X, layout.Geometry.Rows.Y, 0); ok {
+		t.Fatal("reader target claimed the scrollbar lane")
 	}
-	if _, ok := layout.FoldAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 1); ok {
-		t.Fatal("non-fold row was clickable after scrolling")
+	if source, ok := layout.SourceAt(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 1); !ok || source != 1 {
+		t.Fatalf("scrolled source = %d, %v; want row one", source, ok)
 	}
 }

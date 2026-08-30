@@ -13,6 +13,7 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	}
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	state.reader = msg.file
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
@@ -28,9 +29,8 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
 	if msg.entry.State != repository.FileIgnored && msg.file.Kind != repository.FileUnreadable && msg.file.Kind != 0 {
 		state.rememberReader(readerCacheEntry{
 			key:  readerCacheKey{kind: effectLoadFile, entry: msg.entry},
@@ -46,6 +46,7 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	}
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	state.diff = msg.diff
 	state.reader = repository.File{}
 	state.reviewDocument = review.Document{}
@@ -61,9 +62,8 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
 	if msg.diff.Kind == repository.DiffReady || msg.diff.Kind == repository.DiffTooLarge {
 		state.rememberReader(readerCacheEntry{
 			key:  readerCacheKey{kind: effectLoadDiff, entry: msg.entry},
@@ -148,6 +148,7 @@ func (state *filesState) requestMode(mode workspace.ReaderMode) effect {
 	}
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0
+	state.place.ReaderCursor = 0
 	return state.requestReader(state.readerEntry, mode)
 }
 
@@ -171,6 +172,7 @@ func (state *filesState) clearReader() {
 	state.readerLoading = false
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0
+	state.place.ReaderCursor = 0
 }
 
 func (state filesState) readerDocument() ui.ReaderDocument {
@@ -190,9 +192,10 @@ func (state filesState) rawReaderDocument() ui.ReaderDocument {
 func (state *filesState) setReaderContextExpanded(expanded bool) (bool, bool) {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	changed, animating := state.readerContext.setAll(state.rawReaderDocument(), expanded)
 	if changed {
-		state.reconcileReaderContextPlace(oldRows, oldOffset)
+		state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	}
 	return changed, animating
 }
@@ -208,6 +211,7 @@ func (state *filesState) setReaderContextFold(identity string, expanded bool) (b
 func (state *filesState) changeReaderContextFold(identity string, expanded *bool) (bool, bool) {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	var changed, animating bool
 	if expanded == nil {
 		changed, animating = state.readerContext.toggleFold(state.rawReaderDocument(), identity)
@@ -215,7 +219,7 @@ func (state *filesState) changeReaderContextFold(identity string, expanded *bool
 		changed, animating = state.readerContext.setFold(state.rawReaderDocument(), identity, *expanded)
 	}
 	if changed {
-		state.reconcileReaderContextPlace(oldRows, oldOffset)
+		state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	}
 	return changed, animating
 }
@@ -226,19 +230,22 @@ func (state *filesState) advanceReaderContext(generation uint64) (bool, bool) {
 	}
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	if !state.readerContext.advance(state.rawReaderDocument()) {
 		return false, false
 	}
-	state.reconcileReaderContextPlace(oldRows, oldOffset)
+	state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	return true, state.readerContext.animating(state.rawReaderDocument())
 }
 
-func (state *filesState) reconcileReaderContextPlace(oldRows []string, oldOffset int) {
-	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
+func (state *filesState) reconcileReaderPlace(oldRows []string, oldOffset, oldCursor int) {
+	current := readerRowIdentities(state.readerRows())
+	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, current)
 	if state.place.ReaderOffset != oldOffset {
 		state.place.ReaderColumn = 0
 	}
-	state.place.ClampReaderSource(len(state.readerRows()))
+	state.place.ReaderCursor = reconcileLogicalLine(oldRows, oldCursor, current)
+	state.place.ClampReaderSource(len(current))
 }
 
 func (state *filesState) resetReaderContext() {

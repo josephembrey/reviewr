@@ -10,6 +10,7 @@ type stashReaderPlace struct {
 	fileIdentity string
 	readerOffset int
 	readerColumn int
+	readerCursor int
 }
 
 // stashState owns Stashes independently from Log and Files. Selectors are
@@ -115,6 +116,7 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg) (stashState, effect) 
 		state.clearReader()
 		state.place.ReaderOffset = 0
 		state.place.ReaderColumn = 0
+		state.place.ReaderCursor = 0
 		return state, effect{}
 	}
 	identity := state.reconcileFilePlace(selectedOID, oldFiles, oldIdentity)
@@ -140,9 +142,11 @@ func (state *stashState) reconcileFilePlace(selectedOID string, oldFiles []repos
 	if saved.fileIdentity == identity {
 		state.place.ReaderOffset = saved.readerOffset
 		state.place.ReaderColumn = saved.readerColumn
+		state.place.ReaderCursor = saved.readerCursor
 	} else if oldIdentity != identity {
 		state.place.ReaderOffset = 0
 		state.place.ReaderColumn = 0
+		state.place.ReaderCursor = 0
 	}
 	return identity
 }
@@ -171,10 +175,12 @@ func (state *stashState) selectFileDelta(delta, visibleRows int) effect {
 	state.fileSelected = next
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0
+	state.place.ReaderCursor = 0
 	if oid, ok := state.place.SelectedIdentity(); ok {
 		if saved := state.readerPlaces[oid]; saved.fileIdentity == state.selectedFileIdentity() {
 			state.place.ReaderOffset = saved.readerOffset
 			state.place.ReaderColumn = saved.readerColumn
+			state.place.ReaderCursor = saved.readerCursor
 		}
 	}
 	return state.requestSelectedFile()
@@ -195,6 +201,7 @@ func (state *stashState) requestSelectedFiles() effect {
 		state.clearReader()
 		state.place.ReaderOffset = 0
 		state.place.ReaderColumn = 0
+		state.place.ReaderCursor = 0
 	}
 	state.filesOID = stash.OID
 	return effect{kind: effectLoadStashFiles, generation: state.filesGeneration, identity: stash.OID, stashSource: stash.Source}
@@ -223,6 +230,7 @@ func (state *stashState) clearFiles() {
 	state.clearReader()
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0
+	state.place.ReaderCursor = 0
 }
 
 func (state stashState) selectedStash() (repository.Stash, bool) {

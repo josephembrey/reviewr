@@ -61,13 +61,9 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	if !state.acceptsReviewDocument(msg) {
 		return state
 	}
-	oldIdentities := state.reviewDocument.LineIdentities()
-	if len(oldIdentities) == 0 && len(state.restoredReaderRows) != 0 {
-		oldIdentities = append([]string(nil), state.restoredReaderRows...)
-	}
+	oldRows := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
-	oldCursor := state.reviewCursor
-	oldAnchor := state.reviewSelectionAnchor
+	oldCursor := state.place.ReaderCursor
 	state.reviewDocument = msg.document
 	comparison, bounds := msg.comparison, msg.bounds
 	state.displayedComparison = &comparison
@@ -77,10 +73,6 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	state.reviewFile = review.Content{}
 	state.reviewFileDiff = review.Document{}
 	state.readerLoading = false
-	newIdentities := state.reviewDocument.LineIdentities()
-	state.place.ReaderOffset = reconcileLogicalLine(oldIdentities, oldOffset, newIdentities)
-	state.reviewCursor = reconcileLogicalLine(oldIdentities, oldCursor, newIdentities)
-	state.reviewSelectionAnchor = reconcileLogicalLine(oldIdentities, oldAnchor, newIdentities)
 	presentation := msg.presentation
 	if presentation.Kind == ui.ReaderDocumentNone {
 		presentation = state.deriveReaderDocument()
@@ -88,8 +80,8 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
+	state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
 	if !msg.document.Exact && msg.document.Reason != "" {
 		state.comparisonWarning = msg.document.Reason
 	}
@@ -118,6 +110,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	}
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	state.reviewFile = msg.content
 	state.reviewDocument = review.Document{}
 	state.reviewFileDiff = msg.document
@@ -135,9 +128,8 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"
 	}

@@ -63,6 +63,31 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 	}
 }
 
+func TestReaderCursorSelectionOwnsTheWholeVisualLine(t *testing.T) {
+	t.Parallel()
+	geometry := CalculateReaderGeometry(Rect{Width: 30, Height: 2}, ReaderDocument{
+		Kind: ReaderDiffDocument,
+		Rows: []ReaderRow{{Kind: ReaderInsertion, Text: "changed", NewLine: 12}},
+	}, false)
+	row := ReaderRow{
+		Kind: ReaderInsertion, Text: "changed", NewLine: 12,
+		Spans: []TextSpan{{Text: "changed", Tone: ToneAccent}},
+	}
+	base := renderReaderRowPart(row, geometry, workspace.DiffHighlightBackground, false)
+	selected := renderReaderRowPartSelected(row, geometry, workspace.DiffHighlightBackground, false, true, true)
+	want := selectionStyle(true).Render(ansi.Strip(fit(base, geometry.Content.Width)))
+	if selected != want || lipgloss.Width(selected) != geometry.Content.Width {
+		t.Fatalf("selected reader row = %q, want %q", selected, want)
+	}
+
+	fold := ReaderRow{Kind: ReaderFold, Text: "12 unchanged lines"}
+	selectedFold := renderReaderRowPartSelected(fold, geometry, workspace.DiffHighlightSidebar, false, true, true)
+	wantFold := selectionStyle(true).Render(ansi.Strip(renderReaderFoldPayload(fold.Text, geometry.Content.Width, false)))
+	if selectedFold != wantFold {
+		t.Fatalf("selected fold = %q, want %q", selectedFold, wantFold)
+	}
+}
+
 func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{

@@ -94,6 +94,7 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 		ReaderEmpty:           readerEmpty,
 		ReaderOffset:          readerOffset,
 		ReaderColumn:          readerColumn,
+		ReaderCursor:          state.place.ReaderCursor,
 		FooterWarning:         footerWarning,
 	}
 }

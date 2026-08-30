@@ -252,6 +252,37 @@ func TestReaderViewportLayoutSurvivesScrollAndInvalidatesOnResize(t *testing.T) 
 	}
 }
 
+func TestReaderSelectionMovesByLogicalLineAndWheelScrollStaysIndependent(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 12})
+	model.active = workspace.Files
+	model.files.readerEntry = repository.Entry{Path: "large.go"}
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
+	for line := 1; line <= 80; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("line:%d", line), Kind: ui.ReaderFile,
+			Text: fmt.Sprintf("line %d", line), NewLine: uint64(line),
+		})
+	}
+	model.files.readerPresentation = &document
+	model.files.place.Focus = navigation.FocusReader
+
+	model.apply(Action{Kind: MoveReaderSelection, Amount: 30})
+	if model.files.place.ReaderCursor != 30 || model.activeReaderVisualOffset() == 0 {
+		t.Fatalf("selection did not move into view: place=%+v", model.files.place)
+	}
+	top := model.activeReaderVisualOffset()
+	model.apply(Action{Kind: ScrollReader, Amount: 3})
+	if model.files.place.ReaderCursor != 30 || model.activeReaderVisualOffset() != top+3 {
+		t.Fatalf("wheel-style scroll moved selection or wrong viewport: place=%+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+	}
+	model.apply(Action{Kind: MoveReaderSelection, Amount: -1})
+	if model.files.place.ReaderCursor != 29 {
+		t.Fatalf("reverse selection = %d, want 29", model.files.place.ReaderCursor)
+	}
+}
+
 func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
@@ -268,8 +299,14 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	if !document.ContextFoldable() || len(compact.Rows) >= len(document.Rows) {
 		t.Fatalf("initial diff is not compact: source=%d compact=%d", len(document.Rows), len(compact.Rows))
 	}
-	model.files.place.ReaderOffset = readerIdentityIndex(compact.Rows, "removed")
+	removed := readerIdentityIndex(compact.Rows, "removed")
+	model.files.place.ReaderOffset = removed
+	model.files.place.ReaderCursor = removed
 	firstFold := compact.Rows[0].Identity
+	if pending := model.apply(Action{Kind: ExpandReaderContext}); pending.kind != effectNone || model.files.readerContext.target(firstFold) {
+		t.Fatalf("non-fold selection expanded context: effect=%+v target=%v", pending, model.files.readerContext.target(firstFold))
+	}
+	model.files.place.ReaderCursor = 0
 	pending := model.apply(Action{Kind: ExpandReaderContext})
 	if model.files.readerContext.target(firstFold) != true || model.files.readerContext.progress(firstFold) != 1 || pending.kind != effectAnimateReaderContext ||
 		model.files.readerRows()[model.files.place.ReaderOffset].Identity != "removed" {
@@ -281,12 +318,19 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	}
 
 	model.files.place.ReaderOffset = readerIdentityIndex(model.files.readerRows(), "context:4")
+	model.files.place.ReaderCursor = model.files.place.ReaderOffset
+	if pending = model.apply(Action{Kind: CollapseReaderContext}); pending.kind != effectNone {
+		t.Fatalf("context line selection collapsed a fold: %+v", pending)
+	}
+	model.files.place.ReaderCursor = readerIdentityIndex(model.files.readerRows(), firstFold)
 	pending = model.apply(Action{Kind: CollapseReaderContext})
 	finishReaderContextAnimation(&model, pending)
-	if model.files.readerContext.target(firstFold) || model.files.readerRows()[model.files.place.ReaderOffset].Identity != "context:8" {
-		t.Fatalf("collapse did not choose nearest surviving identity: target=%v offset=%d row=%+v", model.files.readerContext.target(firstFold), model.files.place.ReaderOffset, model.files.readerRows()[model.files.place.ReaderOffset])
+	if model.files.readerContext.target(firstFold) || model.files.readerRows()[model.files.place.ReaderOffset].Identity != "context:8" ||
+		model.files.readerRows()[model.files.place.ReaderCursor].Identity != firstFold {
+		t.Fatalf("collapse lost viewport or cursor identity: target=%v place=%+v", model.files.readerContext.target(firstFold), model.files.place)
 	}
 
+	model.files.place.ReaderCursor = readerIdentityIndex(model.files.readerRows(), firstFold)
 	pending = model.apply(Action{Kind: ExpandReaderContext})
 	finishReaderContextAnimation(&model, pending)
 	model.files.contentGeneration = 9
@@ -321,8 +365,9 @@ func TestReaderFoldClickExpandsAndRefoldsPersistentControl(t *testing.T) {
 		next, command := model.Update(click)
 		model = next.(Model)
 		firstFold := model.files.readerDocument().Rows[0].Identity
-		if command == nil || model.files.readerContext.target(firstFold) != test.expanded || model.files.place.Focus != navigation.FocusReader {
-			t.Fatalf("%s click = expanded %v focus %v command=%v", test.label, model.files.readerContext.target(firstFold), model.files.place.Focus, command != nil)
+		if command == nil || model.files.readerContext.target(firstFold) != test.expanded || model.files.place.Focus != navigation.FocusReader ||
+			model.files.readerRows()[model.files.place.ReaderCursor].Identity != firstFold {
+			t.Fatalf("%s click = expanded %v focus %v cursor %d command=%v", test.label, model.files.readerContext.target(firstFold), model.files.place.Focus, model.files.place.ReaderCursor, command != nil)
 		}
 		finishReaderContextAnimation(&model, readerContextAnimationEffect(readerContextFiles, model.files.readerContext.generation, true))
 		if row := model.files.readerRows()[0]; row.Kind != ui.ReaderFold || row.FoldExpanded != test.expanded {
@@ -396,18 +441,41 @@ func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	if len(starts) != 2 || starts[0] <= 0 || starts[1] <= starts[0] {
 		t.Fatalf("hunk starts = %#v, want two ordered compact groups", starts)
 	}
-	model.files.place.ReaderOffset = 0
+	model.files.place.ReaderCursor = 0
 	model.apply(Action{Kind: SelectNextHunk})
-	if model.files.place.ReaderOffset != starts[0] || model.files.place.Focus != navigation.FocusNavigator {
-		t.Fatalf("first hunk = offset %d focus %v, want %d without focus change", model.files.place.ReaderOffset, model.files.place.Focus, starts[0])
+	if model.files.place.ReaderCursor != starts[0] || model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("first hunk = cursor %d focus %v, want %d without focus change", model.files.place.ReaderCursor, model.files.place.Focus, starts[0])
 	}
 	model.apply(Action{Kind: SelectNextHunk})
-	if model.files.place.ReaderOffset != starts[1] {
-		t.Fatalf("second hunk offset = %d, want %d", model.files.place.ReaderOffset, starts[1])
+	if model.files.place.ReaderCursor != starts[1] {
+		t.Fatalf("second hunk cursor = %d, want %d", model.files.place.ReaderCursor, starts[1])
 	}
 	model.apply(Action{Kind: SelectPreviousHunk})
-	if model.files.place.ReaderOffset != starts[0] {
-		t.Fatalf("previous hunk offset = %d, want %d", model.files.place.ReaderOffset, starts[0])
+	if model.files.place.ReaderCursor != starts[0] {
+		t.Fatalf("previous hunk cursor = %d, want %d", model.files.place.ReaderCursor, starts[0])
+	}
+}
+
+func TestReaderClickSelectsLogicalLine(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 16})
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
+	for line := 1; line <= 20; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{Identity: fmt.Sprintf("line:%d", line), Kind: ui.ReaderFile, Text: "code", NewLine: uint64(line)})
+	}
+	model.files.readerPresentation = &document
+
+	click := tea.MouseClickMsg(tea.Mouse{
+		X:      model.geometry.ReaderRows.X + 2,
+		Y:      model.geometry.ReaderRows.Y + 4,
+		Button: tea.MouseLeft,
+	})
+	next, _ := model.Update(click)
+	model = next.(Model)
+	if model.files.place.Focus != navigation.FocusReader || model.files.place.ReaderCursor != 4 {
+		t.Fatalf("reader click place = %+v, want focused cursor 4", model.files.place)
 	}
 }
 

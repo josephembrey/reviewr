@@ -57,6 +57,7 @@ type Place struct {
 	Focus        string   `json:"focus,omitempty"`
 	ReaderOffset int      `json:"reader_offset,omitempty"`
 	ReaderColumn int      `json:"reader_column,omitempty"`
+	ReaderCursor int      `json:"reader_cursor,omitempty"`
 }
 
 type Folds struct {
@@ -72,8 +73,6 @@ type Files struct {
 	ContextFoldOverrides map[string]bool  `json:"context_fold_overrides,omitempty"`
 	Folds                map[string]Folds `json:"folds,omitempty"`
 	ReviewFull           map[string]bool  `json:"review_full,omitempty"`
-	ReviewCursor         int              `json:"review_cursor,omitempty"`
-	ReviewAnchor         int              `json:"review_anchor,omitempty"`
 }
 
 type Refs struct {
@@ -85,6 +84,7 @@ type StashReaderPlace struct {
 	FileIdentity string `json:"file_identity,omitempty"`
 	ReaderOffset int    `json:"reader_offset,omitempty"`
 	ReaderColumn int    `json:"reader_column,omitempty"`
+	ReaderCursor int    `json:"reader_cursor,omitempty"`
 }
 
 type Stashes struct {

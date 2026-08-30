@@ -48,6 +48,8 @@ func (m *Model) apply(action Action) effect {
 		ToggleReaderFold,
 		SelectNextHunk,
 		SelectPreviousHunk,
+		MoveReaderSelection,
+		SelectReaderLine,
 		ScrollReader:
 		return m.applyReaderAction(action)
 	default:
@@ -275,11 +277,17 @@ func (m *Model) applyReaderAction(action Action) effect {
 		}
 	case ToggleReaderFold:
 		m.activePlace().Focus = navigation.FocusReader
+		m.selectActiveReaderLine(action.Index)
 		return m.toggleActiveReaderContextFold(action.Identity)
 	case SelectNextHunk:
 		m.selectActiveReaderHunk(1)
 	case SelectPreviousHunk:
 		m.selectActiveReaderHunk(-1)
+	case MoveReaderSelection:
+		m.moveActiveReaderSelection(action.Amount)
+	case SelectReaderLine:
+		m.activePlace().Focus = navigation.FocusReader
+		m.selectActiveReaderLine(action.Index)
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
 	}

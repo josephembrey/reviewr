@@ -45,9 +45,7 @@ func (m Model) sessionState() session.State {
 		fileFolds[files.treeScope.Label()] = session.Folds{Known: known, Collapsed: collapsed}
 	}
 	readerRows := files.restoredReaderRows
-	if len(files.reviewDocument.Lines) != 0 {
-		readerRows = files.reviewDocument.LineIdentities()
-	} else if rows := readerRowIdentities(files.readerRows()); len(rows) != 0 {
+	if rows := readerRowIdentities(files.readerRows()); len(rows) != 0 {
 		readerRows = rows
 	}
 
@@ -60,6 +58,7 @@ func (m Model) sessionState() session.State {
 			FileIdentity: place.fileIdentity,
 			ReaderOffset: place.readerOffset,
 			ReaderColumn: place.readerColumn,
+			ReaderCursor: place.readerCursor,
 		}
 	}
 	stashRows := stashes.restoredReaderRows
@@ -90,7 +89,6 @@ func (m Model) sessionState() session.State {
 			ContextExpanded:      files.readerContext.defaultExpanded,
 			ContextFoldOverrides: files.readerContext.overrides(),
 			Folds:                fileFolds, ReviewFull: cloneBools(files.reviewFull),
-			ReviewCursor: files.reviewCursor, ReviewAnchor: files.reviewSelectionAnchor,
 		},
 		History: placeSession(m.history.place),
 		Refs:    session.Refs{Place: placeSession(m.refs.place), PreviewRows: refRows},
@@ -127,8 +125,6 @@ func (m *Model) restoreSession(state session.State) {
 	m.files.readerContext.restore(state.Files.ContextExpanded, state.Files.ContextFoldOverrides)
 	m.files.restoredReaderRows = append([]string(nil), state.Files.ReaderRows...)
 	m.files.reviewFull = cloneBools(state.Files.ReviewFull)
-	m.files.reviewCursor = max(0, state.Files.ReviewCursor)
-	m.files.reviewSelectionAnchor = max(0, state.Files.ReviewAnchor)
 	for label, folds := range state.Files.Folds {
 		m.files.folds[parseFileSet(label)] = filetree.NewFoldState(folds.Known, folds.Collapsed)
 	}
@@ -145,6 +141,7 @@ func (m *Model) restoreSession(state session.State) {
 			fileIdentity: place.FileIdentity,
 			readerOffset: max(0, place.ReaderOffset),
 			readerColumn: max(0, place.ReaderColumn),
+			readerCursor: max(0, place.ReaderCursor),
 		}
 	}
 	if oid, ok := m.stashes.place.SelectedIdentity(); ok {
@@ -182,7 +179,7 @@ func placeSession(place navigation.State) session.Place {
 	return session.Place{
 		Items: append([]string(nil), place.Items...), Selected: place.Selected,
 		Top: place.Top, Focus: focus, ReaderOffset: place.ReaderOffset,
-		ReaderColumn: place.ReaderColumn,
+		ReaderColumn: place.ReaderColumn, ReaderCursor: place.ReaderCursor,
 	}
 }
 
@@ -194,7 +191,7 @@ func placeFromSession(place session.Place) navigation.State {
 	return navigation.State{
 		Items: append([]string(nil), place.Items...), Selected: max(0, place.Selected),
 		Top: max(0, place.Top), Focus: focus, ReaderOffset: max(0, place.ReaderOffset),
-		ReaderColumn: max(0, place.ReaderColumn),
+		ReaderColumn: max(0, place.ReaderColumn), ReaderCursor: max(0, place.ReaderCursor),
 	}
 }
 

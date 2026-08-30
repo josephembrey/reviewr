@@ -17,6 +17,7 @@ func (state stashState) landReader(msg stashFileLoadedMsg) stashState {
 		oldLines = append([]string(nil), state.restoredReaderRows...)
 	}
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	state.reader = msg.document
 	state.readerLoading = false
 	presentation := msg.presentation
@@ -25,9 +26,8 @@ func (state stashState) landReader(msg stashFileLoadedMsg) stashState {
 	}
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
 	state.saveReaderPlace()
 	return state
 }
@@ -85,7 +85,7 @@ func (state *stashState) saveReaderPlace() {
 	}
 	state.readerPlaces[oid] = stashReaderPlace{
 		fileIdentity: identity, readerOffset: state.place.ReaderOffset,
-		readerColumn: state.place.ReaderColumn,
+		readerColumn: state.place.ReaderColumn, readerCursor: state.place.ReaderCursor,
 	}
 }
 
@@ -114,9 +114,10 @@ func (state stashState) rawReaderDocument() ui.ReaderDocument {
 func (state *stashState) setReaderContextExpanded(expanded bool) (bool, bool) {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	changed, animating := state.readerContext.setAll(state.rawReaderDocument(), expanded)
 	if changed {
-		state.reconcileReaderContextPlace(oldRows, oldOffset)
+		state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	}
 	return changed, animating
 }
@@ -132,6 +133,7 @@ func (state *stashState) setReaderContextFold(identity string, expanded bool) (b
 func (state *stashState) changeReaderContextFold(identity string, expanded *bool) (bool, bool) {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	var changed, animating bool
 	if expanded == nil {
 		changed, animating = state.readerContext.toggleFold(state.rawReaderDocument(), identity)
@@ -139,7 +141,7 @@ func (state *stashState) changeReaderContextFold(identity string, expanded *bool
 		changed, animating = state.readerContext.setFold(state.rawReaderDocument(), identity, *expanded)
 	}
 	if changed {
-		state.reconcileReaderContextPlace(oldRows, oldOffset)
+		state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	}
 	return changed, animating
 }
@@ -150,19 +152,22 @@ func (state *stashState) advanceReaderContext(generation uint64) (bool, bool) {
 	}
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
+	oldCursor := state.place.ReaderCursor
 	if !state.readerContext.advance(state.rawReaderDocument()) {
 		return false, false
 	}
-	state.reconcileReaderContextPlace(oldRows, oldOffset)
+	state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	return true, state.readerContext.animating(state.rawReaderDocument())
 }
 
-func (state *stashState) reconcileReaderContextPlace(oldRows []string, oldOffset int) {
-	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
+func (state *stashState) reconcileReaderPlace(oldRows []string, oldOffset, oldCursor int) {
+	current := readerRowIdentities(state.readerRows())
+	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, current)
 	if state.place.ReaderOffset != oldOffset {
 		state.place.ReaderColumn = 0
 	}
-	state.place.ClampReaderSource(len(state.readerRows()))
+	state.place.ReaderCursor = reconcileLogicalLine(oldRows, oldCursor, current)
+	state.place.ClampReaderSource(len(current))
 	state.saveReaderPlace()
 }
 

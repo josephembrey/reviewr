@@ -927,7 +927,7 @@ func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 
 	model.geometry = ui.Calculate(80, 20)
 	model.files.tree.Rebuild([]string{"a", "b", "c"})
-	model.files.place = navigation.State{Items: model.files.tree.Identities(), Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
+	model.files.place = navigation.State{Items: model.files.tree.Identities(), Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 3, ReaderCursor: 4}
 	model.files.loaded = true
 	model.files.snapshot = snapshotOf(repository.Entry{Path: "a"}, repository.Entry{Path: "b"}, repository.Entry{Path: "c"})
 	model.files.entries = model.files.snapshot.All()
@@ -942,7 +942,7 @@ func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 	if path != filetree.FileIdentity("c") || pending.entry.Path != "c" || model.files.readerEntry.Path != "c" || model.files.reader.Kind != 0 || !model.files.readerLoading {
 		t.Fatalf("removal reconciliation = path %q, effect %+v, files %+v", path, pending, model.files)
 	}
-	if model.files.place.ReaderOffset != 3 || model.files.place.Focus != navigation.FocusReader {
+	if model.files.place.ReaderOffset != 3 || model.files.place.ReaderCursor != 4 || model.files.place.Focus != navigation.FocusReader {
 		t.Fatalf("world result reset place state: %+v", model.files.place)
 	}
 }

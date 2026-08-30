@@ -17,7 +17,7 @@ func TestReconcileSelectionByIdentity(t *testing.T) {
 	}{
 		{
 			name:         "identity survives reorder",
-			state:        State{Items: []string{"a", "b", "c"}, Selected: 1, Top: 1, ReaderOffset: 7},
+			state:        State{Items: []string{"a", "b", "c"}, Selected: 1, Top: 1, ReaderOffset: 7, ReaderCursor: 6},
 			items:        []string{"c", "a", "b"},
 			wantIdentity: "b",
 			wantIndex:    2,
@@ -63,6 +63,9 @@ func TestReconcileSelectionByIdentity(t *testing.T) {
 			if state.ReaderOffset != test.state.ReaderOffset {
 				t.Fatalf("reader offset reset from %d to %d", test.state.ReaderOffset, state.ReaderOffset)
 			}
+			if state.ReaderCursor != test.state.ReaderCursor {
+				t.Fatalf("reader cursor reset from %d to %d", test.state.ReaderCursor, state.ReaderCursor)
+			}
 		})
 	}
 }
@@ -81,11 +84,11 @@ func TestReconcileEmpty(t *testing.T) {
 
 func TestUserSelectionAndScroll(t *testing.T) {
 	t.Parallel()
-	state := State{Items: []string{"a", "b", "c", "d"}, ReaderOffset: 5}
+	state := State{Items: []string{"a", "b", "c", "d"}, ReaderOffset: 5, ReaderCursor: 9}
 	if !state.SelectIndex(3, 2) {
 		t.Fatal("selection did not change")
 	}
-	if state.Selected != 3 || state.Top != 2 || state.ReaderOffset != 0 {
+	if state.Selected != 3 || state.Top != 2 || state.ReaderOffset != 0 || state.ReaderCursor != 0 {
 		t.Fatalf("selection state = %+v", state)
 	}
 	if state.SelectDelta(1, 2) {
@@ -104,10 +107,10 @@ func TestUserSelectionAndScroll(t *testing.T) {
 
 func TestViewportReconciliationPreservesValidPlace(t *testing.T) {
 	t.Parallel()
-	state := State{Items: []string{"a", "b", "c", "d", "e"}, Selected: 3, Top: 2, ReaderOffset: 4}
+	state := State{Items: []string{"a", "b", "c", "d", "e"}, Selected: 3, Top: 2, ReaderOffset: 4, ReaderCursor: 11}
 	state.EnsureSelectionVisible(3)
 	state.ClampReader(20, 8)
-	want := State{Items: state.Items, Selected: 3, Top: 2, ReaderOffset: 4}
+	want := State{Items: state.Items, Selected: 3, Top: 2, ReaderOffset: 4, ReaderCursor: 11}
 	if !reflect.DeepEqual(state, want) {
 		t.Fatalf("valid place changed on resize: got %+v, want %+v", state, want)
 	}
@@ -119,6 +122,19 @@ func TestViewportReconciliationPreservesValidPlace(t *testing.T) {
 	state.ClampReader(6, 5)
 	if state.Selected != 3 || state.Top != 0 || state.ReaderOffset != 1 {
 		t.Fatalf("clamped place = %+v", state)
+	}
+}
+
+func TestRichReaderClampKeepsCursorAndViewportWithinLogicalRows(t *testing.T) {
+	t.Parallel()
+	state := State{ReaderOffset: 20, ReaderColumn: 7, ReaderCursor: 30}
+	state.ClampReaderSource(12)
+	if state.ReaderOffset != 11 || state.ReaderColumn != 7 || state.ReaderCursor != 11 {
+		t.Fatalf("clamped rich reader place = %+v", state)
+	}
+	state.ClampReaderSource(0)
+	if state.ReaderOffset != 0 || state.ReaderColumn != 0 || state.ReaderCursor != 0 {
+		t.Fatalf("empty rich reader place = %+v", state)
 	}
 }
 

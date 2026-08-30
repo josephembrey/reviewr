@@ -492,8 +492,7 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 2, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: first})
 	keepIdentity := first.Lines[0].Identity
 	state.place.ReaderOffset = 0
-	state.reviewCursor = 0
-	state.reviewSelectionAnchor = 0
+	state.place.ReaderCursor = 0
 	state.place.Focus = navigation.FocusReader
 	state.reviewFull["src/a.go"] = true
 	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
@@ -502,8 +501,9 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	state.contentGeneration = 3
 	second := reviewdomain.BuildDocument(bounds, content(comparison.Old, "prefix\nkeep\nold\n"), content(comparison.New, "prefix\nkeep\nnew\n"))
 	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 3, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: second})
-	if second.Lines[state.reviewCursor].Identity != keepIdentity || second.Lines[state.reviewSelectionAnchor].Identity != keepIdentity || second.Lines[state.place.ReaderOffset].Identity != keepIdentity {
-		t.Fatalf("logical place did not follow identity: offset=%d cursor=%d anchor=%d", state.place.ReaderOffset, state.reviewCursor, state.reviewSelectionAnchor)
+	rows := state.readerRows()
+	if rows[state.place.ReaderCursor].Identity != keepIdentity || rows[state.place.ReaderOffset].Identity != keepIdentity {
+		t.Fatalf("logical place did not follow identity: offset=%d cursor=%d", state.place.ReaderOffset, state.place.ReaderCursor)
 	}
 	row, _ := state.tree.Row(filetree.DirectoryIdentity("src"))
 	if state.place.Focus != navigation.FocusReader || row.Expanded || !state.reviewFull["src/a.go"] {

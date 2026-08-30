@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
@@ -121,8 +122,11 @@ func renderReaderContentLine(index, width int, model *Model, content []Line, lay
 		return renderCommitRow(model.ReaderCommitRows[index], columns, width, false, false, now)
 	}
 	if model.ReaderDocument.Kind != ReaderDocumentNone {
-		wrapped, continuation := layout.Row(index)
-		return renderReaderRowPart(wrapped, geometry, highlight, continuation)
+		wrapped, source, continuation := layout.RowWithSource(index)
+		return renderReaderRowPartSelected(
+			wrapped, geometry, highlight, continuation,
+			source == model.ReaderCursor, model.Focus == navigation.FocusReader,
+		)
 	}
 	return fit(renderLine(content[index]), width)
 }
@@ -139,21 +143,32 @@ func renderReaderRow(row ReaderRow, geometry ReaderGeometry, highlight workspace
 }
 
 func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight workspace.DiffHighlight, continuation bool) string {
+	return renderReaderRowPartSelected(row, geometry, highlight, continuation, false, false)
+}
+
+func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlight workspace.DiffHighlight, continuation, selected, focused bool) string {
 	width := geometry.Content.Width
 	if width <= 0 {
 		return ""
 	}
+	var line string
 	if row.Kind == ReaderFold {
-		return renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
+		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
+	} else {
+		bar, barStyle := readerChangeBar(row, continuation)
+		number := readerLineNumber(row, geometry.Digits, continuation)
+		changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
+		if changed && highlight == workspace.DiffHighlightBackground {
+			line = renderReaderBackgroundRow(row, bar, number, width)
+		} else {
+			line = barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
+			line = fit(line, width)
+		}
 	}
-	bar, barStyle := readerChangeBar(row, continuation)
-	number := readerLineNumber(row, geometry.Digits, continuation)
-	changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
-	if changed && highlight == workspace.DiffHighlightBackground {
-		return renderReaderBackgroundRow(row, bar, number, width)
+	if !selected {
+		return line
 	}
-	line := barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
-	return fit(line, width)
+	return selectionStyle(focused).Render(ansi.Strip(fit(line, width)))
 }
 
 func readerChangeBar(row ReaderRow, continuation bool) (string, lipgloss.Style) {

@@ -24,7 +24,7 @@ func TestWorktreeSessionRoundTripsNewestGenerationPrivately(t *testing.T) {
 		Controls: Controls{Git: "stashes", DiffHighlight: "background"},
 		Layout:   Layout{NavigatorWidth: 37, Customized: true, Swapped: true},
 		Files: Files{
-			Place:      Place{Items: []string{"file:a.go", "file:b.go"}, Selected: 1, Focus: "reader", ReaderOffset: 12},
+			Place:      Place{Items: []string{"file:a.go", "file:b.go"}, Selected: 1, Focus: "reader", ReaderOffset: 12, ReaderCursor: 17},
 			ReaderPath: "b.go", Folds: map[string]Folds{"all": {Known: []string{"src"}, Collapsed: []string{"src"}}},
 		},
 	}

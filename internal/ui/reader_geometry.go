@@ -105,28 +105,34 @@ func (layout ReaderLayout) SourceOffset(visual int) (source, column int) {
 // Row returns one wrapped visual segment and whether it continues its source
 // row. Styling is sliced semantically so syntax colors survive wrapping.
 func (layout ReaderLayout) Row(visual int) (ReaderRow, bool) {
+	row, _, continuation := layout.RowWithSource(visual)
+	return row, continuation
+}
+
+// RowWithSource returns one wrapped segment together with its logical row.
+func (layout ReaderLayout) RowWithSource(visual int) (ReaderRow, int, bool) {
 	source, _ := layout.SourceOffset(visual)
 	if source < 0 || source >= len(layout.document.Rows) {
-		return ReaderRow{}, false
+		return ReaderRow{}, -1, false
 	}
 	continuation := visual - layout.starts[source]
 	wrapped := layout.wraps[visual]
 	row := sliceReaderRow(layout.document.Rows[source], wrapped.left, wrapped.right)
-	return row, continuation > 0
+	return row, source, continuation > 0
 }
 
-// FoldAt returns the stable context-gap identity painted at one terminal cell.
+// SourceAt maps one painted terminal cell back to its logical document row.
 // visualOffset is the same viewport offset used by renderReader.
-func (layout ReaderLayout) FoldAt(x, y, visualOffset int) (string, bool) {
+func (layout ReaderLayout) SourceAt(x, y, visualOffset int) (int, bool) {
 	if !layout.Geometry.Content.Contains(x, y) || layout.Total == 0 {
-		return "", false
+		return 0, false
 	}
 	visual := visualOffset + y - layout.Geometry.Rows.Y
 	if visual < 0 || visual >= layout.Total {
-		return "", false
+		return 0, false
 	}
-	row, _ := layout.Row(visual)
-	return row.Identity, row.Kind == ReaderFold && row.Identity != ""
+	source, _ := layout.SourceOffset(visual)
+	return source, true
 }
 
 // readerWrapRanges prefers whitespace and common code punctuation, then falls

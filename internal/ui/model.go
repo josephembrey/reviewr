@@ -231,7 +231,9 @@ type Model struct {
 	ReaderOffset          int
 	// ReaderColumn is the wrapped segment's source-cell offset within
 	// ReaderOffset's stable logical row.
-	ReaderColumn  int
+	ReaderColumn int
+	// ReaderCursor is the selected logical row in a structured file reader.
+	ReaderCursor  int
 	FooterWarning string
 
 	Notes       notes.Presentation

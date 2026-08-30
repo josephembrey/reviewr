@@ -21,9 +21,9 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		want  Action
 	}{
 		{name: "j selects next", key: tea.Key{Code: 'j', Text: "j"}, focus: navigation.FocusNavigator, want: Action{Kind: SelectNext}},
-		{name: "down scrolls reader", key: tea.Key{Code: tea.KeyDown}, focus: navigation.FocusReader, want: Action{Kind: ScrollReader, Amount: 1}},
+		{name: "down moves reader selection", key: tea.Key{Code: tea.KeyDown}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderSelection, Amount: 1}},
 		{name: "k selects previous", key: tea.Key{Code: 'k', Text: "k"}, focus: navigation.FocusNavigator, want: Action{Kind: SelectPrevious}},
-		{name: "up scrolls reader", key: tea.Key{Code: tea.KeyUp}, focus: navigation.FocusReader, want: Action{Kind: ScrollReader, Amount: -1}},
+		{name: "up moves reader selection", key: tea.Key{Code: tea.KeyUp}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderSelection, Amount: -1}},
 		{name: "l expands navigator selection", key: tea.Key{Code: 'l', Text: "l"}, focus: navigation.FocusNavigator, want: Action{Kind: ExpandNavigatorSelection}},
 		{name: "right expands navigator selection", key: tea.Key{Code: tea.KeyRight}, focus: navigation.FocusNavigator, want: Action{Kind: ExpandNavigatorSelection}},
 		{name: "h collapses navigator selection", key: tea.Key{Code: 'h', Text: "h"}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseNavigatorSelection}},
