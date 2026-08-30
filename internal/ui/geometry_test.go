@@ -147,6 +147,30 @@ func TestCalculateWithNavigatorWidthClampsBothPanes(t *testing.T) {
 	}
 }
 
+func TestSwapPanesPreservesWidthsAndSharedHitGeometry(t *testing.T) {
+	t.Parallel()
+	original := CalculateWithNavigatorWidth(80, 24, 30)
+	swapped := original.SwapPanes()
+
+	if swapped.Navigator.Width != original.Navigator.Width || swapped.Reader.Width != original.Reader.Width {
+		t.Fatalf("swap changed pane widths: original=%+v swapped=%+v", original, swapped)
+	}
+	if swapped.Reader.X != swapped.Body.X || swapped.Divider.X != swapped.Reader.Width || swapped.Navigator.X != swapped.Divider.X+swapped.Divider.Width {
+		t.Fatalf("swapped pane order = navigator %+v divider %+v reader %+v", swapped.Navigator, swapped.Divider, swapped.Reader)
+	}
+	assertSurfaceGeometry(t, swapped.Navigator, swapped.NavigatorTitle, swapped.NavigatorRows)
+	assertSurfaceGeometry(t, swapped.Reader, swapped.ReaderTitle, swapped.ReaderRows)
+	if got := swapped.HitTest(swapped.NavigatorRows.X, swapped.NavigatorRows.Y, workspace.Files, workspace.Controls{}, 0, 1, 0, 1); got != (Hit{Kind: HitNavigatorRow}) {
+		t.Fatalf("swapped navigator hit = %+v", got)
+	}
+	if got := swapped.HitTest(swapped.ReaderRows.X, swapped.ReaderRows.Y, workspace.Files, workspace.Controls{}, 0, 1, 0, 1); got != (Hit{Kind: HitReader}) {
+		t.Fatalf("swapped reader hit = %+v", got)
+	}
+	if restored := swapped.SwapPanes(); restored != original {
+		t.Fatalf("double swap did not restore geometry:\noriginal=%+v\nrestored=%+v", original, restored)
+	}
+}
+
 func TestHeaderSwitcherGeometryAndHits(t *testing.T) {
 	t.Parallel()
 	for width := 0; width <= 34; width++ {

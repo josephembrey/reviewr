@@ -29,6 +29,7 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "h collapses directory", key: tea.Key{Code: 'h', Text: "h"}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseDirectory}},
 		{name: "left collapses directory", key: tea.Key{Code: tea.KeyLeft}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseDirectory}},
 		{name: "tab toggles focus", key: tea.Key{Code: tea.KeyTab}, want: Action{Kind: ToggleFocus}},
+		{name: "z swaps panes", key: tea.Key{Code: 'z', Text: "z"}, want: Action{Kind: SwapPanes}},
 		{name: "one toggles primary workspace", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleWorkspace}},
 		{name: "escape toggles scratch", key: tea.Key{Code: tea.KeyEscape}, want: Action{Kind: ToggleScratch}},
 		{name: "two toggles secondary", key: tea.Key{Code: '2', Text: "2"}, want: Action{Kind: ToggleSecondary}},
@@ -84,6 +85,7 @@ func TestScratchRoutingIsModelessAndSemantic(t *testing.T) {
 		ok   bool
 	}{
 		{name: "h inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}), want: Action{Kind: ScratchInsert, Text: "h"}, ok: true},
+		{name: "z inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Text: "z"}), want: Action{Kind: ScratchInsert, Text: "z"}, ok: true},
 		{name: "q inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}), want: Action{Kind: ScratchInsert, Text: "q"}, ok: true},
 		{name: "two inserts", msg: tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}), want: Action{Kind: ScratchInsert, Text: "2"}, ok: true},
 		{name: "one closes", msg: tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}), want: Action{Kind: ToggleWorkspace}, ok: true},

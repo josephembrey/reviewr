@@ -42,6 +42,26 @@ func TestRenderUsesOneContinuousFloatingDivider(t *testing.T) {
 	}
 }
 
+func TestRenderFollowsSwappedPaneGeometry(t *testing.T) {
+	t.Parallel()
+	g := CalculateWithNavigatorWidth(80, 16, 24).SwapPanes()
+	frame := ansi.Strip(Render(Model{
+		Geometry:       g,
+		NavigatorTitle: "24 files",
+		NavigatorRows:  navigatorRows([]string{"alpha.go"}),
+		ReaderTitle:    "alpha.go",
+		ReaderLines:    []Line{{Text: "package main"}},
+	}))
+	lines := strings.Split(frame, "\n")
+	bodyTitle := []rune(lines[g.Body.Y])
+	if !strings.HasPrefix(lines[g.Body.Y], "alpha.go") || bodyTitle[g.Divider.X] != '│' {
+		t.Fatalf("swapped title row does not follow geometry: %q", lines[g.Body.Y])
+	}
+	if right := string(bodyTitle[g.Navigator.X:]); !strings.HasPrefix(right, "24 files") {
+		t.Fatalf("navigator is not painted on the right: %q", lines[g.Body.Y])
+	}
+}
+
 func TestFocusStylingDoesNotChangeFrameStructure(t *testing.T) {
 	t.Parallel()
 	g := Calculate(80, 16)

@@ -46,16 +46,20 @@ func Render(model Model) string {
 			navigator := renderNavigator(model)
 			divider := renderDivider(g.Divider, model.DividerDragging)
 			reader := renderReader(model)
-			blocks = append(blocks, lipgloss.JoinHorizontal(lipgloss.Top, navigator, divider, reader))
+			if g.Navigator.X < g.Reader.X {
+				blocks = append(blocks, lipgloss.JoinHorizontal(lipgloss.Top, navigator, divider, reader))
+			} else {
+				blocks = append(blocks, lipgloss.JoinHorizontal(lipgloss.Top, reader, divider, navigator))
+			}
 		}
 	}
 	if g.Footer.Height > 0 {
-		footer := "j/k or ↑/↓ navigate  •  tab focus  •  r refresh  •  q quit"
+		footer := "j/k or ↑/↓ navigate  •  tab focus  •  z swap  •  r refresh  •  q quit"
 		if model.Workspace == workspace.Files {
-			footer = "j/k move • h/l fold • x review • R bounds • X next gap • r refresh • q quit"
+			footer = "j/k move • h/l fold • z swap • x review • R bounds • X next gap • r refresh • q quit"
 		}
 		if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
-			footer = "j/k move stashes • f/F move files • tab focus • r refresh • q quit"
+			footer = "j/k move stashes • f/F move files • tab focus • z swap • r refresh • q quit"
 		}
 		if model.Workspace == workspace.Scratch {
 			footer = SafeSingleLine(model.ScratchStatus)

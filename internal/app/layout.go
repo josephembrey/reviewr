@@ -2,21 +2,22 @@ package app
 
 import "github.com/josephembrey/reviewr/internal/ui"
 
-// layoutState owns user-controlled pane geometry. Once customized, the split
-// remains an absolute terminal column across ordinary redraws and resizes.
+// layoutState owns user-controlled pane geometry. Once customized, each pane
+// keeps its semantic width even when the panes swap sides.
 type layoutState struct {
 	navigatorWidth int
 	customized     bool
 	dragging       bool
+	swapped        bool
 }
 
 func (state *layoutState) resize(width, height int) ui.Geometry {
 	if !state.customized {
-		return ui.Calculate(width, height)
+		return state.order(ui.Calculate(width, height))
 	}
 	geometry := ui.CalculateWithNavigatorWidth(width, height, state.navigatorWidth)
 	state.navigatorWidth = geometry.Navigator.Width
-	return geometry
+	return state.order(geometry)
 }
 
 func (state *layoutState) startDrag() {
@@ -24,12 +25,31 @@ func (state *layoutState) startDrag() {
 }
 
 func (state *layoutState) dragTo(column, width, height int) ui.Geometry {
-	geometry := ui.CalculateWithNavigatorWidth(width, height, column)
+	requestedNavigatorWidth := column
+	if state.swapped {
+		defaultGeometry := ui.Calculate(width, height)
+		contentWidth := defaultGeometry.Navigator.Width + defaultGeometry.Reader.Width
+		requestedNavigatorWidth = contentWidth - column
+	}
+	geometry := ui.CalculateWithNavigatorWidth(width, height, requestedNavigatorWidth)
 	state.navigatorWidth = geometry.Navigator.Width
 	state.customized = true
-	return geometry
+	return state.order(geometry)
 }
 
 func (state *layoutState) finishDrag() {
 	state.dragging = false
+}
+
+func (state *layoutState) swap(width, height int) ui.Geometry {
+	state.finishDrag()
+	state.swapped = !state.swapped
+	return state.resize(width, height)
+}
+
+func (state layoutState) order(geometry ui.Geometry) ui.Geometry {
+	if state.swapped {
+		return geometry.SwapPanes()
+	}
+	return geometry
 }

@@ -558,6 +558,10 @@ func (m *Model) apply(action Action) effect {
 		}
 	case FinishPaneResize:
 		m.layout.finishDrag()
+	case SwapPanes:
+		m.scrollbar.finish()
+		m.geometry = m.layout.swap(m.geometry.Screen.Width, m.geometry.Screen.Height)
+		m.resizeWorkspaceState()
 	case StartScrollbarDrag:
 		m.layout.finishDrag()
 		m.scrollbar.start(action.Pane, action.Grab)

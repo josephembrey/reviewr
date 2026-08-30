@@ -440,6 +440,37 @@ func TestDividerDragClampsAndPersistsTheUserSplit(t *testing.T) {
 	}
 }
 
+func TestPaneSwapPreservesPaneWidthsAndReversesDividerDragging(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
+	model.apply(Action{Kind: StartPaneResize})
+	model.apply(Action{Kind: ResizePanes, Position: 34})
+	model.apply(Action{Kind: FinishPaneResize})
+	navigatorWidth := model.geometry.Navigator.Width
+	readerWidth := model.geometry.Reader.Width
+
+	model.apply(Action{Kind: SwapPanes})
+	if !model.layout.swapped || model.layout.dragging || model.geometry.Navigator.Width != navigatorWidth || model.geometry.Reader.Width != readerWidth {
+		t.Fatalf("swapped layout changed pane widths or drag state: layout=%+v geometry=%+v", model.layout, model.geometry)
+	}
+	if model.geometry.Reader.X != 0 || model.geometry.Divider.X != readerWidth || model.geometry.Navigator.X != readerWidth+model.geometry.Divider.Width {
+		t.Fatalf("swapped geometry = %+v", model.geometry)
+	}
+
+	model.apply(Action{Kind: StartPaneResize})
+	model.apply(Action{Kind: ResizePanes, Position: 50})
+	model.apply(Action{Kind: FinishPaneResize})
+	if model.geometry.Reader.Width != 50 || model.geometry.Navigator.Width != 29 || model.geometry.Divider.X != 50 {
+		t.Fatalf("swapped drag did not resize from the reader side: %+v", model.geometry)
+	}
+
+	model.apply(Action{Kind: SwapPanes})
+	if model.layout.swapped || model.geometry.Navigator.Width != 29 || model.geometry.Reader.Width != 50 || model.geometry.Divider.X != 29 {
+		t.Fatalf("restored order did not preserve resized pane widths: layout=%+v geometry=%+v", model.layout, model.geometry)
+	}
+}
+
 func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

@@ -53,6 +53,23 @@ func CalculateWithNavigatorWidth(width, height, navigatorWidth int) Geometry {
 	return calculate(width, height, navigatorWidth, true)
 }
 
+// SwapPanes moves Navigator and Reader to the opposite sides while preserving
+// each surface's width. Calling it twice restores the original geometry.
+func (g Geometry) SwapPanes() Geometry {
+	if g.Navigator.X <= g.Reader.X {
+		g.Reader.X = g.Body.X
+		g.Divider.X = g.Reader.X + g.Reader.Width
+		g.Navigator.X = g.Divider.X + g.Divider.Width
+	} else {
+		g.Navigator.X = g.Body.X
+		g.Divider.X = g.Navigator.X + g.Navigator.Width
+		g.Reader.X = g.Divider.X + g.Divider.Width
+	}
+	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
+	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
+	return g
+}
+
 func calculate(width, height, requestedNavigatorWidth int, customized bool) Geometry {
 	width = max(0, width)
 	height = max(0, height)

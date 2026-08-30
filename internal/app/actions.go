@@ -36,6 +36,7 @@ const (
 	FocusNavigator
 	FocusReader
 	ToggleFocus
+	SwapPanes
 	ScrollReader
 	StartPaneResize
 	ResizePanes
@@ -238,6 +239,8 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			}
 		case "tab":
 			return Action{Kind: ToggleFocus}, true
+		case "z":
+			return Action{Kind: SwapPanes}, true
 		case "r":
 			return Action{Kind: Reload}, true
 		case "f":
