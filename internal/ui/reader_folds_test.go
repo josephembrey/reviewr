@@ -119,6 +119,44 @@ func TestReaderContextFoldsLeaveSmallRunsAlone(t *testing.T) {
 	}
 }
 
+func TestReaderContextFoldsNeverHideReviewFreshReversions(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{{
+		Identity: "before", Kind: ReaderInsertion, Text: "before", NewLine: 1,
+	}}}
+	for line := 2; line <= 11; line++ {
+		document.Rows = append(document.Rows, ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ReaderContext,
+			Text: "context", OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	document.Rows = append(document.Rows, ReaderRow{
+		Identity: "fresh-reversion", Kind: ReaderContext, Text: "back to base",
+		OldLine: 12, NewLine: 12, ReviewFresh: true, ReviewRemovedBefore: 1,
+	})
+	for line := 13; line <= 22; line++ {
+		document.Rows = append(document.Rows, ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ReaderContext,
+			Text: "context", OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	document.Rows = append(document.Rows, ReaderRow{
+		Identity: "after", Kind: ReaderInsertion, Text: "after", NewLine: 23,
+	})
+
+	folded := document.WithContextFolds(false)
+	found := false
+	for _, row := range folded.Rows {
+		if row.Identity == "fresh-reversion" {
+			found = row.ReviewFresh && row.ReviewRemovedBefore == 1
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("folded document hid or changed fresh reversion: %+v", folded.Rows)
+	}
+}
+
 func TestReaderContextGapsExpandIndependentlyAndDefineHunks(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument}

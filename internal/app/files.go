@@ -36,6 +36,7 @@ type filesState struct {
 	ledger               review.Ledger
 	store                *review.Store
 	reviewDocument       review.Document
+	reviewFreshness      review.Document
 	reviewFile           review.Content
 	reviewFileDiff       review.Document
 	displayedComparison  *review.FileComparison

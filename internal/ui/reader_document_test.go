@@ -139,6 +139,73 @@ func TestSelectedSidebarDiffBarsKeepTheirSemanticColor(t *testing.T) {
 	}
 }
 
+func TestReviewFreshnessRailUsesAccentAndSurvivesSelectionAndWrapping(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
+		{Kind: ReaderInsertion, Text: "reviewed", NewLine: 1},
+		{Kind: ReaderInsertion, Text: "fresh content wraps", NewLine: 2, ReviewFresh: true},
+		{Kind: ReaderContext, Text: "after removal", NewLine: 3, ReviewRemovedBefore: 2},
+	}}
+	geometry := CalculateReaderGeometry(Rect{Width: 30, Height: 3}, document, false)
+	if geometry.ReviewBar.Width != 1 || geometry.Prefix != 6 || geometry.Code.X != 6 {
+		t.Fatalf("freshness geometry = %+v", geometry)
+	}
+
+	reviewed := renderReaderRow(document.Rows[0], geometry, workspace.DiffHighlightSidebar)
+	fresh := renderReaderRow(document.Rows[1], geometry, workspace.DiffHighlightSidebar)
+	removed := renderReaderRow(document.Rows[2], geometry, workspace.DiffHighlightSidebar)
+	if !strings.HasPrefix(ansi.Strip(reviewed), "▌ ") ||
+		!strings.HasPrefix(ansi.Strip(fresh), "▌│") ||
+		!strings.HasPrefix(ansi.Strip(removed), " ▴") {
+		t.Fatalf("freshness rail = %q / %q / %q", reviewed, fresh, removed)
+	}
+	if !strings.Contains(fresh, "36m") || !strings.Contains(removed, "36m") {
+		t.Fatalf("freshness rail is not terminal-accent cyan: %q / %q", fresh, removed)
+	}
+
+	selected := renderReaderRowPartSelected(
+		document.Rows[1], geometry, workspace.DiffHighlightSidebar, false, true, true,
+	)
+	if !strings.Contains(selected, selectedReaderFreshnessStyle(true).Render("│")) ||
+		lipgloss.Width(selected) != geometry.Content.Width {
+		t.Fatalf("selected freshness rail = %q", selected)
+	}
+
+	layout := CalculateReaderLayout(Rect{Width: 10, Height: 2}, ReaderDocument{
+		Kind: ReaderDiffDocument,
+		Rows: []ReaderRow{{Kind: ReaderFile, Text: "abcdefghijkl", NewLine: 2, ReviewFresh: true}},
+	})
+	if layout.Total < 2 {
+		t.Fatalf("fresh row did not wrap: %+v", layout)
+	}
+	for visual := 0; visual < layout.Total; visual++ {
+		row, continuation := layout.Row(visual)
+		rendered := ansi.Strip(renderReaderRowPart(row, layout.Geometry, workspace.DiffHighlightSidebar, continuation))
+		if len([]rune(rendered)) < 2 || []rune(rendered)[1] != '│' {
+			t.Fatalf("wrapped freshness row %d = %q", visual, rendered)
+		}
+	}
+
+	without := document.WithoutReviewFreshness()
+	plainGeometry := CalculateReaderGeometry(Rect{Width: 30, Height: 3}, without, false)
+	if without.HasReviewFreshness() || plainGeometry.ReviewBar.Width != 0 || plainGeometry.Prefix != 5 {
+		t.Fatalf("cleared freshness = document %+v geometry %+v", without, plainGeometry)
+	}
+}
+
+func TestReviewFreshnessRailCoexistsWithBackgroundDiffHighlight(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{{
+		Kind: ReaderInsertion, Text: "fresh", NewLine: 1, ReviewFresh: true,
+	}}}
+	geometry := CalculateReaderGeometry(Rect{Width: 20, Height: 1}, document, false)
+	rendered := renderReaderRow(document.Rows[0], geometry, workspace.DiffHighlightBackground)
+	if !strings.HasPrefix(ansi.Strip(rendered), "▌│") || !strings.Contains(rendered, "36") ||
+		lipgloss.Width(rendered) != geometry.Content.Width {
+		t.Fatalf("background freshness rail = %q", rendered)
+	}
+}
+
 func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{

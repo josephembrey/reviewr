@@ -84,6 +84,7 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 	case reviewStateLoadedMsg:
 		var pending effect
 		m.files, pending = m.files.landReviewState(msg, m.controls.Reader)
+		m.readerViewport = readerViewport{}
 		return true, pending
 	case reviewDocumentLoadedMsg:
 		m.files = m.files.landReviewDocument(msg)
@@ -96,6 +97,8 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 	case reviewVerifiedMsg:
 		var pending effect
 		m.files, pending = m.files.landReviewVerified(msg)
+		m.readerViewport = readerViewport{}
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return true, pending
 	case reviewPersistedMsg:
 		var pending effect

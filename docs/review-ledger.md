@@ -27,6 +27,14 @@ no badge or review mouse target.
 - `X` selects the next gap by Basis changed, Updated, Partial, Unreviewed priority and then full tree
   order, expanding only the required ancestors.
 
+The `since reviewed` comparison is the authoritative view of only the new work. In the full
+comparison and current-file readers, Updated files also reserve a narrow cyan rail beside the
+red/green change rail. It marks current lines introduced since the exact reviewed frontier and
+anchors newly removed lines at the nearest surviving boundary. Reversions remain visible even when
+they are ordinary context relative to the original Git base. The rail is derived, never stored, and
+is omitted for Unreviewed, Reviewed, Partial, and Basis changed files where that claim would be
+redundant or unsafe.
+
 Every mark is re-read and checked against the displayed comparison's exact right endpoint before a
 receipt is accepted. Rename, copy, deletion, kind, mode, executable-bit, symlink-target, and
 submodule transitions remain explicit work. Exact byte/kind/mode reversion can reuse an existing

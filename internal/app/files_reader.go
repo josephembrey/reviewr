@@ -17,6 +17,7 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	state.reader = msg.file
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
+	state.reviewFreshness = review.Document{}
 	state.reviewFile = review.Content{}
 	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
@@ -51,6 +52,7 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	state.diff = msg.diff
 	state.reader = repository.File{}
 	state.reviewDocument = review.Document{}
+	state.reviewFreshness = review.Document{}
 	state.reviewFile = review.Content{}
 	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
@@ -88,6 +90,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.reader = repository.File{}
 		state.diff = repository.Diff{}
 		state.reviewDocument = review.Document{}
+		state.reviewFreshness = review.Document{}
 		state.reviewFile = review.Content{}
 		state.reviewFileDiff = review.Document{}
 		state.displayedComparison = nil
@@ -108,6 +111,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 	}
 	var reviewComparison review.FileComparison
 	var bounds review.Bounds
+	var freshnessBounds review.Bounds
 	if mode == workspace.FileReader {
 		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
 			comparisonCopy := comparison
@@ -116,32 +120,60 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 			state.requestedBounds = &boundsCopy
 			reviewComparison = comparison
 			bounds = boundsCopy
-			pending = effect{kind: effectLoadReviewFile, generation: state.contentGeneration, entry: entry, comparison: comparison}
+			freshness := state.reviewFreshnessRequest(entry.Path, comparison)
+			if freshness != nil {
+				freshnessBounds = freshness.bounds
+			}
+			pending = effect{
+				kind: effectLoadReviewFile, generation: state.contentGeneration,
+				entry: entry, comparison: comparison, freshness: freshness,
+			}
 		}
 	} else {
 		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
 			assessment := state.reviewAssessment(entry.Path, comparison)
 			bounds = review.Bounds{Old: comparison.Old, New: comparison.New}
 			var retained *string
-			if assessment.State == review.Updated && !state.reviewFull[entry.Path] && assessment.Frontier != nil && assessment.Retained != nil {
+			freshness := reviewFreshnessRequestFor(comparison, assessment)
+			if freshness != nil && !state.reviewFull[entry.Path] {
 				bounds.Old = *assessment.Frontier
 				retained = assessment.Retained
+				freshness = nil
+			} else if freshness != nil {
+				freshnessBounds = freshness.bounds
 			}
 			comparisonCopy, boundsCopy := comparison, bounds
 			state.requestedComparison = &comparisonCopy
 			state.requestedBounds = &boundsCopy
 			reviewComparison = comparison
-			pending = effect{kind: effectLoadReviewDocument, generation: state.contentGeneration, entry: entry, comparison: comparison, bounds: bounds, retained: retained}
+			pending = effect{
+				kind: effectLoadReviewDocument, generation: state.contentGeneration,
+				entry: entry, comparison: comparison, bounds: bounds, retained: retained, freshness: freshness,
+			}
 		} else {
 			pending.kind = effectLoadDiff
 		}
 	}
-	key := state.readerKey(pending.kind, entry, reviewComparison, bounds)
+	key := state.readerKey(pending.kind, entry, reviewComparison, bounds, freshnessBounds)
 	state.readerRequestKey = key
 	if state.restoreReader(key) {
 		return effect{}
 	}
 	return pending
+}
+
+func (state filesState) reviewFreshnessRequest(path string, comparison review.FileComparison) *reviewFreshnessRequest {
+	return reviewFreshnessRequestFor(comparison, state.reviewAssessment(path, comparison))
+}
+
+func reviewFreshnessRequestFor(comparison review.FileComparison, assessment review.Assessment) *reviewFreshnessRequest {
+	if assessment.State != review.Updated || assessment.Frontier == nil || assessment.Retained == nil {
+		return nil
+	}
+	return &reviewFreshnessRequest{
+		bounds:   review.Bounds{Old: *assessment.Frontier, New: comparison.New},
+		retained: *assessment.Retained,
+	}
 }
 
 func (state *filesState) requestMode(mode workspace.ReaderMode) effect {
@@ -160,6 +192,7 @@ func (state *filesState) clearReader() {
 	state.reader = repository.File{}
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
+	state.reviewFreshness = review.Document{}
 	state.reviewFile = review.Content{}
 	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
@@ -183,16 +216,43 @@ func (state filesState) readerDocument() ui.ReaderDocument {
 }
 
 func (state filesState) rawReaderDocument() ui.ReaderDocument {
+	var document ui.ReaderDocument
 	if state.markdownPreviewActive() && state.markdownPresentation != nil {
-		return *state.markdownPresentation
-	}
-	if state.readerPresentation != nil {
-		return *state.readerPresentation
-	}
-	if state.readerEntry.Path == "" || state.readerLoading {
+		document = *state.markdownPresentation
+	} else if state.readerPresentation != nil {
+		document = *state.readerPresentation
+	} else if state.readerEntry.Path == "" || state.readerLoading {
 		return ui.ReaderDocument{}
+	} else {
+		document = state.deriveReaderDocument()
 	}
-	return state.deriveReaderDocument()
+	if !state.reviewFreshnessVisible() {
+		document = document.WithoutReviewFreshness()
+	}
+	return document
+}
+
+func (state filesState) reviewFreshnessVisible() bool {
+	if state.markdownPreviewActive() || !state.reviewFreshness.Exact ||
+		state.displayedComparison == nil || state.displayedBounds == nil {
+		return false
+	}
+	comparison := *state.displayedComparison
+	assessment := state.reviewAssessment(state.readerEntry.Path, comparison)
+	if assessment.State != review.Updated || assessment.Frontier == nil ||
+		state.reviewFreshness.Bounds != (review.Bounds{Old: *assessment.Frontier, New: comparison.New}) {
+		return false
+	}
+	return state.readerMode == workspace.FileReader || state.displayedBounds.Old == comparison.Old
+}
+
+func (state *filesState) clearReviewFreshness() {
+	state.reviewFreshness = review.Document{}
+	if state.readerPresentation != nil {
+		presentation := state.readerPresentation.WithoutReviewFreshness()
+		state.readerPresentation = &presentation
+	}
+	state.readerContext.reconcile(state.rawReaderDocument())
 }
 
 func (state *filesState) setReaderContextExpanded(expanded bool) (bool, bool) {
@@ -273,7 +333,10 @@ func (state filesState) previousReaderRows() []string {
 func (state filesState) deriveReaderDocument() ui.ReaderDocument {
 	if state.readerMode == workspace.DiffReader {
 		if state.displayedBounds != nil {
-			return reviewReaderDocument(state.readerEntry.Path, state.reviewDocument)
+			return annotateReviewFreshness(
+				reviewReaderDocument(state.readerEntry.Path, state.reviewDocument),
+				state.reviewFreshness,
+			)
 		}
 		return (readerDocument{Diff: state.diff, Mode: state.readerMode}).build()
 	}
@@ -281,12 +344,12 @@ func (state filesState) deriveReaderDocument() ui.ReaderDocument {
 		if state.reviewFile.Endpoint != state.displayedComparison.New {
 			return ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: noticeRows("File changed; refresh before marking reviewed.", ui.ToneError)}
 		}
-		return annotatedReviewFileReaderDocument(
+		return annotateReviewFreshness(annotatedReviewFileReaderDocument(
 			state.reviewFile,
 			state.readerEntry,
 			*state.displayedComparison,
 			state.reviewFileDiff,
-		)
+		), state.reviewFreshness)
 	}
 	return (readerDocument{
 		File: state.reader, Entry: state.readerEntry, Diff: state.diff, Mode: state.readerMode,

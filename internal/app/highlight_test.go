@@ -146,6 +146,77 @@ func TestReviewFileAnnotatesAddedAndDeletedFiles(t *testing.T) {
 	}
 }
 
+func TestReviewFreshnessProjectsNewLinesRemovalsAndReversions(t *testing.T) {
+	t.Parallel()
+	frontier := review.Endpoint{Path: "main.go", Kind: review.Regular, Mode: 0o100644, ContentID: "frontier"}
+	current := review.Endpoint{Path: "main.go", Kind: review.Regular, Mode: 0o100644, ContentID: "current"}
+	freshness := review.BuildDocument(
+		review.Bounds{Old: frontier, New: current},
+		content(frontier, "one\nreviewed\nremove-me\nlast\n"),
+		content(current, "one\nnew\nlast\n"),
+	)
+	presentation := ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: []ui.ReaderRow{
+		{Identity: "one", Kind: ui.ReaderContext, Text: "one", NewLine: 1},
+		{Identity: "new", Kind: ui.ReaderInsertion, Text: "new", NewLine: 2},
+		{Identity: "last", Kind: ui.ReaderContext, Text: "last", NewLine: 3},
+	}}
+	annotated := annotateReviewFreshness(presentation, freshness)
+	if !annotated.Rows[1].ReviewFresh || annotated.Rows[1].ReviewRemovedBefore != 2 ||
+		annotated.Rows[0].ReviewFresh || annotated.Rows[2].ReviewFresh {
+		t.Fatalf("projected freshness = %+v", annotated.Rows)
+	}
+	if presentation.HasReviewFreshness() {
+		t.Fatal("freshness annotation mutated its source presentation")
+	}
+
+	// A reversion is context in the full branch diff but remains new review work.
+	reversion := review.BuildDocument(
+		review.Bounds{Old: frontier, New: current},
+		content(frontier, "changed\n"),
+		content(current, "base\n"),
+	)
+	context := annotateReviewFreshness(ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: []ui.ReaderRow{
+		{Identity: "base", Kind: ui.ReaderContext, Text: "base", NewLine: 1},
+	}}, reversion)
+	if !context.Rows[0].ReviewFresh || context.Rows[0].ReviewRemovedBefore != 1 {
+		t.Fatalf("reverted full-diff context lost freshness = %+v", context.Rows[0])
+	}
+}
+
+func TestReviewFreshnessAnchorsDeletionWithoutCurrentLines(t *testing.T) {
+	t.Parallel()
+	old := review.Endpoint{Path: "gone.go", Kind: review.Regular, Mode: 0o100644, ContentID: "old"}
+	missing := review.AbsentEndpoint("gone.go")
+	freshness := review.BuildDocument(
+		review.Bounds{Old: old, New: missing},
+		content(old, "one\ntwo\n"),
+		review.AbsentContent("gone.go"),
+	)
+	document := annotateReviewFreshness(ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: []ui.ReaderRow{
+		{Identity: "notice", Kind: ui.ReaderNotice, Text: "File was deleted."},
+	}}, freshness)
+	if document.Rows[0].ReviewRemovedAfter != 2 || !document.HasReviewFreshness() {
+		t.Fatalf("deleted-file freshness = %+v", document.Rows)
+	}
+}
+
+func TestReviewFreshnessMarksExactMetadataOnlyChanges(t *testing.T) {
+	t.Parallel()
+	old := review.Endpoint{Path: "script.sh", Kind: review.Regular, Mode: 0o100644, ContentID: "same"}
+	current := old
+	current.Mode = 0o100755
+	freshness := review.Document{
+		Bounds: review.Bounds{Old: old, New: current}, Exact: true,
+		Lines: []review.Line{{Identity: "notice:mode", Kind: review.NoticeLine, Text: "mode changed"}},
+	}
+	document := annotateReviewFreshness(ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: []ui.ReaderRow{
+		{Identity: "notice:mode", Kind: ui.ReaderNotice, Text: "mode changed"},
+	}}, freshness)
+	if !document.Rows[0].ReviewFresh {
+		t.Fatalf("metadata-only freshness = %+v", document.Rows)
+	}
+}
+
 func readerSpanText(line ui.ReaderRow) string {
 	var text strings.Builder
 	for _, span := range line.Spans {

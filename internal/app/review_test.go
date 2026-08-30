@@ -171,6 +171,9 @@ func TestUpdatedReaderBoundsToggleAndNarrowMark(t *testing.T) {
 	if model.files.displayedBounds == nil || model.files.displayedBounds.Old != middle || !strings.Contains(model.files.viewModel(model.geometry).ReaderTitle, "since reviewed") {
 		t.Fatalf("updated reader bounds/title = %+v / %q", model.files.displayedBounds, model.files.viewModel(model.geometry).ReaderTitle)
 	}
+	if model.files.readerDocument().HasReviewFreshness() {
+		t.Fatal("since-reviewed diff redundantly rendered a freshness rail")
+	}
 	before := model.files.ledger.Clone()
 	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 'R', Text: "R"}))
 	model = next.(Model)
@@ -181,6 +184,14 @@ func TestUpdatedReaderBoundsToggleAndNarrowMark(t *testing.T) {
 	model = next.(Model)
 	if model.files.displayedBounds.Old != comparison.Old || !strings.Contains(model.files.viewModel(model.geometry).ReaderTitle, "full comparison") {
 		t.Fatalf("full reader bounds/title = %+v / %q", model.files.displayedBounds, model.files.viewModel(model.geometry).ReaderTitle)
+	}
+	full := model.files.readerDocument()
+	if !full.HasReviewFreshness() {
+		t.Fatalf("full comparison lacks reviewed-frontier freshness: %+v", full.Rows)
+	}
+	fresh := full.Rows[len(full.Rows)-1]
+	if !fresh.ReviewFresh || fresh.ReviewRemovedBefore != 1 {
+		t.Fatalf("full comparison freshness row = %+v", fresh)
 	}
 
 	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 'R', Text: "R"}))
@@ -196,6 +207,9 @@ func TestUpdatedReaderBoundsToggleAndNarrowMark(t *testing.T) {
 	last := receipts[len(receipts)-1]
 	if last.Old != middle || last.New != comparison.New || model.files.ledger.Assess(comparison).State != reviewdomain.Reviewed {
 		t.Fatalf("incremental mark = %+v assessment=%v", last, model.files.ledger.Assess(comparison).State)
+	}
+	if model.files.readerDocument().HasReviewFreshness() {
+		t.Fatal("completed review retained stale freshness paint")
 	}
 }
 

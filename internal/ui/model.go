@@ -77,6 +77,12 @@ type ReaderRow struct {
 	// row without inserting fake document content.
 	RemovedBefore uint64
 	RemovedAfter  uint64
+	// ReviewFresh is derived from the exact reviewed frontier rather than stored
+	// line state. ReviewRemovedBefore/After anchor frontier deletions that have
+	// no surviving current line of their own.
+	ReviewFresh         bool
+	ReviewRemovedBefore uint64
+	ReviewRemovedAfter  uint64
 	// FoldExpanded keeps a fold control visible while its context rows are shown.
 	FoldExpanded bool
 	// FoldTarget links a secondary fold control to the stable leading fold.
@@ -126,6 +132,34 @@ const (
 type ReaderDocument struct {
 	Kind ReaderDocumentKind
 	Rows []ReaderRow
+}
+
+// HasReviewFreshness reports whether the document needs the optional reviewed-
+// frontier rail. It remains absent for unreviewed and proof-broken comparisons.
+func (document ReaderDocument) HasReviewFreshness() bool {
+	for _, row := range document.Rows {
+		if row.ReviewFresh || row.ReviewRemovedBefore > 0 || row.ReviewRemovedAfter > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// WithoutReviewFreshness removes derived paint without changing source
+// identities. Coverage changes can therefore update the rail without moving
+// the reader's authored place state.
+func (document ReaderDocument) WithoutReviewFreshness() ReaderDocument {
+	if !document.HasReviewFreshness() {
+		return document
+	}
+	result := document
+	result.Rows = append([]ReaderRow(nil), document.Rows...)
+	for index := range result.Rows {
+		result.Rows[index].ReviewFresh = false
+		result.Rows[index].ReviewRemovedBefore = 0
+		result.Rows[index].ReviewRemovedAfter = 0
+	}
+	return result
 }
 
 // DiffEligible reports whether a non-empty semantic diff is actually visible.

@@ -14,7 +14,7 @@ func (document ReaderDocument) ContextFoldable() bool {
 		return false
 	}
 	for start := 0; start < len(document.Rows); {
-		if document.Rows[start].Kind != ReaderContext {
+		if !foldableContextRow(document.Rows[start]) {
 			start++
 			continue
 		}
@@ -78,7 +78,7 @@ func (document ReaderDocument) ContextFoldIdentities() []string {
 	}
 	identities := make([]string, 0)
 	for start := 0; start < len(document.Rows); {
-		if document.Rows[start].Kind != ReaderContext {
+		if !foldableContextRow(document.Rows[start]) {
 			start++
 			continue
 		}
@@ -143,7 +143,7 @@ func (document ReaderDocument) contextFoldRows(progresses map[string]int, defaul
 	}
 	rows := make([]ReaderRow, 0, len(document.Rows))
 	for start := 0; start < len(document.Rows); {
-		if document.Rows[start].Kind != ReaderContext {
+		if !foldableContextRow(document.Rows[start]) {
 			rows = append(rows, document.Rows[start])
 			start++
 			continue
@@ -226,14 +226,19 @@ func contextFoldVisibleRows(hidden, progress, steps int) int {
 
 func contextRunEnd(rows []ReaderRow, start int) int {
 	end := start + 1
-	for end < len(rows) && rows[end].Kind == ReaderContext {
+	for end < len(rows) && foldableContextRow(rows[end]) {
 		end++
 	}
 	return end
 }
 
 func changedReaderRow(row ReaderRow) bool {
-	return row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
+	return row.Kind == ReaderInsertion || row.Kind == ReaderDeletion ||
+		row.ReviewFresh || row.ReviewRemovedBefore > 0 || row.ReviewRemovedAfter > 0
+}
+
+func foldableContextRow(row ReaderRow) bool {
+	return row.Kind == ReaderContext && !changedReaderRow(row)
 }
 
 func contextFoldRow(hidden []ReaderRow, expanded bool) ReaderRow {
