@@ -132,6 +132,15 @@ func TestReaderContextGapsExpandIndependentlyAndDefineHunks(t *testing.T) {
 	if len(starts) != 2 || starts[0] >= starts[1] {
 		t.Fatalf("compact hunk starts = %#v", starts)
 	}
+	targets := compact.HunkNavigationTargets()
+	if len(targets) != 2 || targets[0] != starts[0]-1 || targets[1] != starts[1]-1 {
+		t.Fatalf("compact hunk targets = %#v, want leading folds before %#v", targets, starts)
+	}
+	for _, target := range targets {
+		if compact.Rows[target].Kind != ReaderFold {
+			t.Fatalf("hunk target %d = %v, want fold", target, compact.Rows[target].Kind)
+		}
+	}
 	expanded := document.WithContextFoldProgresses(map[string]int{identities[1]: 8}, 0, 8)
 	states := make(map[string]bool)
 	for _, row := range expanded.Rows {
@@ -156,6 +165,9 @@ func TestExplicitUnifiedDiffHeadersRemainHunkNavigationTargets(t *testing.T) {
 	}}
 	if starts := document.HunkStarts(); !reflect.DeepEqual(starts, []int{0, 3}) {
 		t.Fatalf("explicit hunk starts = %#v", starts)
+	}
+	if targets := document.HunkNavigationTargets(); !reflect.DeepEqual(targets, []int{0, 3}) {
+		t.Fatalf("explicit hunk targets = %#v", targets)
 	}
 }
 

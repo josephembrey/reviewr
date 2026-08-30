@@ -122,6 +122,21 @@ func (document ReaderDocument) HunkStarts() []int {
 	return starts
 }
 
+// HunkNavigationTargets returns the row where previous/next hunk navigation
+// should place the reader cursor. In complete endpoint comparisons, the fold
+// leading into a change group is the most useful landing point because the
+// next left/right action can reveal or hide its context. Explicit unified-diff
+// headers remain their own navigation targets.
+func (document ReaderDocument) HunkNavigationTargets() []int {
+	starts := document.HunkStarts()
+	for index, start := range starts {
+		if start > 0 && document.Rows[start-1].Kind == ReaderFold {
+			starts[index] = start - 1
+		}
+	}
+	return starts
+}
+
 func (document ReaderDocument) contextFoldRows(progresses map[string]int, defaultProgress, steps int) []ReaderRow {
 	if document.Kind != ReaderDiffDocument || len(document.Rows) == 0 {
 		return document.Rows

@@ -437,22 +437,33 @@ func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	document := foldableDiffDocument()
 	model.files.readerPresentation = &document
 
-	starts := model.files.readerDocument().HunkStarts()
-	if len(starts) != 2 || starts[0] <= 0 || starts[1] <= starts[0] {
-		t.Fatalf("hunk starts = %#v, want two ordered compact groups", starts)
+	presented := model.files.readerDocument()
+	starts := presented.HunkStarts()
+	targets := presented.HunkNavigationTargets()
+	if len(starts) != 2 || len(targets) != 2 || starts[0] <= 0 || starts[1] <= starts[0] {
+		t.Fatalf("hunk starts = %#v targets = %#v, want two ordered compact groups", starts, targets)
 	}
-	model.files.place.ReaderCursor = 0
-	model.apply(Action{Kind: SelectNextHunk})
-	if model.files.place.ReaderCursor != starts[0] || model.files.place.Focus != navigation.FocusNavigator {
-		t.Fatalf("first hunk = cursor %d focus %v, want %d without focus change", model.files.place.ReaderCursor, model.files.place.Focus, starts[0])
+	for index, target := range targets {
+		if target != starts[index]-1 || presented.Rows[target].Kind != ui.ReaderFold {
+			t.Fatalf("hunk target %d = %d (%v), want leading fold before %d", index, target, presented.Rows[target].Kind, starts[index])
+		}
 	}
+	model.files.place.ReaderCursor = targets[0]
+	if model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("initial hunk focus = %v, want navigator", model.files.place.Focus)
+	}
+	model.apply(Action{Kind: ExpandReaderContext})
+	if !model.files.readerContext.target(presented.Rows[targets[0]].Identity) {
+		t.Fatal("right from hunk target did not expand its leading fold")
+	}
+	expandedTargets := model.files.readerDocument().HunkNavigationTargets()
 	model.apply(Action{Kind: SelectNextHunk})
-	if model.files.place.ReaderCursor != starts[1] {
-		t.Fatalf("second hunk cursor = %d, want %d", model.files.place.ReaderCursor, starts[1])
+	if model.files.place.ReaderCursor != expandedTargets[1] || model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("second hunk = cursor %d focus %v, want %d without focus change", model.files.place.ReaderCursor, model.files.place.Focus, expandedTargets[1])
 	}
 	model.apply(Action{Kind: SelectPreviousHunk})
-	if model.files.place.ReaderCursor != starts[0] {
-		t.Fatalf("previous hunk cursor = %d, want %d", model.files.place.ReaderCursor, starts[0])
+	if model.files.place.ReaderCursor != expandedTargets[0] {
+		t.Fatalf("previous hunk cursor = %d, want %d", model.files.place.ReaderCursor, expandedTargets[0])
 	}
 }
 

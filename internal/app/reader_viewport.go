@@ -183,23 +183,23 @@ func (m *Model) selectActiveReaderHunk(delta int) {
 	if !ok || delta == 0 {
 		return
 	}
-	starts := document.HunkStarts()
-	if len(starts) == 0 {
+	targets := document.HunkNavigationTargets()
+	if len(targets) == 0 {
 		return
 	}
 	current := m.activePlace().ReaderCursor
 	target := -1
 	if delta > 0 {
-		for _, start := range starts {
-			if start > current {
-				target = start
+		for _, candidate := range targets {
+			if candidate > current {
+				target = candidate
 				break
 			}
 		}
 	} else {
-		for index := len(starts) - 1; index >= 0; index-- {
-			if starts[index] < current {
-				target = starts[index]
+		for index := len(targets) - 1; index >= 0; index-- {
+			if targets[index] < current {
+				target = targets[index]
 				break
 			}
 		}
