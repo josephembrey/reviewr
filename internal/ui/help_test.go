@@ -36,6 +36,25 @@ func TestFooterReservesRightmostHelpAndKeepsOnlyLocalHints(t *testing.T) {
 	}
 }
 
+func TestFilesFooterAdvertisesMarkdownToggleOnlyWhenEligible(t *testing.T) {
+	t.Parallel()
+	geometry := Calculate(120, 20)
+	footer := func(controls workspace.Controls) string {
+		return ansi.Strip(renderFooter(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls}))
+	}
+	if plain := footer(workspace.Controls{}); strings.Contains(plain, "m preview") || strings.Contains(plain, "m source") {
+		t.Fatalf("ineligible footer exposed Markdown toggle: %q", plain)
+	}
+	controls := workspace.Controls{MarkdownPreviewEligible: true}
+	if plain := footer(controls); !strings.Contains(plain, "m preview") {
+		t.Fatalf("source footer = %q, want m preview", plain)
+	}
+	controls.MarkdownPreview = true
+	if plain := footer(controls); !strings.Contains(plain, "m source") || strings.Contains(plain, "m preview") {
+		t.Fatalf("preview footer = %q, want m source", plain)
+	}
+}
+
 func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(80, 20)
@@ -48,7 +67,7 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	for _, expected := range []string{
 		"hotkeys · ?/esc close",
 		"Browser", "q/ctrl+c quit", "r refresh",
-		"Files", "[/] hunks", "home/end ends", "H/M/L view", "pgup/dn page", "x review", "R bounds", "X gap",
+		"Files", "[/] hunks", "home/end ends", "H/M/L view", "pgup/dn page", "m render", "x review", "R bounds", "X gap",
 		"Git", "f/F files", "h/l fold",
 		"Notes", "ctrl+z/y undo/redo", "backspace/delete edit",
 	} {
@@ -66,7 +85,7 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 func TestHunkShortcutIsUnambiguousInFileAndStashFooters(t *testing.T) {
 	t.Parallel()
 	for name, entries := range map[string][]footerEntry{
-		"files":   fileFooterEntries(true),
+		"files":   fileFooterEntries(workspace.Controls{RichDiff: true}),
 		"stashes": stashFooterEntries(true, true),
 	} {
 		plain := ansi.Strip(renderFooterEntries(entries))

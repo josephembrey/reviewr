@@ -26,6 +26,7 @@ func TestWorktreeSessionRoundTripsNewestGenerationPrivately(t *testing.T) {
 		Files: Files{
 			Place:      Place{Items: []string{"file:a.go", "file:b.go"}, Selected: 1, Focus: "reader", ReaderOffset: 12, ReaderCursor: 17},
 			ReaderPath: "b.go", Folds: map[string]Folds{"all": {Known: []string{"src"}, Collapsed: []string{"src"}}},
+			MarkdownPreviews: []string{"README.md"},
 		},
 	}
 	if err := store.Save(2, want); err != nil {

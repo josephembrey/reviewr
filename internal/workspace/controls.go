@@ -171,6 +171,11 @@ type Controls struct {
 	Git           GitView
 	Traversal     GitTraversal
 	DiffHighlight DiffHighlight
+	// MarkdownPreviewEligible and MarkdownPreview are derived from the visible
+	// Files reader. They route and advertise the local m toggle without turning
+	// preview into a global control axis.
+	MarkdownPreviewEligible bool
+	MarkdownPreview         bool
 	// RichDiff is presentation context derived from the visible structured
 	// reader document. It keeps input, header, mouse, and footer eligibility
 	// on one predicate without becoming browser or path state.

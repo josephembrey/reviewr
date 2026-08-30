@@ -126,7 +126,8 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
-	state.readerContext.reconcile(presentation)
+	state.rebuildMarkdownPreview(state.markdownRows)
+	state.readerContext.reconcile(state.rawReaderDocument())
 	state.readerLoadedKey = state.readerRequestKey
 	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil

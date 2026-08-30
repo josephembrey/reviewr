@@ -118,6 +118,8 @@ func (state filesState) readerTitle() string {
 		if state.readerMode == workspace.DiffReader {
 			title += "  [diff]"
 			title += state.reviewBoundsTitle()
+		} else if state.markdownPreviewActive() {
+			title += "  [preview]"
 		}
 	}
 	if (state.readerLoading || state.listLoading) && (state.reader.Kind != 0 || state.diff.Kind != 0 || state.displayedBounds != nil) {

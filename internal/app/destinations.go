@@ -113,5 +113,9 @@ func (m Model) diffHighlightEligible() bool {
 func (m Model) presentationControls() workspace.Controls {
 	controls := m.controls
 	controls.RichDiff = m.diffHighlightEligible()
+	if m.active == workspace.Files {
+		controls.MarkdownPreviewEligible = m.files.markdownPreviewEligible()
+		controls.MarkdownPreview = m.files.markdownPreviewActive()
+	}
 	return controls
 }

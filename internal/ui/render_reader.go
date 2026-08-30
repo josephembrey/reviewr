@@ -149,6 +149,8 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	} else if row.Kind == ReaderFoldEnd {
 		line = renderReaderFoldEndPayload(row.Text, width)
+	} else if row.Kind == ReaderMarkdown {
+		line = fit(renderReaderPayload(row, nil), width)
 	} else {
 		bar, barStyle = readerChangeBar(row, continuation)
 		number := readerLineNumber(row, geometry.Digits, continuation)
@@ -263,6 +265,9 @@ func renderReaderFoldEndPayload(text string, width int) string {
 }
 
 func renderReaderPayload(row ReaderRow, background color.Color) string {
+	if row.Styled != "" && background == nil {
+		return row.Styled
+	}
 	if len(row.Spans) == 0 {
 		text := SafeSingleLine(row.Text)
 		if background != nil {

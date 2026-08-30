@@ -9,7 +9,7 @@ buildGoModule {
   version = "0.1.0";
 
   src = lib.cleanSource ./.;
-  vendorHash = "sha256-tumyQI4jw4lF8tieBrgibezQJjEvQlsQ4pH8jMOhzKM=";
+  vendorHash = "sha256-/am1skPJNEmyT1VGqzsWZetuNUl/958n1IurcNyQZ7M=";
 
   subPackages = ["cmd/reviewr"];
   nativeBuildInputs = [makeWrapper];

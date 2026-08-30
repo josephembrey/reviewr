@@ -73,6 +73,7 @@ type Files struct {
 	ContextFoldOverrides map[string]bool  `json:"context_fold_overrides,omitempty"`
 	Folds                map[string]Folds `json:"folds,omitempty"`
 	ReviewFull           map[string]bool  `json:"review_full,omitempty"`
+	MarkdownPreviews     []string         `json:"markdown_previews,omitempty"`
 }
 
 type Refs struct {

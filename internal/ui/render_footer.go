@@ -31,7 +31,7 @@ func renderFooter(model Model) string {
 		case model.Workspace == workspace.Notes:
 			content = renderNotesFooter(model)
 		case model.Workspace == workspace.Files:
-			entries = fileFooterEntries(model.Controls.RichDiff)
+			entries = fileFooterEntries(model.Controls)
 		case model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes:
 			entries = stashFooterEntries(model.Controls.RichDiff, model.ReaderContextFoldable)
 		default:
@@ -44,14 +44,21 @@ func renderFooter(model Model) string {
 	return renderFooterHelp(content, model.Geometry)
 }
 
-func fileFooterEntries(richDiff bool) []footerEntry {
+func fileFooterEntries(controls workspace.Controls) []footerEntry {
 	entries := []footerEntry{
 		{key: "tab", label: "focus"},
 		{key: "j/k", label: "move"},
 		{key: "h/l", label: "less/more"},
 	}
-	if richDiff {
+	if controls.RichDiff {
 		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})
+	}
+	if controls.MarkdownPreviewEligible {
+		label := "preview"
+		if controls.MarkdownPreview {
+			label = "source"
+		}
+		entries = append(entries, footerEntry{key: "m", label: label})
 	}
 	return append(entries,
 		footerEntry{key: "z", label: "swap"},

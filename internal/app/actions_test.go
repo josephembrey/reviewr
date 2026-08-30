@@ -72,6 +72,20 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	); ok {
 		t.Fatalf("ineligible 4 routed as (%+v, true)", got)
 	}
+	if got, ok := routeMessage(
+		tea.KeyPressMsg(tea.Key{Code: 'm', Text: "m"}), navigation.FocusReader, ui.Geometry{}, workspace.Files,
+		workspace.Controls{MarkdownPreviewEligible: true}, false, false, 0, 0, 0, 1,
+	); !ok || got.Kind != ToggleMarkdownPreview {
+		t.Fatalf("eligible Markdown m routed as (%+v, %v)", got, ok)
+	}
+	for _, active := range []workspace.Kind{workspace.Files, workspace.Git} {
+		if got, ok := routeMessage(
+			tea.KeyPressMsg(tea.Key{Code: 'm', Text: "m"}), navigation.FocusReader, ui.Geometry{}, active,
+			workspace.Controls{}, false, false, 0, 0, 0, 1,
+		); ok {
+			t.Fatalf("ineligible workspace %v m routed as (%+v, true)", active, got)
+		}
+	}
 	for _, test := range []struct {
 		key  tea.Key
 		want ActionKind

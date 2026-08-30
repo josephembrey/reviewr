@@ -1,6 +1,7 @@
 package app
 
 import (
+	"sort"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -89,6 +90,7 @@ func (m Model) sessionState() session.State {
 			ContextExpanded:      files.readerContext.defaultExpanded,
 			ContextFoldOverrides: files.readerContext.overrides(),
 			Folds:                fileFolds, ReviewFull: cloneBools(files.reviewFull),
+			MarkdownPreviews: sortedTrueKeys(files.markdownPreviewPaths),
 		},
 		History: placeSession(m.history.place),
 		Refs:    session.Refs{Place: placeSession(m.refs.place), PreviewRows: refRows},
@@ -125,6 +127,12 @@ func (m *Model) restoreSession(state session.State) {
 	m.files.readerContext.restore(state.Files.ContextExpanded, state.Files.ContextFoldOverrides)
 	m.files.restoredReaderRows = append([]string(nil), state.Files.ReaderRows...)
 	m.files.reviewFull = cloneBools(state.Files.ReviewFull)
+	m.files.markdownPreviewPaths = make(map[string]bool, len(state.Files.MarkdownPreviews))
+	for _, path := range state.Files.MarkdownPreviews {
+		if path != "" {
+			m.files.markdownPreviewPaths[path] = true
+		}
+	}
 	for label, folds := range state.Files.Folds {
 		m.files.folds[parseFileSet(label)] = filetree.NewFoldState(folds.Known, folds.Collapsed)
 	}
@@ -230,6 +238,17 @@ func cloneBools(source map[string]bool) map[string]bool {
 			result[key] = true
 		}
 	}
+	return result
+}
+
+func sortedTrueKeys(source map[string]bool) []string {
+	result := make([]string, 0, len(source))
+	for key, value := range source {
+		if value {
+			result = append(result, key)
+		}
+	}
+	sort.Strings(result)
 	return result
 }
 

@@ -33,7 +33,7 @@ func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
 		key.source = m.stashes.readerPresentation
 		key.contextRevision = m.stashes.readerContext.revision
 	case m.active == workspace.Files:
-		key.source = m.files.readerPresentation
+		key.source = m.files.activeReaderPresentation()
 		key.contextRevision = m.files.readerContext.revision
 	default:
 		return readerViewportKey{}, false

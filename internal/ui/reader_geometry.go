@@ -203,6 +203,11 @@ func sliceReaderRow(row ReaderRow, left, right int) ReaderRow {
 		return row
 	}
 	if len(row.Spans) == 0 {
+		if row.Styled != "" {
+			row.Styled = ansi.Cut(row.Styled, left, right)
+			row.Text = ansi.Strip(row.Styled)
+			return row
+		}
 		row.Text = ansi.Cut(SafeSingleLine(row.Text), left, right)
 		return row
 	}
@@ -237,7 +242,6 @@ func sliceReaderRow(row ReaderRow, left, right int) ReaderRow {
 // lane. Tiny widths clip each rectangle without producing negative sizes.
 func CalculateReaderGeometry(rows Rect, document ReaderDocument, scrollbar bool) ReaderGeometry {
 	geometry := ReaderGeometry{Rows: rows, Digits: document.GutterDigits()}
-	geometry.Prefix = 1 + geometry.Digits + 1
 	geometry.Content = rows
 	if scrollbar && rows.Width > 0 {
 		geometry.Content.Width--
@@ -245,6 +249,11 @@ func CalculateReaderGeometry(rows Rect, document ReaderDocument, scrollbar bool)
 			X: rows.X + rows.Width - 1, Y: rows.Y, Width: 1, Height: rows.Height,
 		}
 	}
+	if document.Kind == ReaderMarkdownDocument {
+		geometry.Code = geometry.Content
+		return geometry
+	}
+	geometry.Prefix = 1 + geometry.Digits + 1
 	barWidth := min(1, geometry.Content.Width)
 	geometry.ChangeBar = Rect{
 		X: geometry.Content.X, Y: geometry.Content.Y,

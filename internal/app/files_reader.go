@@ -27,7 +27,8 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
-	state.readerContext.reconcile(presentation)
+	state.rebuildMarkdownPreview(state.markdownRows)
+	state.readerContext.reconcile(state.rawReaderDocument())
 	state.readerLoadedKey = state.readerRequestKey
 	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
@@ -92,6 +93,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.displayedComparison = nil
 		state.displayedBounds = nil
 		state.readerPresentation = nil
+		state.markdownPresentation = nil
 		state.resetReaderContext()
 		state.restoredReaderRows = nil
 	}
@@ -163,6 +165,7 @@ func (state *filesState) clearReader() {
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerPresentation = nil
+	state.markdownPresentation = nil
 	state.resetReaderContext()
 	state.restoredReaderRows = nil
 	state.requestedComparison = nil
@@ -180,6 +183,9 @@ func (state filesState) readerDocument() ui.ReaderDocument {
 }
 
 func (state filesState) rawReaderDocument() ui.ReaderDocument {
+	if state.markdownPreviewActive() && state.markdownPresentation != nil {
+		return *state.markdownPresentation
+	}
 	if state.readerPresentation != nil {
 		return *state.readerPresentation
 	}

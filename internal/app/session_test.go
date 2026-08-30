@@ -81,6 +81,7 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 			ReaderPath: "a.go", ReaderRows: []string{"old-a", "old-b"}, ContextExpanded: true,
 			ContextFoldOverrides: map[string]bool{"fold:1": false},
 			ReviewFull:           map[string]bool{"a.go": true},
+			MarkdownPreviews:     []string{"README.md", "docs/design.md"},
 		},
 		History: session.Place{Items: []string{"commit-1"}, Focus: "reader", ReaderOffset: 5},
 		Refs: session.Refs{

@@ -93,6 +93,7 @@ func (m *Model) applyLayoutAction(action Action) {
 // resizeWorkspaceState preserves each workspace's semantic place while
 // clamping only the coordinates made invalid by the new shared geometry.
 func (m *Model) resizeWorkspaceState() {
+	m.files.resizeMarkdownPreview(m.geometry.ReaderRows)
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)

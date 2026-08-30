@@ -35,9 +35,10 @@ var helpRows = []helpRow{
 		section: "Files",
 		entries: []footerEntry{
 			{key: "1", label: "scope"},
-			{key: "2", label: "reader"},
-			{key: "3", label: "basis"},
+			{key: "2", label: "file"},
+			{key: "3", label: "base"},
 			{key: "4", label: "diff"},
+			{key: "m", label: "render"},
 			{key: "x", label: "review"},
 		},
 	},

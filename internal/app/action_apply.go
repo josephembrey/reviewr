@@ -19,7 +19,7 @@ func (m *Model) apply(action Action) effect {
 		SelectProjectNotes,
 		SelectWorktreeNotes:
 		return m.applyDestinationAction(action)
-	case ToggleSecondary, ToggleTertiary, ToggleComparison, ToggleDiffHighlight:
+	case ToggleSecondary, ToggleTertiary, ToggleComparison, ToggleDiffHighlight, ToggleMarkdownPreview:
 		return m.applyViewControl(action)
 	case ToggleReview, ActivateReviewBadge, ToggleReviewBounds, NextReviewGap:
 		return m.applyReviewAction(action)
@@ -103,6 +103,10 @@ func (m *Model) applyViewControl(action Action) effect {
 	case ToggleDiffHighlight:
 		if m.diffHighlightEligible() {
 			m.controls.DiffHighlight = m.controls.DiffHighlight.Toggle()
+		}
+	case ToggleMarkdownPreview:
+		if m.active == workspace.Files {
+			m.files.toggleMarkdownPreview(m.geometry.ReaderRows)
 		}
 	}
 	return effect{}

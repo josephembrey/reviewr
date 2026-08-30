@@ -22,6 +22,7 @@ const (
 	ToggleTertiary
 	ToggleComparison
 	ToggleDiffHighlight
+	ToggleMarkdownPreview
 	ToggleReview
 	ToggleReviewBounds
 	NextReviewGap
@@ -366,6 +367,10 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 	case workspace.DiffHighlightKey:
 		if context.controls.RichDiff {
 			return Action{Kind: ToggleDiffHighlight}, true
+		}
+	case "m":
+		if context.active == workspace.Files && context.controls.MarkdownPreviewEligible {
+			return Action{Kind: ToggleMarkdownPreview}, true
 		}
 	case "esc":
 		if context.active == workspace.Git {

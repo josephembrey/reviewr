@@ -57,6 +57,7 @@ const (
 	ReaderNotice
 	ReaderFold
 	ReaderFoldEnd
+	ReaderMarkdown
 )
 
 // ReaderRow is one logical rich-reader row. Text and Spans contain code or
@@ -67,8 +68,11 @@ type ReaderRow struct {
 	Text     string
 	Tone     Tone
 	Spans    []TextSpan
-	OldLine  uint64
-	NewLine  uint64
+	// Styled contains ANSI authored by reviewr's Markdown renderer. Source
+	// content never enters this field directly.
+	Styled  string
+	OldLine uint64
+	NewLine uint64
 	// RemovedBefore/After anchor deleted source lines at a surviving full-file
 	// row without inserting fake document content.
 	RemovedBefore uint64
@@ -115,6 +119,7 @@ const (
 	ReaderDocumentNone ReaderDocumentKind = iota
 	ReaderFileDocument
 	ReaderDiffDocument
+	ReaderMarkdownDocument
 )
 
 // ReaderDocument is the app-to-UI seam for every rich file and diff source.
