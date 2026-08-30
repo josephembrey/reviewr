@@ -1,7 +1,7 @@
 package workspace
 
-// Header action keys are centralized for the pending 1/2/3 destination-key
-// merge. Changing that grammar should not touch semantic actions or layout.
+// Header action keys follow the three direct destination keys. Keeping the
+// local grammar centralized prevents input, header, and footer drift.
 const (
 	SecondaryControlKey  = "4"
 	TertiaryControlKey   = "5"

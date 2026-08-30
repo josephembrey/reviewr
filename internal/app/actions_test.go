@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
-	"github.com/josephembrey/reviewr/internal/scratch"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -30,8 +30,9 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "left collapses directory", key: tea.Key{Code: tea.KeyLeft}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseDirectory}},
 		{name: "tab toggles focus", key: tea.Key{Code: tea.KeyTab}, want: Action{Kind: ToggleFocus}},
 		{name: "z swaps panes", key: tea.Key{Code: 'z', Text: "z"}, want: Action{Kind: SwapPanes}},
-		{name: "one toggles primary workspace", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleWorkspace}},
-		{name: "escape toggles scratch", key: tea.Key{Code: tea.KeyEscape}, want: Action{Kind: ToggleScratch}},
+		{name: "one selects Files", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ShowFiles}},
+		{name: "two selects Git", key: tea.Key{Code: '2', Text: "2"}, want: Action{Kind: ShowGit}},
+		{name: "three selects Notes", key: tea.Key{Code: '3', Text: "3"}, want: Action{Kind: ShowNotes}},
 		{name: "four toggles secondary", key: tea.Key{Code: '4', Text: "4"}, want: Action{Kind: ToggleSecondary}},
 		{name: "five toggles tertiary", key: tea.Key{Code: '5', Text: "5"}, want: Action{Kind: ToggleTertiary}},
 		{name: "six cycles comparison", key: tea.Key{Code: '6', Text: "6"}, want: Action{Kind: ToggleComparison}},
@@ -78,7 +79,13 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		})
 	}
 	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: 's', Text: "s"}), navigation.FocusNavigator, ui.Geometry{}, workspace.Files, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
-		t.Fatalf("retired Scratch key routed as (%+v, true)", got)
+		t.Fatalf("retired Notes key routed as (%+v, true)", got)
+	}
+	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), navigation.FocusNavigator, ui.Geometry{}, workspace.Files, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
+		t.Fatalf("Files Escape was consumed as (%+v, true)", got)
+	}
+	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), navigation.FocusNavigator, ui.Geometry{}, workspace.Git, workspace.Controls{}, false, false, 0, 0, 0, 0); !ok || got.Kind != ShowFiles {
+		t.Fatalf("Git Escape = (%+v, %v), want ShowFiles", got, ok)
 	}
 	for _, test := range []struct {
 		name   string
@@ -100,12 +107,12 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	}
 }
 
-func TestScratchRoutingIsModelessAndSemantic(t *testing.T) {
+func TestNotesRoutingIsModelessAndSemantic(t *testing.T) {
 	t.Parallel()
 	g := ui.Calculate(80, 12)
-	editor := scratch.NewEditor()
+	editor := notes.NewEditor()
 	editor.Load(strings.Repeat("line\n", 30))
-	editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+	editor.Resize(g.NotesText.Width, g.NotesText.Height)
 	presentation := editor.Presentation()
 	tests := []struct {
 		name string
@@ -113,63 +120,64 @@ func TestScratchRoutingIsModelessAndSemantic(t *testing.T) {
 		want Action
 		ok   bool
 	}{
-		{name: "h inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}), want: Action{Kind: ScratchInsert, Text: "h"}, ok: true},
-		{name: "z inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Text: "z"}), want: Action{Kind: ScratchInsert, Text: "z"}, ok: true},
-		{name: "q inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}), want: Action{Kind: ScratchInsert, Text: "q"}, ok: true},
-		{name: "two inserts", msg: tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}), want: Action{Kind: ScratchInsert, Text: "2"}, ok: true},
-		{name: "one closes", msg: tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}), want: Action{Kind: ToggleWorkspace}, ok: true},
-		{name: "escape closes", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), want: Action{Kind: ToggleScratch}, ok: true},
+		{name: "h inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}), want: Action{Kind: NotesInsert, Text: "h"}, ok: true},
+		{name: "z inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Text: "z"}), want: Action{Kind: NotesInsert, Text: "z"}, ok: true},
+		{name: "q inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}), want: Action{Kind: NotesInsert, Text: "q"}, ok: true},
+		{name: "one inserts", msg: tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}), want: Action{Kind: NotesInsert, Text: "1"}, ok: true},
+		{name: "two inserts", msg: tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}), want: Action{Kind: NotesInsert, Text: "2"}, ok: true},
+		{name: "three inserts", msg: tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}), want: Action{Kind: NotesInsert, Text: "3"}, ok: true},
+		{name: "escape returns Files", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), want: Action{Kind: ShowFiles}, ok: true},
 		{name: "ctrl c quits", msg: tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}), want: Action{Kind: Quit}, ok: true},
-		{name: "shift left selects", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}), want: Action{Kind: ScratchMoveLeft, Selecting: true}, ok: true},
-		{name: "ctrl right words", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyRight, Mod: tea.ModCtrl}), want: Action{Kind: ScratchMoveWordRight}, ok: true},
-		{name: "home", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyHome}), want: Action{Kind: ScratchMoveHome}, ok: true},
-		{name: "page down", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}), want: Action{Kind: ScratchPageDown}, ok: true},
-		{name: "enter", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}), want: Action{Kind: ScratchInsert, Text: "\n"}, ok: true},
-		{name: "tab", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), want: Action{Kind: ScratchInsert, Text: "\t"}, ok: true},
-		{name: "delete", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyDelete}), want: Action{Kind: ScratchDelete}, ok: true},
-		{name: "undo", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}), want: Action{Kind: ScratchUndo}, ok: true},
-		{name: "redo", msg: tea.KeyPressMsg(tea.Key{Code: 'y', Mod: tea.ModCtrl}), want: Action{Kind: ScratchRedo}, ok: true},
-		{name: "paste", msg: tea.PasteMsg{Content: "a\nb"}, want: Action{Kind: ScratchInsert, Text: "a\nb"}, ok: true},
-		{name: "click text", msg: tea.MouseClickMsg(tea.Mouse{X: g.ScratchText.X + 3, Y: g.ScratchText.Y + 2, Button: tea.MouseLeft}), want: Action{Kind: ScratchBeginSelection, X: 3, Y: 2}, ok: true},
-		{name: "wheel text", msg: tea.MouseWheelMsg(tea.Mouse{X: g.ScratchText.X, Y: g.ScratchText.Y, Button: tea.MouseWheelDown}), want: Action{Kind: ScratchScroll, Amount: 3}, ok: true},
-		{name: "drag selection", msg: tea.MouseMotionMsg(tea.Mouse{X: g.ScratchText.X + 4, Y: g.ScratchText.Y + 3, Button: tea.MouseLeft}), want: Action{Kind: ScratchDragSelection, X: 4, Y: 3}, ok: true},
-		{name: "release selection", msg: tea.MouseReleaseMsg(tea.Mouse{Button: tea.MouseLeft}), want: Action{Kind: ScratchEndSelection}, ok: true},
+		{name: "shift left selects", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}), want: Action{Kind: NotesMoveLeft, Selecting: true}, ok: true},
+		{name: "ctrl right words", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyRight, Mod: tea.ModCtrl}), want: Action{Kind: NotesMoveWordRight}, ok: true},
+		{name: "home", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyHome}), want: Action{Kind: NotesMoveHome}, ok: true},
+		{name: "page down", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}), want: Action{Kind: NotesPageDown}, ok: true},
+		{name: "enter", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}), want: Action{Kind: NotesInsert, Text: "\n"}, ok: true},
+		{name: "tab", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), want: Action{Kind: NotesInsert, Text: "\t"}, ok: true},
+		{name: "delete", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyDelete}), want: Action{Kind: NotesDelete}, ok: true},
+		{name: "undo", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}), want: Action{Kind: NotesUndo}, ok: true},
+		{name: "redo", msg: tea.KeyPressMsg(tea.Key{Code: 'y', Mod: tea.ModCtrl}), want: Action{Kind: NotesRedo}, ok: true},
+		{name: "paste", msg: tea.PasteMsg{Content: "a\nb"}, want: Action{Kind: NotesInsert, Text: "a\nb"}, ok: true},
+		{name: "click text", msg: tea.MouseClickMsg(tea.Mouse{X: g.NotesText.X + 3, Y: g.NotesText.Y + 2, Button: tea.MouseLeft}), want: Action{Kind: NotesBeginSelection, X: 3, Y: 2}, ok: true},
+		{name: "wheel text", msg: tea.MouseWheelMsg(tea.Mouse{X: g.NotesText.X, Y: g.NotesText.Y, Button: tea.MouseWheelDown}), want: Action{Kind: NotesScroll, Amount: 3}, ok: true},
+		{name: "drag selection", msg: tea.MouseMotionMsg(tea.Mouse{X: g.NotesText.X + 4, Y: g.NotesText.Y + 3, Button: tea.MouseLeft}), want: Action{Kind: NotesDragSelection, X: 4, Y: 3}, ok: true},
+		{name: "release selection", msg: tea.MouseReleaseMsg(tea.Mouse{Button: tea.MouseLeft}), want: Action{Kind: NotesEndSelection}, ok: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			selectionDragging := strings.Contains(test.name, "selection")
-			got, ok := routeScratchMessage(test.msg, g, presentation, selectionDragging, false)
+			got, ok := routeNotesMessage(test.msg, g, presentation, selectionDragging, false)
 			if ok != test.ok || !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("routeScratchMessage() = (%+v, %v), want (%+v, %v)", got, ok, test.want, test.ok)
+				t.Fatalf("routeNotesMessage() = (%+v, %v), want (%+v, %v)", got, ok, test.want, test.ok)
 			}
 		})
 	}
 
-	bar, ok := ui.CalculateScrollbar(g.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	bar, ok := ui.CalculateScrollbar(g.NotesRows, len(presentation.Document.Rows), presentation.Top)
 	if !ok {
-		t.Fatal("long Scratch note has no scrollbar")
+		t.Fatal("long Notes note has no scrollbar")
 	}
-	got, routed := routeScratchMessage(tea.MouseClickMsg(tea.Mouse{X: bar.Thumb.X, Y: bar.Thumb.Y, Button: tea.MouseLeft}), g, presentation, false, false)
-	if !routed || got.Kind != StartScratchScrollbarDrag || got.Position != bar.Thumb.Y {
-		t.Fatalf("scratch scrollbar click = (%+v, %v)", got, routed)
+	got, routed := routeNotesMessage(tea.MouseClickMsg(tea.Mouse{X: bar.Thumb.X, Y: bar.Thumb.Y, Button: tea.MouseLeft}), g, presentation, false, false)
+	if !routed || got.Kind != StartNotesScrollbarDrag || got.Position != bar.Thumb.Y {
+		t.Fatalf("notes scrollbar click = (%+v, %v)", got, routed)
 	}
 }
 
-func TestScratchScopeKeyboardAndMouseRouting(t *testing.T) {
+func TestNotesScopeKeyboardAndMouseRouting(t *testing.T) {
 	t.Parallel()
 	g := ui.Calculate(80, 12)
-	editor := scratch.NewEditor()
-	editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+	editor := notes.NewEditor()
+	editor.Resize(g.NotesText.Width, g.NotesText.Height)
 	presentation := editor.Presentation()
 	ctrlT := tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl})
-	if got, ok := routeScratchMessage(ctrlT, g, presentation, false, false); ok {
+	if got, ok := routeNotesMessage(ctrlT, g, presentation, false, false); ok {
 		t.Fatalf("primary ctrl+t routed as (%+v, true)", got)
 	}
-	if got, ok := routeScratchMessage(ctrlT, g, presentation, false, false, true); !ok || got.Kind != ToggleScratchScope {
+	if got, ok := routeNotesMessage(ctrlT, g, presentation, false, false, true); !ok || got.Kind != ToggleNotesScope {
 		t.Fatalf("linked ctrl+t = (%+v, %v)", got, ok)
 	}
-	if got, ok := routeScratchMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), g, presentation, false, false, true); !ok || got != (Action{Kind: ScratchInsert, Text: "\t"}) {
+	if got, ok := routeNotesMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), g, presentation, false, false, true); !ok || got != (Action{Kind: NotesInsert, Text: "\t"}) {
 		t.Fatalf("linked Tab = (%+v, %v)", got, ok)
 	}
 	for _, test := range []struct {
@@ -177,13 +185,13 @@ func TestScratchScopeKeyboardAndMouseRouting(t *testing.T) {
 		rect ui.Rect
 		want ActionKind
 	}{
-		{name: "project", rect: g.ScratchProjectScope, want: SelectProjectScratch},
-		{name: "worktree", rect: g.ScratchWorktreeScope, want: SelectWorktreeScratch},
+		{name: "project", rect: g.NotesProjectScope, want: SelectProjectNotes},
+		{name: "worktree", rect: g.NotesWorktreeScope, want: SelectWorktreeNotes},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			msg := tea.MouseClickMsg(tea.Mouse{X: test.rect.X + test.rect.Width/2, Y: test.rect.Y, Button: tea.MouseLeft})
-			if got, ok := routeScratchMessage(msg, g, presentation, false, false, true); !ok || got.Kind != test.want {
+			if got, ok := routeNotesMessage(msg, g, presentation, false, false, true); !ok || got.Kind != test.want {
 				t.Fatalf("scope click = (%+v, %v), want %v", got, ok, test.want)
 			}
 		})
@@ -208,12 +216,12 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 		{name: "left click activates visible row", msg: tea.MouseClickMsg(tea.Mouse{X: rowX, Y: rowY, Button: tea.MouseLeft}), want: Action{Kind: ActivateNavigatorRow, Index: 3}, ok: true},
 		{name: "files label selects Files", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderFiles.X, Y: g.HeaderFiles.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowFiles}, ok: true},
 		{name: "git label selects Git", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowGit}, ok: true},
-		{name: "scratch label selects Scratch", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderScratch.X, Y: g.HeaderScratch.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowScratch}, ok: true},
-		{name: "secondary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 31, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleSecondary}, ok: true},
-		{name: "tertiary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 37, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleTertiary}, ok: true},
-		{name: "comparison control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 44, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleComparison}, ok: true},
+		{name: "notes label selects Notes", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderNotes.X, Y: g.HeaderNotes.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowNotes}, ok: true},
+		{name: "secondary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 24, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleSecondary}, ok: true},
+		{name: "tertiary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 30, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleTertiary}, ok: true},
+		{name: "comparison control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 37, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleComparison}, ok: true},
 		{name: "switcher separator is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 15, Y: g.Header.Y, Button: tea.MouseLeft})},
-		{name: "header gap is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 30, Y: g.Header.Y, Button: tea.MouseLeft})},
+		{name: "header gap is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 23, Y: g.Header.Y, Button: tea.MouseLeft})},
 		{name: "wheel on workspace label is neutral", msg: tea.MouseWheelMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseWheelDown})},
 		{name: "wheel on row navigates instead of clicking", msg: tea.MouseWheelMsg(tea.Mouse{X: rowX, Y: rowY, Button: tea.MouseWheelDown}), want: Action{Kind: SelectNext}, ok: true},
 		{name: "navigator title focuses navigator", msg: tea.MouseClickMsg(tea.Mouse{X: g.NavigatorTitle.X, Y: g.NavigatorTitle.Y, Button: tea.MouseLeft}), want: Action{Kind: FocusNavigator}, ok: true},

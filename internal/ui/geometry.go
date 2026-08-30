@@ -17,27 +17,27 @@ func (r Rect) Contains(x, y int) bool {
 
 // Geometry is the single source of pane bounds for render and mouse routing.
 type Geometry struct {
-	Screen               Rect
-	Header               Rect
-	HeaderSwitcher       Rect
-	HeaderFiles          Rect
-	HeaderGit            Rect
-	HeaderScratch        Rect
-	Body                 Rect
-	Navigator            Rect
-	NavigatorTitle       Rect
-	NavigatorRows        Rect
-	Divider              Rect
-	Reader               Rect
-	ReaderTitle          Rect
-	ReaderRows           Rect
-	ScratchTitle         Rect
-	ScratchProjectScope  Rect
-	ScratchWorktreeScope Rect
-	ScratchRows          Rect
-	ScratchText          Rect
-	ScratchBar           Rect
-	Footer               Rect
+	Screen             Rect
+	Header             Rect
+	HeaderSwitcher     Rect
+	HeaderFiles        Rect
+	HeaderGit          Rect
+	HeaderNotes        Rect
+	Body               Rect
+	Navigator          Rect
+	NavigatorTitle     Rect
+	NavigatorRows      Rect
+	Divider            Rect
+	Reader             Rect
+	ReaderTitle        Rect
+	ReaderRows         Rect
+	NotesTitle         Rect
+	NotesProjectScope  Rect
+	NotesWorktreeScope Rect
+	NotesRows          Rect
+	NotesText          Rect
+	NotesBar           Rect
+	Footer             Rect
 }
 
 // MinimumPaneWidth is the draggable split's preferred lower bound. Geometry
@@ -113,32 +113,32 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 		},
 		Footer: Rect{Y: body.Y + body.Height, Width: width, Height: footerHeight},
 	}
-	g.HeaderSwitcher = clipTo(g.Header, Rect{Width: 30, Height: 1})
+	g.HeaderSwitcher = clipTo(g.Header, Rect{Width: 23, Height: 1})
 	g.HeaderFiles = clipTo(g.Header, workspaceSwitcherRect(workspace.Files))
 	g.HeaderGit = clipTo(g.Header, workspaceSwitcherRect(workspace.Git))
-	g.HeaderScratch = clipTo(g.Header, workspaceSwitcherRect(workspace.Scratch))
+	g.HeaderNotes = clipTo(g.Header, workspaceSwitcherRect(workspace.Notes))
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
-	g.ScratchTitle, g.ScratchRows = surfaceRows(g.Body)
-	g.ScratchProjectScope = clipTo(g.ScratchTitle, Rect{X: g.ScratchTitle.X + 9, Y: g.ScratchTitle.Y, Width: 9, Height: 1})
-	g.ScratchWorktreeScope = clipTo(g.ScratchTitle, Rect{X: g.ScratchTitle.X + 18, Y: g.ScratchTitle.Y, Width: 10, Height: 1})
-	// Scratch uses the full row width while content fits. ScratchBar is only
+	g.NotesTitle, g.NotesRows = surfaceRows(g.Body)
+	g.NotesProjectScope = clipTo(g.NotesTitle, Rect{X: g.NotesTitle.X + 7, Y: g.NotesTitle.Y, Width: 9, Height: 1})
+	g.NotesWorktreeScope = clipTo(g.NotesTitle, Rect{X: g.NotesTitle.X + 16, Y: g.NotesTitle.Y, Width: 10, Height: 1})
+	// Notes uses the full row width while content fits. NotesBar is only
 	// the potential lane; CalculateScrollbar decides whether it is reserved.
-	g.ScratchText = g.ScratchRows
-	g.ScratchBar = scrollbarLane(g.ScratchRows)
+	g.NotesText = g.NotesRows
+	g.NotesBar = scrollbarLane(g.NotesRows)
 	return g
 }
 
-// workspaceSwitcherRect reserves the cells around a label for the active
-// drawer-style brackets, keeping paint and mouse geometry fixed across views.
+// workspaceSwitcherRect is the exact label-only paint and hit target inside
+// the stable "[ files | git | notes ]" tab group.
 func workspaceSwitcherRect(kind workspace.Kind) Rect {
 	switch kind {
 	case workspace.Git:
-		return Rect{X: 9, Width: 5, Height: 1}
-	case workspace.Scratch:
-		return Rect{X: 21, Width: 9, Height: 1}
+		return Rect{X: 10, Width: 3, Height: 1}
+	case workspace.Notes:
+		return Rect{X: 16, Width: 5, Height: 1}
 	default:
-		return Rect{X: 2, Width: 7, Height: 1}
+		return Rect{X: 2, Width: 5, Height: 1}
 	}
 }
 
@@ -149,7 +149,7 @@ const (
 	HitNone HitKind = iota
 	HitFilesWorkspace
 	HitGitWorkspace
-	HitScratchWorkspace
+	HitNotesWorkspace
 	HitSecondaryControl
 	HitTertiaryControl
 	HitComparisonControl
@@ -160,10 +160,10 @@ const (
 	HitNavigator
 	HitNavigatorRow
 	HitReader
-	HitScratchProjectScope
-	HitScratchWorktreeScope
-	HitScratchText
-	HitScratchScrollbar
+	HitNotesProjectScope
+	HitNotesWorktreeScope
+	HitNotesText
+	HitNotesScrollbar
 )
 
 // Hit is a mouse target. Index is meaningful only for HitNavigatorRow.
@@ -173,38 +173,38 @@ type Hit struct {
 	GrabOffset int
 }
 
-// ScratchHitTest resolves the full-width overlay using the same explicit
+// NotesHitTest resolves the full-width editor using the same explicit
 // rectangles and scrollbar calculation used to paint it.
-func (g Geometry) ScratchHitTest(x, y, totalRows, offset int) Hit {
-	return g.ScratchHitTestWithScopes(x, y, totalRows, offset, false)
+func (g Geometry) NotesHitTest(x, y, totalRows, offset int) Hit {
+	return g.NotesHitTestWithScopes(x, y, totalRows, offset, false)
 }
 
-// ScratchHitTestWithScopes adds the optional scope labels to the shared title
+// NotesHitTestWithScopes adds the optional scope labels to the shared title
 // geometry without making an absent primary-checkout switcher interactive.
-func (g Geometry) ScratchHitTestWithScopes(x, y, totalRows, offset int, hasWorktree bool) Hit {
+func (g Geometry) NotesHitTestWithScopes(x, y, totalRows, offset int, hasWorktree bool) Hit {
 	if g.HeaderFiles.Contains(x, y) {
 		return Hit{Kind: HitFilesWorkspace}
 	}
 	if g.HeaderGit.Contains(x, y) {
 		return Hit{Kind: HitGitWorkspace}
 	}
-	if g.HeaderScratch.Contains(x, y) {
-		return Hit{Kind: HitScratchWorkspace}
+	if g.HeaderNotes.Contains(x, y) {
+		return Hit{Kind: HitNotesWorkspace}
 	}
-	if hasWorktree && g.ScratchProjectScope.Contains(x, y) {
-		return Hit{Kind: HitScratchProjectScope}
+	if hasWorktree && g.NotesProjectScope.Contains(x, y) {
+		return Hit{Kind: HitNotesProjectScope}
 	}
-	if hasWorktree && g.ScratchWorktreeScope.Contains(x, y) {
-		return Hit{Kind: HitScratchWorktreeScope}
+	if hasWorktree && g.NotesWorktreeScope.Contains(x, y) {
+		return Hit{Kind: HitNotesWorktreeScope}
 	}
-	if g.Header.Contains(x, y) || g.ScratchTitle.Contains(x, y) {
+	if g.Header.Contains(x, y) || g.NotesTitle.Contains(x, y) {
 		return Hit{Kind: HitNone}
 	}
-	if bar, ok := CalculateScrollbar(g.ScratchRows, totalRows, offset); ok && bar.Track.Contains(x, y) {
-		return Hit{Kind: HitScratchScrollbar, GrabOffset: bar.GrabOffset(y)}
+	if bar, ok := CalculateScrollbar(g.NotesRows, totalRows, offset); ok && bar.Track.Contains(x, y) {
+		return Hit{Kind: HitNotesScrollbar, GrabOffset: bar.GrabOffset(y)}
 	}
-	if g.ScratchText.Contains(x, y) {
-		return Hit{Kind: HitScratchText}
+	if g.NotesText.Contains(x, y) {
+		return Hit{Kind: HitNotesText}
 	}
 	return Hit{Kind: HitNone}
 }
@@ -218,8 +218,8 @@ func (g Geometry) HitTest(x, y int, active workspace.Kind, controls workspace.Co
 	if g.HeaderGit.Contains(x, y) {
 		return Hit{Kind: HitGitWorkspace}
 	}
-	if g.HeaderScratch.Contains(x, y) {
-		return Hit{Kind: HitScratchWorkspace}
+	if g.HeaderNotes.Contains(x, y) {
+		return Hit{Kind: HitNotesWorkspace}
 	}
 	for _, control := range layoutHeaderControls(g, active, controls) {
 		if control.rect.Contains(x, y) {
@@ -230,12 +230,12 @@ func (g Geometry) HitTest(x, y int, active workspace.Kind, controls workspace.Co
 		return Hit{Kind: HitNone}
 	}
 	if g.Divider.Contains(x, y) {
-		if active != workspace.Scratch {
+		if active != workspace.Notes {
 			return Hit{Kind: HitDivider}
 		}
 		return Hit{Kind: HitNone}
 	}
-	if active != workspace.Scratch {
+	if active != workspace.Notes {
 		if bar, ok := CalculateScrollbar(g.NavigatorRows, fileCount, top); ok && bar.Track.Contains(x, y) {
 			return Hit{Kind: HitNavigatorScrollbar, GrabOffset: bar.GrabOffset(y)}
 		}

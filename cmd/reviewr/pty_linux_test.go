@@ -29,7 +29,7 @@ func TestPTYHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
+func TestPTYNotesEditingPersistenceAndLocking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY smoke test")
 	}
@@ -44,8 +44,8 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	t.Cleanup(first.stop)
 	first.waitFor(t, "files")
 	first.resetOutput()
-	first.write(t, "\x1b")
-	first.waitFor(t, "Scratch")
+	first.write(t, "3")
+	first.waitFor(t, "Notes")
 	first.waitFor(t, "saved")
 
 	first.resetOutput()
@@ -64,23 +64,23 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	first.write(t, "\x1b[<0;80;5M\x1b[<32;80;12M\x1b[<0;80;12m")
 
 	first.resize(t, 60, 12)
-	first.waitFor(t, "Scratch")
+	first.waitFor(t, "Notes")
 	first.resetOutput()
 	first.write(t, "\x1b")
 	first.waitFor(t, "files")
 	first.resetOutput()
-	first.write(t, "\x1b")
-	first.waitFor(t, "Scratch")
+	first.write(t, "3")
+	first.waitFor(t, "Notes")
 	first.waitFor(t, "wide 界")
 
 	second := startPTYReviewr(t, repository, stateHome, 60, 12)
 	t.Cleanup(second.stop)
 	second.waitFor(t, "files")
 	second.resetOutput()
-	second.write(t, "\x1b")
+	second.write(t, "3")
 	second.waitFor(t, "read-only")
 	second.write(t, "x")
-	second.waitFor(t, "another reviewr is editing")
+	second.waitFor(t, "another reviewr is")
 }
 
 func TestPTYAutomaticallyRefreshesChangedFileWithoutMovingTheUser(t *testing.T) {
@@ -190,17 +190,21 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	waitForReviewReceipts(t, stateHome, 6)
 	first.waitFor(t, "[x]")
 
-	// Git and Scratch keep their own input and place state; returning to Files
+	// Git and Notes keep their own input and place state; returning to Files
 	// recovers the same reviewed comparison. The narrow frame keeps the badge.
 	first.resetOutput()
-	first.write(t, "1")
+	first.write(t, "2")
 	first.waitFor(t, "commits")
 	first.write(t, "xRX")
 	first.resetOutput()
-	first.write(t, "\x1b")
-	first.waitFor(t, "Scratch")
+	first.write(t, "3")
+	first.waitFor(t, "Notes")
+	first.write(t, "123")
 	first.resetOutput()
-	first.write(t, "1")
+	first.write(t, "\x1b")
+	first.waitFor(t, "files")
+	first.resetOutput()
+	first.write(t, "2")
 	first.waitFor(t, "commits")
 	first.resetOutput()
 	first.write(t, "1")

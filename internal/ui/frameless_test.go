@@ -409,16 +409,15 @@ func TestTreeRowsCoexistWithNavigatorScrollbar(t *testing.T) {
 		rows[index] = NavigatorRow{Identity: "file", Label: "file.go", Tree: true, Depth: index % 4}
 	}
 	frame := Render(Model{
-		Geometry:         g,
-		Workspace:        workspace.Files,
-		PrimaryWorkspace: workspace.Files,
-		NavigatorTitle:   "40 files",
-		NavigatorRows:    rows,
-		Selected:         8,
-		Top:              5,
-		Focus:            navigation.FocusNavigator,
-		ReaderTitle:      "file.go",
-		ReaderLines:      []Line{{Text: "content"}},
+		Geometry:       g,
+		Workspace:      workspace.Files,
+		NavigatorTitle: "40 files",
+		NavigatorRows:  rows,
+		Selected:       8,
+		Top:            5,
+		Focus:          navigation.FocusNavigator,
+		ReaderTitle:    "file.go",
+		ReaderLines:    []Line{{Text: "content"}},
 	})
 	width, height := lipgloss.Size(frame)
 	if width != g.Screen.Width || height != g.Screen.Height {

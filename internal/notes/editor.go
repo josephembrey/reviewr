@@ -1,5 +1,5 @@
-// Package scratch implements editing and private persistence for Scratch notes.
-package scratch
+// Package notes implements the Notes editor and its private persistence.
+package notes
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	// UndoLimit bounds whole-buffer snapshots. Scratch is deliberately one small note.
+	// UndoLimit bounds whole-buffer snapshots. Notes is deliberately one small note.
 	UndoLimit = 100
 	TabWidth  = 4
 )

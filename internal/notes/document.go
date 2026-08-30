@@ -1,8 +1,9 @@
-package scratch
+package notes
 
 import (
 	"strings"
 
+	"github.com/josephembrey/reviewr/internal/highlight"
 	"github.com/rivo/uniseg"
 )
 
@@ -165,6 +166,9 @@ type Presentation struct {
 	SelectionStart int
 	SelectionEnd   int
 	HasSelection   bool
+	// Styles is indexed by the same grapheme identities as the editor. It is
+	// presentation-only: Document remains the sole wrapping and hit authority.
+	Styles []highlight.Style
 }
 
 func (e Editor) Presentation() Presentation {

@@ -11,20 +11,15 @@ import (
 
 func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	t.Parallel()
-	switchers := map[workspace.Kind]string{
-		workspace.Files:   "1 [files] git  | esc  scratch ",
-		workspace.Git:     "1  files [git] | esc  scratch ",
-		workspace.Scratch: "1 [files] git  | esc [scratch]",
-	}
+	const switcher = "[ files | git | notes ]"
 	for width := 0; width <= 54; width++ {
-		for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Scratch} {
+		for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Notes} {
 			frame := Render(Model{Geometry: Calculate(width, 1), Workspace: active})
 			gotWidth, gotHeight := lipgloss.Size(frame)
 			if gotWidth != width || gotHeight != 1 {
 				t.Fatalf("Render(width=%d, active=%v) size = %dx%d", width, active, gotWidth, gotHeight)
 			}
 			plain := ansi.Strip(frame)
-			switcher := switchers[active]
 			visibleSwitcher := switcher[:min(width, len(switcher))]
 			if !strings.HasPrefix(plain, visibleSwitcher) {
 				t.Fatalf("Render(width=%d) header = %q, want prefix %q", width, plain, visibleSwitcher)
@@ -39,16 +34,16 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 		Geometry: Calculate(80, 1), Workspace: workspace.Files,
 		Changes: ChangeSummary{Ready: true},
 	}))
-	if !strings.HasPrefix(plain, switchers[workspace.Files]) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
+	if !strings.HasPrefix(plain, switcher) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
 		t.Fatalf("normal header = %q", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(30, 1), Workspace: workspace.Files}))
-	if plain != switchers[workspace.Files] {
-		t.Fatalf("30-column header = %q, want switcher only", plain)
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(23, 1), Workspace: workspace.Files}))
+	if plain != switcher {
+		t.Fatalf("23-column header = %q, want switcher only", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(31, 1), Workspace: workspace.Files}))
-	if plain != switchers[workspace.Files]+" " {
-		t.Fatalf("31-column header = %q, want switcher only", plain)
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(24, 1), Workspace: workspace.Files}))
+	if plain != switcher+" " {
+		t.Fatalf("24-column header = %q, want switcher only", plain)
 	}
 }
 
@@ -73,45 +68,20 @@ func TestHeaderOmitsEachZeroChangeTotal(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSwitcherUsesDrawerBracketsWithoutReverseHighlight(t *testing.T) {
+func TestWorkspaceSwitcherHighlightsOnlyTheActiveLabel(t *testing.T) {
 	t.Parallel()
-	for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Scratch} {
-		frame := Render(Model{Geometry: Calculate(80, 1), Workspace: active})
-		if strings.Contains(frame, "\x1b[7m") {
-			t.Fatalf("workspace %v uses reverse-video highlight: %q", active, frame)
+	for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Notes} {
+		frame := renderWorkspaceSwitcher(23, active)
+		labels := map[workspace.Kind]string{workspace.Files: "files", workspace.Git: "git", workspace.Notes: "notes"}
+		for kind, label := range labels {
+			styled := selectionStyle(true).Render(label)
+			if got := strings.Contains(frame, styled); got != (kind == active) {
+				t.Fatalf("active %v label %q selected=%v frame=%q", active, label, got, frame)
+			}
 		}
-	}
-}
-
-func TestScratchKeepsInactivePrimaryWorkspaceBracketed(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name    string
-		primary workspace.Kind
-		plain   string
-	}{
-		{name: "Files", primary: workspace.Files, plain: "1 [files] git  | esc [scratch]"},
-		{name: "Git", primary: workspace.Git, plain: "1  files [git] | esc [scratch]"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			frame := Render(Model{
-				Geometry:         Calculate(80, 1),
-				Workspace:        workspace.Scratch,
-				PrimaryWorkspace: test.primary,
-			})
-			if plain := ansi.Strip(frame); !strings.HasPrefix(plain, test.plain) {
-				t.Fatalf("Scratch header = %q, want prefix %q", plain, test.plain)
-			}
-			primary := workspaceSwitcherRect(test.primary)
-			primaryLabel := ansi.Strip(renderWorkspaceSwitcher(primary.X+primary.Width, workspace.Scratch, test.primary))[primary.X : primary.X+primary.Width]
-			if strings.Contains(frame, headerStyle.Render(primaryLabel)) {
-				t.Fatalf("hidden primary workspace remains highlighted: %q", frame)
-			}
-			if !strings.Contains(frame, headerStyle.Render("[scratch]")) {
-				t.Fatalf("Scratch lacks active highlight: %q", frame)
-			}
-		})
+		if plain := ansi.Strip(frame); plain != "[ files | git | notes ]" {
+			t.Fatalf("active %v changed stable group: %q", active, plain)
+		}
 	}
 }
 
@@ -146,7 +116,7 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 		Changes:   ChangeSummary{Files: 12, Additions: 345, Deletions: 67, Ready: true},
 	}
 	plain := ansi.Strip(Render(model))
-	if !strings.HasPrefix(plain, "1 [files] git  | esc  scratch") || strings.Contains(plain, "12 changes") {
+	if !strings.HasPrefix(plain, "[ files | git | notes ]") || strings.Contains(plain, "12 changes") {
 		t.Fatalf("narrow header = %q", plain)
 	}
 }

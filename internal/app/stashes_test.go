@@ -40,7 +40,7 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	key := func(value rune) tea.Cmd {
 		return update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
 	}
-	if command := key('1'); command != nil || model.active != workspace.Git {
+	if command := key('2'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git switch = active %v command=%v", model.active, command != nil)
 	}
 	if command := key('4'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
@@ -240,7 +240,6 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	geometry := ui.Calculate(120, 14)
 	model := state.viewModel(geometry, time.Unix(2_000_000_000, 0))
 	model.Workspace = workspace.Git
-	model.PrimaryWorkspace = workspace.Git
 	model.Controls.Git = workspace.GitStashes
 	frame := ui.Render(model)
 	plain := ansi.Strip(frame)
@@ -268,7 +267,6 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 
 	narrow := state.viewModel(ui.Calculate(60, 12), time.Unix(2_000_000_000, 0))
 	narrow.Workspace = workspace.Git
-	narrow.PrimaryWorkspace = workspace.Git
 	narrow.Controls.Git = workspace.GitStashes
 	narrowFrame := ansi.Strip(ui.Render(narrow))
 	if !strings.Contains(narrowFrame, "stash@{0}") || !strings.Contains(narrowFrame, "feature/") || strings.Contains(narrowFrame, "deliberately long hostile↵message") {
@@ -322,7 +320,6 @@ func TestStashViewUsesSharedNavigatorAndReaderScrollbars(t *testing.T) {
 	geometry := ui.Calculate(80, 14)
 	presentation := state.viewModel(geometry, time.Unix(2_000_000_000, 0))
 	presentation.Workspace = workspace.Git
-	presentation.PrimaryWorkspace = workspace.Git
 	presentation.Controls.Git = workspace.GitStashes
 	plain := ansi.Strip(ui.Render(presentation))
 	if strings.Count(plain, "▐") < 2 {

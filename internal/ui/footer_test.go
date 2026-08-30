@@ -24,17 +24,19 @@ func TestFooterSeparatesKeyLabelAndSeparatorStyles(t *testing.T) {
 	}
 }
 
-func TestScratchScopeShortcutUsesFooterKeyLabelTreatment(t *testing.T) {
+func TestNotesFooterUsesTruthfulHomeAndScopeKeys(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(80, 14)
 	frame := Render(Model{
-		Geometry:           geometry,
-		Workspace:          workspace.Scratch,
-		ScratchStatus:      "Ln 1, Col 1  •  saved",
-		ScratchHasWorktree: true,
+		Geometry:         geometry,
+		Workspace:        workspace.Notes,
+		NotesStatus:      "Ln 1, Col 1  •  saved",
+		NotesHasWorktree: true,
 	})
 	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
-	if !strings.Contains(footer, headerStyle.Render("ctrl+t")) || !strings.Contains(footer, chromeStyle.Render(" scope")) {
-		t.Fatalf("Scratch scope shortcut lacks key/label treatment: %q", footer)
+	if !strings.Contains(footer, headerStyle.Render("Esc")) || !strings.Contains(footer, chromeStyle.Render(" Files")) ||
+		!strings.Contains(footer, headerStyle.Render("ctrl+t")) || !strings.Contains(footer, chromeStyle.Render(" scope")) ||
+		strings.Contains(footer, "1 files") {
+		t.Fatalf("Notes footer is not truthful: %q", footer)
 	}
 }

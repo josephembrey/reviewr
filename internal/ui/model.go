@@ -3,8 +3,8 @@ package ui
 import (
 	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/review"
-	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -197,12 +197,11 @@ type ChangeSummary struct {
 
 // Model contains only the workspace-neutral derived state needed to paint a frame.
 type Model struct {
-	Geometry         Geometry
-	Workspace        workspace.Kind
-	PrimaryWorkspace workspace.Kind
-	DividerDragging  bool
-	Controls         workspace.Controls
-	Changes          ChangeSummary
+	Geometry        Geometry
+	Workspace       workspace.Kind
+	DividerDragging bool
+	Controls        workspace.Controls
+	Changes         ChangeSummary
 
 	NavigatorTitle string
 	NavigatorRows  []NavigatorRow
@@ -223,9 +222,9 @@ type Model struct {
 	ReaderColumn  int
 	FooterWarning string
 
-	Scratch            scratch.Presentation
-	ScratchStatus      string
-	ScratchError       bool
-	ScratchScope       scratch.Scope
-	ScratchHasWorktree bool
+	Notes            notes.Presentation
+	NotesStatus      string
+	NotesError       bool
+	NotesScope       notes.Scope
+	NotesHasWorktree bool
 }

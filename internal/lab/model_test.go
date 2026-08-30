@@ -20,7 +20,7 @@ func TestLabViewShowsSwitcherAlternativesAtFixedSize(t *testing.T) {
 		t.Fatalf("lab size = %dx%d, want 100x24", width, height)
 	}
 	plain := ansi.Strip(frame)
-	for _, want := range []string{"lab / switchers", "numbered auxiliary", "drawer key", "notes key", "minimal rail", "2 [all]", "3 [file]", "4 [uncommitted]"} {
+	for _, want := range []string{"lab / switchers", "top-level destinations", "Files controls", "Git controls", "Notes help", "4 [all]", "5 [file]", "6 [uncommitted]", "7 [sidebar]"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("lab frame lacks %q:\n%s", want, plain)
 		}
@@ -35,16 +35,17 @@ func TestLabControlsExploreWithoutLeavingThePage(t *testing.T) {
 	}
 	press(tea.Key{Code: 'j', Text: "j"})
 	press(tea.Key{Code: tea.KeyRight})
-	press(tea.Key{Code: '2', Text: "2"})
 	press(tea.Key{Code: '3', Text: "3"})
 	press(tea.Key{Code: '4', Text: "4"})
-	if model.selected != 1 || model.destination != destinationGit || model.fileSet != fileSetChanged ||
+	press(tea.Key{Code: '5', Text: "5"})
+	press(tea.Key{Code: '6', Text: "6"})
+	if model.selected != 1 || model.destination != destinationNotes || model.fileSet != fileSetChanged ||
 		model.reader != readerDiff || model.comparison != 1 {
 		t.Fatalf("lab state = %+v", model)
 	}
-	press(tea.Key{Code: '0', Text: "0"})
-	if model.destination != destinationScratch {
-		t.Fatalf("Scratch preview destination = %d", model.destination)
+	press(tea.Key{Code: '2', Text: "2"})
+	if model.destination != destinationGit {
+		t.Fatalf("Git preview destination = %d", model.destination)
 	}
 }
 

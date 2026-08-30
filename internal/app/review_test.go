@@ -376,7 +376,7 @@ func TestInitialChangedExpansionCoexistsWithReviewBadgesAndRollups(t *testing.T)
 	}
 }
 
-func TestReviewActivityLeavesGitAndScratchPlaceUntouched(t *testing.T) {
+func TestReviewActivityLeavesGitAndNotesPlaceUntouched(t *testing.T) {
 	comparison := testComparison("a.go", "head", "old", "new")
 	gap := testComparison("b.go", "head", "old-b", "new-b")
 	source := &fakeReviewSource{
@@ -422,8 +422,8 @@ func TestReviewActivityLeavesGitAndScratchPlaceUntouched(t *testing.T) {
 	historyPlace := model.history.place
 	refsPlace := model.refs.place
 	stashesPlace := model.stashes.place
-	scratchPlace := model.note.editor.Presentation()
-	scratchGeneration := model.note.generation
+	notesPlace := model.note.editor.Presentation()
+	notesGeneration := model.note.generation
 
 	next, verifyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: 'x', Text: "x"}))
 	model = next.(Model)
@@ -446,18 +446,18 @@ func TestReviewActivityLeavesGitAndScratchPlaceUntouched(t *testing.T) {
 		}
 	}
 	model.active = workspace.Files
-	model.scratch = true
+	model.active = workspace.Notes
 	for _, action := range []Action{{Kind: ToggleReview}, {Kind: ToggleReviewBounds}, {Kind: NextReviewGap}, {Kind: ActivateReviewBadge, Index: 0}} {
 		if pending := model.apply(action); pending.kind != effectNone {
-			t.Fatalf("Scratch accepted review action %+v as effect %+v", action, pending)
+			t.Fatalf("Notes accepted review action %+v as effect %+v", action, pending)
 		}
 	}
 
 	if !reflect.DeepEqual(model.history.place, historyPlace) || !reflect.DeepEqual(model.refs.place, refsPlace) || !reflect.DeepEqual(model.stashes.place, stashesPlace) {
 		t.Fatalf("review activity changed Git place: log=%+v refs=%+v stashes=%+v", model.history.place, model.refs.place, model.stashes.place)
 	}
-	if !reflect.DeepEqual(model.note.editor.Presentation(), scratchPlace) || model.note.generation != scratchGeneration {
-		t.Fatalf("review activity changed Scratch place: presentation=%+v generation=%d", model.note.editor.Presentation(), model.note.generation)
+	if !reflect.DeepEqual(model.note.editor.Presentation(), notesPlace) || model.note.generation != notesGeneration {
+		t.Fatalf("review activity changed Notes place: presentation=%+v generation=%d", model.note.editor.Presentation(), model.note.generation)
 	}
 	if !reflect.DeepEqual(model.files.ledger.Receipts(), beforeReceipts) {
 		t.Fatal("review-inert workspaces mutated Files receipts")

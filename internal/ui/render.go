@@ -11,8 +11,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/review"
-	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -51,8 +51,8 @@ func Render(model Model) string {
 		blocks = append(blocks, renderHeader(model))
 	}
 	if g.Body.Height > 0 {
-		if model.Workspace == workspace.Scratch {
-			blocks = append(blocks, renderScratch(model))
+		if model.Workspace == workspace.Notes {
+			blocks = append(blocks, renderNotes(model))
 		} else {
 			navigator := renderNavigator(model)
 			divider := renderDivider(g.Divider, model.DividerDragging)
@@ -83,52 +83,83 @@ func renderFooter(model Model) string {
 	if model.Workspace == workspace.Files && model.FooterWarning != "" {
 		return fit(errorStyle.Render(SafeSingleLine(model.FooterWarning)), width)
 	}
-	if model.Workspace == workspace.Scratch {
+	if model.Workspace == workspace.Notes {
 		style := chromeStyle
-		if model.ScratchError {
+		if model.NotesError {
 			style = errorStyle
 		}
-		footer := style.Render(SafeSingleLine(model.ScratchStatus))
-		if model.ScratchHasWorktree {
+		footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"}) + renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
+		if model.NotesHasWorktree {
 			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
 		}
 		return fit(footer, width)
 	}
 
-	entries := []footerEntry{
+	destinations := []footerEntry{
+		{key: "1", label: "files"},
+		{key: "2", label: "git"},
+		{key: "3", label: "notes"},
+	}
+	entries := append(destinations, []footerEntry{
 		{key: "j/k or ↑/↓", label: "navigate"},
 		{key: "tab", label: "focus"},
 		{key: "z", label: "swap"},
 		{key: "r", label: "refresh"},
 		{key: "q", label: "quit"},
-	}
+	}...)
 	if model.Workspace == workspace.Files {
-		entries = []footerEntry{
-			{key: "j/k", label: "move"},
-			{key: "h/l", label: "fold"},
-			{key: "z", label: "swap"},
-			{key: "x", label: "review"},
-			{key: "R", label: "bounds"},
-			{key: "X", label: "next gap"},
-			{key: "r", label: "refresh"},
-			{key: "q", label: "quit"},
+		local := []footerEntry{
+			{key: workspace.SecondaryControlKey, label: model.Controls.Files.Label()},
+			{key: workspace.TertiaryControlKey, label: model.Controls.Reader.Label()},
+			{key: workspace.ComparisonControlKey, label: model.Controls.Comparison.Label()},
 		}
+		if model.Controls.RichDiff {
+			local = append(local, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
+		}
+		entries = append(destinations, append(local,
+			footerEntry{key: "j/k", label: "move"},
+			footerEntry{key: "h/l", label: "fold"},
+			footerEntry{key: "z", label: "swap"},
+			footerEntry{key: "x", label: "review"},
+			footerEntry{key: "R", label: "bounds"},
+			footerEntry{key: "X", label: "next gap"},
+			footerEntry{key: "r", label: "refresh"},
+			footerEntry{key: "q", label: "quit"},
+		)...)
 	}
 	if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
-		entries = []footerEntry{
-			{key: "j/k", label: "move stashes"},
-			{key: "f/F", label: "move files"},
-			{key: "tab", label: "focus"},
-			{key: "z", label: "swap"},
-			{key: "r", label: "refresh"},
-			{key: "q", label: "quit"},
+		local := []footerEntry{
+			{key: workspace.SecondaryControlKey, label: model.Controls.Git.Label()},
+		}
+		if model.Controls.RichDiff {
+			local = append(local, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
+		}
+		stashEntries := []footerEntry{
+			footerEntry{key: "j/k", label: "move stashes"},
+			footerEntry{key: "f/F", label: "move files"},
 		}
 		if model.ReaderContextFoldable {
-			entries = append(entries, footerEntry{key: "h/l", label: "context"})
+			stashEntries = append(stashEntries, footerEntry{key: "h/l", label: "context"})
 		}
-	}
-	if model.Controls.RichDiff {
-		entries = append(entries, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
+		stashEntries = append(stashEntries,
+			footerEntry{key: "tab", label: "focus"},
+			footerEntry{key: "z", label: "swap"},
+			footerEntry{key: "r", label: "refresh"},
+			footerEntry{key: "q", label: "quit"},
+		)
+		entries = append(destinations, append(local, stashEntries...)...)
+	} else if model.Workspace == workspace.Git {
+		local := []footerEntry{{key: workspace.SecondaryControlKey, label: model.Controls.Git.Label()}}
+		if model.Controls.Git == workspace.GitLog {
+			local = append(local, footerEntry{key: workspace.TertiaryControlKey, label: model.Controls.Traversal.Label()})
+		}
+		entries = append(destinations, append(local,
+			footerEntry{key: "j/k or ↑/↓", label: "navigate"},
+			footerEntry{key: "tab", label: "focus"},
+			footerEntry{key: "z", label: "swap"},
+			footerEntry{key: "r", label: "refresh"},
+			footerEntry{key: "q", label: "quit"},
+		)...)
 	}
 	return fit(renderFooterEntries(entries), width)
 }
@@ -158,7 +189,7 @@ func renderFooterSeparator() string {
 
 func renderHeader(model Model) string {
 	g := model.Geometry
-	switcher := renderWorkspaceSwitcher(g.HeaderSwitcher.Width, model.Workspace, model.PrimaryWorkspace)
+	switcher := renderWorkspaceSwitcher(g.HeaderSwitcher.Width, model.Workspace)
 	left := switcher
 	for _, control := range layoutHeaderControls(g, model.Workspace, model.Controls) {
 		padding := strings.Repeat(" ", max(0, control.rect.X-lipgloss.Width(left)))
@@ -221,30 +252,21 @@ func renderChangeTotals(summary ChangeSummary) string {
 	return strings.Join(parts, " ")
 }
 
-func renderWorkspaceSwitcher(width int, activeWorkspace, primaryWorkspace workspace.Kind) string {
-	value := []byte("1  files  git  | esc  scratch ")
+func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
+	value := "[ files | git | notes ]"
 	active := workspaceSwitcherRect(activeWorkspace)
-	bracket := func(rect Rect) {
-		value[rect.X] = '['
-		value[rect.X+rect.Width-1] = ']'
-	}
-	bracket(active)
-	if activeWorkspace == workspace.Scratch {
-		bracket(workspaceSwitcherRect(primaryWorkspace))
-	}
 	width = min(max(0, width), len(value))
 	var rendered strings.Builder
 	for index := 0; index < width; {
-		style := workspaceSwitcherCellStyle(index, active)
+		selected := active.Contains(index, 0)
 		end := index + 1
-		for end < width && workspaceSwitcherCellStyle(end, active) == style {
+		for end < width && active.Contains(end, 0) == selected {
 			end++
 		}
 		segment := string(value[index:end])
-		switch style {
-		case switcherKey:
-			rendered.WriteString(headerStyle.Render(segment))
-		default:
+		if selected {
+			rendered.WriteString(selectionStyle(true).Render(segment))
+		} else {
 			rendered.WriteString(chromeStyle.Render(segment))
 		}
 		index = end
@@ -252,41 +274,24 @@ func renderWorkspaceSwitcher(width int, activeWorkspace, primaryWorkspace worksp
 	return fit(rendered.String(), width)
 }
 
-type switcherCellStyle uint8
-
-const (
-	switcherQuiet switcherCellStyle = iota
-	switcherKey
-)
-
-func workspaceSwitcherCellStyle(index int, highlight Rect) switcherCellStyle {
-	if highlight.Contains(index, 0) {
-		return switcherKey
-	}
-	if index == 0 || (index >= 17 && index < 20) {
-		return switcherKey
-	}
-	return switcherQuiet
-}
-
-func renderScratch(model Model) string {
+func renderNotes(model Model) string {
 	g := model.Geometry
-	presentation := model.Scratch
+	presentation := model.Notes
 	document := presentation.Document
-	rows := make([]string, 0, g.ScratchRows.Height)
-	bar, overflow := CalculateScrollbar(g.ScratchRows, len(document.Rows), presentation.Top)
-	textRows := g.ScratchRows
+	rows := make([]string, 0, g.NotesRows.Height)
+	bar, overflow := CalculateScrollbar(g.NotesRows, len(document.Rows), presentation.Top)
+	textRows := g.NotesRows
 	var scrollbar []string
 	if overflow {
 		textRows = bar.Content
 		scrollbar = verticalScrollbar(bar, true)
 	}
 	cursorRow := document.RowForIndex(presentation.Cursor)
-	for visible := 0; visible < g.ScratchRows.Height; visible++ {
+	for visible := 0; visible < g.NotesRows.Height; visible++ {
 		rowIndex := presentation.Top + visible
 		line := ""
 		if rowIndex < len(document.Rows) {
-			line = renderScratchRow(document.Rows[rowIndex], rowIndex == cursorRow, presentation, textRows.Width)
+			line = renderNotesRow(document.Rows[rowIndex], rowIndex == cursorRow, presentation, textRows.Width)
 		}
 		line = fit(line, textRows.Width)
 		if overflow {
@@ -296,44 +301,44 @@ func renderScratch(model Model) string {
 	}
 	return renderSurface(
 		g.Body,
-		g.ScratchTitle,
-		g.ScratchRows,
-		renderScratchTitle(g, model.ScratchScope, model.ScratchHasWorktree),
+		g.NotesTitle,
+		g.NotesRows,
+		renderNotesTitle(g, model.NotesScope, model.NotesHasWorktree),
 		rows,
 	)
 }
 
-func renderScratchTitle(g Geometry, scope scratch.Scope, hasWorktree bool) string {
+func renderNotesTitle(g Geometry, scope notes.Scope, hasWorktree bool) string {
 	if !hasWorktree {
-		return renderTitle("Scratch", true)
+		return renderTitle("Notes", true)
 	}
-	width := min(g.ScratchTitle.Width, g.ScratchWorktreeScope.X+g.ScratchWorktreeScope.Width-g.ScratchTitle.X)
+	width := min(g.NotesTitle.Width, g.NotesWorktreeScope.X+g.NotesWorktreeScope.Width-g.NotesTitle.X)
 	value := []byte(strings.Repeat(" ", max(0, width)))
 	paint := func(x int, label string) {
 		for index := 0; index < len(label); index++ {
-			position := x - g.ScratchTitle.X + index
+			position := x - g.NotesTitle.X + index
 			if position >= 0 && position < len(value) {
 				value[position] = label[index]
 			}
 		}
 	}
-	paint(g.ScratchTitle.X, "Scratch")
-	paint(g.ScratchProjectScope.X+1, "project")
-	paint(g.ScratchWorktreeScope.X+1, "worktree")
-	selected := g.ScratchProjectScope
-	if scope == scratch.Worktree {
-		selected = g.ScratchWorktreeScope
+	paint(g.NotesTitle.X, "Notes")
+	paint(g.NotesProjectScope.X+1, "project")
+	paint(g.NotesWorktreeScope.X+1, "worktree")
+	selected := g.NotesProjectScope
+	if scope == notes.Worktree {
+		selected = g.NotesWorktreeScope
 	}
 	if selected.Width > 0 {
-		value[selected.X-g.ScratchTitle.X] = '['
+		value[selected.X-g.NotesTitle.X] = '['
 		if selected.Width > 1 {
-			value[selected.X-g.ScratchTitle.X+selected.Width-1] = ']'
+			value[selected.X-g.NotesTitle.X+selected.Width-1] = ']'
 		}
 	}
 	var rendered strings.Builder
 	isFocused := func(index int) bool {
-		x := g.ScratchTitle.X + index
-		return x < g.ScratchTitle.X+len("Scratch") || selected.Contains(x, g.ScratchTitle.Y)
+		x := g.NotesTitle.X + index
+		return x < g.NotesTitle.X+len("Notes") || selected.Contains(x, g.NotesTitle.Y)
 	}
 	for index := 0; index < len(value); {
 		focused := isFocused(index)
@@ -351,7 +356,7 @@ func renderScratchTitle(g Geometry, scope scratch.Scope, hasWorktree bool) strin
 	return rendered.String()
 }
 
-func renderScratchRow(row scratch.Row, cursorRow bool, presentation scratch.Presentation, width int) string {
+func renderNotesRow(row notes.Row, cursorRow bool, presentation notes.Presentation, width int) string {
 	var rendered strings.Builder
 	for _, cell := range row.Cells {
 		value := cell.Display
@@ -362,6 +367,14 @@ func renderScratchRow(row scratch.Row, cursorRow bool, presentation scratch.Pres
 			value = headerStyle.Reverse(true).Render(value)
 		case selected:
 			value = selectionStyle(true).Render(value)
+		case cell.Index >= 0 && cell.Index < len(presentation.Styles):
+			style := presentation.Styles[cell.Index]
+			value = renderTextStyle(value, TextStyle{
+				Foreground: style.Foreground,
+				Bold:       style.Bold,
+				Italic:     style.Italic,
+				Underline:  style.Underline,
+			})
 		}
 		rendered.WriteString(value)
 	}

@@ -50,10 +50,10 @@ func TestCalculatePartitionsScreen(t *testing.T) {
 			t.Fatalf("vertical bounds do not partition %d: %+v", size.height, g)
 		}
 		for name, rect := range map[string]Rect{
-			"switcher":      g.HeaderSwitcher,
-			"files label":   g.HeaderFiles,
-			"git label":     g.HeaderGit,
-			"scratch label": g.HeaderScratch,
+			"switcher":    g.HeaderSwitcher,
+			"files label": g.HeaderFiles,
+			"git label":   g.HeaderGit,
+			"notes label": g.HeaderNotes,
 		} {
 			if rect.Y != g.Header.Y || rect.X < g.Header.X || rect.X+rect.Width > g.Header.X+g.Header.Width || rect.Height > g.Header.Height {
 				t.Fatalf("%s is outside header: rect=%+v header=%+v", name, rect, g.Header)
@@ -64,22 +64,22 @@ func TestCalculatePartitionsScreen(t *testing.T) {
 		}
 		assertSurfaceGeometry(t, g.Navigator, g.NavigatorTitle, g.NavigatorRows)
 		assertSurfaceGeometry(t, g.Reader, g.ReaderTitle, g.ReaderRows)
-		assertSurfaceGeometry(t, g.Body, g.ScratchTitle, g.ScratchRows)
-		for name, rect := range map[string]Rect{"project scope": g.ScratchProjectScope, "worktree scope": g.ScratchWorktreeScope} {
-			if rect.Y != g.ScratchTitle.Y || rect.X < g.ScratchTitle.X || rect.X+rect.Width > g.ScratchTitle.X+g.ScratchTitle.Width || rect.Height > g.ScratchTitle.Height {
-				t.Fatalf("%s is outside Scratch title: rect=%+v title=%+v", name, rect, g.ScratchTitle)
+		assertSurfaceGeometry(t, g.Body, g.NotesTitle, g.NotesRows)
+		for name, rect := range map[string]Rect{"project scope": g.NotesProjectScope, "worktree scope": g.NotesWorktreeScope} {
+			if rect.Y != g.NotesTitle.Y || rect.X < g.NotesTitle.X || rect.X+rect.Width > g.NotesTitle.X+g.NotesTitle.Width || rect.Height > g.NotesTitle.Height {
+				t.Fatalf("%s is outside Notes title: rect=%+v title=%+v", name, rect, g.NotesTitle)
 			}
 		}
-		if g.ScratchText != g.ScratchRows {
-			t.Fatalf("Scratch fitting text does not use full rows: %+v", g)
+		if g.NotesText != g.NotesRows {
+			t.Fatalf("Notes fitting text does not use full rows: %+v", g)
 		}
-		if g.ScratchRows.Width > 1 && g.ScratchRows.Height > 0 &&
-			(g.ScratchBar.X != g.ScratchRows.X+g.ScratchRows.Width-1 || g.ScratchBar.Y != g.ScratchRows.Y ||
-				g.ScratchBar.Width != 1 || g.ScratchBar.Height != g.ScratchRows.Height) {
-			t.Fatalf("Scratch candidate scrollbar lane is not the right edge: %+v", g)
+		if g.NotesRows.Width > 1 && g.NotesRows.Height > 0 &&
+			(g.NotesBar.X != g.NotesRows.X+g.NotesRows.Width-1 || g.NotesBar.Y != g.NotesRows.Y ||
+				g.NotesBar.Width != 1 || g.NotesBar.Height != g.NotesRows.Height) {
+			t.Fatalf("Notes candidate scrollbar lane is not the right edge: %+v", g)
 		}
-		if (g.ScratchRows.Width <= 1 || g.ScratchRows.Height <= 0) && g.ScratchBar != (Rect{}) {
-			t.Fatalf("tiny Scratch rows unexpectedly expose a scrollbar lane: %+v", g)
+		if (g.NotesRows.Width <= 1 || g.NotesRows.Height <= 0) && g.NotesBar != (Rect{}) {
+			t.Fatalf("tiny Notes rows unexpectedly expose a scrollbar lane: %+v", g)
 		}
 	}
 }
@@ -91,14 +91,14 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 			g := Calculate(width, height)
 			for name, rect := range map[string]Rect{
 				"screen": g.Screen, "header": g.Header, "header switcher": g.HeaderSwitcher,
-				"header files": g.HeaderFiles, "header git": g.HeaderGit, "header scratch": g.HeaderScratch, "body": g.Body,
+				"header files": g.HeaderFiles, "header git": g.HeaderGit, "header notes": g.HeaderNotes, "body": g.Body,
 				"navigator": g.Navigator, "navigator title": g.NavigatorTitle,
 				"navigator rows": g.NavigatorRows, "divider": g.Divider,
 				"reader": g.Reader, "reader title": g.ReaderTitle,
-				"reader rows": g.ReaderRows, "scratch title": g.ScratchTitle,
-				"project scope": g.ScratchProjectScope, "worktree scope": g.ScratchWorktreeScope,
-				"scratch rows": g.ScratchRows, "scratch text": g.ScratchText,
-				"scratch bar": g.ScratchBar, "footer": g.Footer,
+				"reader rows": g.ReaderRows, "notes title": g.NotesTitle,
+				"project scope": g.NotesProjectScope, "worktree scope": g.NotesWorktreeScope,
+				"notes rows": g.NotesRows, "notes text": g.NotesText,
+				"notes bar": g.NotesBar, "footer": g.Footer,
 			} {
 				if rect.X < 0 || rect.Y < 0 || rect.Width < 0 || rect.Height < 0 ||
 					rect.X+rect.Width > width || rect.Y+rect.Height > height {
@@ -116,33 +116,33 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 	}
 }
 
-func TestScratchHitTestUsesFullWidthRowsAndScrollbar(t *testing.T) {
+func TestNotesHitTestUsesFullWidthRowsAndScrollbar(t *testing.T) {
 	t.Parallel()
 	g := Calculate(80, 12)
-	if got := g.ScratchHitTest(g.ScratchText.X+10, g.ScratchText.Y+2, 30, 3); got.Kind != HitScratchText {
-		t.Fatalf("Scratch text hit = %+v", got)
+	if got := g.NotesHitTest(g.NotesText.X+10, g.NotesText.Y+2, 30, 3); got.Kind != HitNotesText {
+		t.Fatalf("Notes text hit = %+v", got)
 	}
-	bar, ok := CalculateScrollbar(g.ScratchRows, 30, 3)
+	bar, ok := CalculateScrollbar(g.NotesRows, 30, 3)
 	if !ok {
-		t.Fatal("missing Scratch scrollbar")
+		t.Fatal("missing Notes scrollbar")
 	}
-	if got := g.ScratchHitTest(bar.Thumb.X, bar.Thumb.Y, 30, 3); got.Kind != HitScratchScrollbar || got.GrabOffset != 0 {
-		t.Fatalf("Scratch scrollbar hit = %+v", got)
+	if got := g.NotesHitTest(bar.Thumb.X, bar.Thumb.Y, 30, 3); got.Kind != HitNotesScrollbar || got.GrabOffset != 0 {
+		t.Fatalf("Notes scrollbar hit = %+v", got)
 	}
-	if got := g.ScratchHitTest(g.ScratchTitle.X, g.ScratchTitle.Y, 30, 3); got.Kind != HitNone {
-		t.Fatalf("Scratch title hit = %+v", got)
+	if got := g.NotesHitTest(g.NotesTitle.X, g.NotesTitle.Y, 30, 3); got.Kind != HitNone {
+		t.Fatalf("Notes title hit = %+v", got)
 	}
-	if got := g.ScratchHitTestWithScopes(g.ScratchProjectScope.X, g.ScratchProjectScope.Y, 30, 3, true); got.Kind != HitScratchProjectScope {
+	if got := g.NotesHitTestWithScopes(g.NotesProjectScope.X, g.NotesProjectScope.Y, 30, 3, true); got.Kind != HitNotesProjectScope {
 		t.Fatalf("project scope hit = %+v", got)
 	}
-	if got := g.ScratchHitTestWithScopes(g.ScratchWorktreeScope.X, g.ScratchWorktreeScope.Y, 30, 3, true); got.Kind != HitScratchWorktreeScope {
+	if got := g.NotesHitTestWithScopes(g.NotesWorktreeScope.X, g.NotesWorktreeScope.Y, 30, 3, true); got.Kind != HitNotesWorktreeScope {
 		t.Fatalf("worktree scope hit = %+v", got)
 	}
-	if got := g.ScratchHitTestWithScopes(g.ScratchProjectScope.X, g.ScratchProjectScope.Y, 30, 3, false); got.Kind != HitNone {
+	if got := g.NotesHitTestWithScopes(g.NotesProjectScope.X, g.NotesProjectScope.Y, 30, 3, false); got.Kind != HitNone {
 		t.Fatalf("collapsed scope hit = %+v", got)
 	}
-	if got := g.ScratchHitTest(g.HeaderFiles.X, g.HeaderFiles.Y, 30, 3); got.Kind != HitFilesWorkspace {
-		t.Fatalf("Scratch header hit = %+v", got)
+	if got := g.NotesHitTest(g.HeaderFiles.X, g.HeaderFiles.Y, 30, 3); got.Kind != HitFilesWorkspace {
+		t.Fatalf("Notes header hit = %+v", got)
 	}
 }
 
@@ -198,20 +198,20 @@ func TestHeaderSwitcherGeometryAndHits(t *testing.T) {
 	t.Parallel()
 	for width := 0; width <= 34; width++ {
 		g := Calculate(width, 6)
-		wantSwitcherWidth := min(width, 30)
+		wantSwitcherWidth := min(width, 23)
 		if g.HeaderSwitcher != (Rect{Width: wantSwitcherWidth, Height: 1}) {
 			t.Fatalf("Calculate(%d) switcher = %+v, want width %d", width, g.HeaderSwitcher, wantSwitcherWidth)
 		}
 		for x := 0; x < width; x++ {
 			want := HitNone
-			if x >= 2 && x < 9 {
+			if x >= 2 && x < 7 {
 				want = HitFilesWorkspace
-			} else if x >= 9 && x < 14 {
+			} else if x >= 10 && x < 13 {
 				want = HitGitWorkspace
-			} else if x >= 21 && x < 30 {
-				want = HitScratchWorkspace
+			} else if x >= 16 && x < 21 {
+				want = HitNotesWorkspace
 			}
-			if got := g.HitTest(x, 0, workspace.Scratch, workspace.Controls{}, 0, 0, 0, 0).Kind; got != want {
+			if got := g.HitTest(x, 0, workspace.Notes, workspace.Controls{}, 0, 0, 0, 0).Kind; got != want {
 				t.Fatalf("Calculate(%d) header hit x=%d = %v, want %v", width, x, got, want)
 			}
 		}
@@ -231,7 +231,7 @@ func TestHitTestPrecedenceAndBoundaries(t *testing.T) {
 		{name: "visible row precedes pane", x: g.NavigatorRows.X, y: rowY, want: Hit{Kind: HitNavigatorRow, Index: 4}},
 		{name: "files workspace", x: g.HeaderFiles.X, y: g.HeaderFiles.Y, want: Hit{Kind: HitFilesWorkspace}},
 		{name: "git workspace", x: g.HeaderGit.X, y: g.HeaderGit.Y, want: Hit{Kind: HitGitWorkspace}},
-		{name: "scratch workspace", x: g.HeaderScratch.X, y: g.HeaderScratch.Y, want: Hit{Kind: HitScratchWorkspace}},
+		{name: "notes workspace", x: g.HeaderNotes.X, y: g.HeaderNotes.Y, want: Hit{Kind: HitNotesWorkspace}},
 		{name: "header punctuation", x: 15, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "header gap", x: 30, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "empty row is pane", x: g.NavigatorRows.X, y: g.NavigatorRows.Y + 4, want: Hit{Kind: HitNavigator}},
@@ -244,7 +244,7 @@ func TestHitTestPrecedenceAndBoundaries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := g.HitTest(test.x, test.y, workspace.Scratch, workspace.Controls{}, 3, 5, 0, 0); got != test.want {
+			if got := g.HitTest(test.x, test.y, workspace.Notes, workspace.Controls{}, 3, 5, 0, 0); got != test.want {
 				t.Fatalf("HitTest() = %+v, want %+v", got, test.want)
 			}
 		})

@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/review"
-	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 // DefaultMaxFileBytes bounds memory and render work for one reader load.
@@ -164,15 +164,15 @@ func (r *Repository) CommonDir() (string, error) {
 	return r.git.ResolveCommonDir(r.root)
 }
 
-// ScratchStores builds the private project-wide and checkout-local note
+// NotesStores builds the private project-wide and checkout-local note
 // sessions from canonical Git identities. Every checkout, including the
 // primary one, has a distinct worktree note.
-func (r *Repository) ScratchStores(lookupEnv func(string) (string, bool)) (scratch.Stores, error) {
+func (r *Repository) NotesStores(lookupEnv func(string) (string, bool)) (notes.Stores, error) {
 	commonDir, err := r.git.ResolveCommonDir(r.root)
 	if err != nil {
-		return scratch.Stores{}, fmt.Errorf("resolve Scratch project identity: %w", err)
+		return notes.Stores{}, fmt.Errorf("resolve Notes project identity: %w", err)
 	}
-	return scratch.NewStores(commonDir, r.root, lookupEnv), nil
+	return notes.NewStores(commonDir, r.root, lookupEnv), nil
 }
 
 // ReviewRepositoryID returns the canonical private-state namespace without

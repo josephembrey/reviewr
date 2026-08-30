@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/review"
-	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 func TestOpenResolvesWorktreeRoot(t *testing.T) {
@@ -107,13 +107,13 @@ func TestCommonDirSharesLinkedWorktreesAndIsolatesClones(t *testing.T) {
 	}
 }
 
-func TestScratchStoresExposeProjectAndLocalNotesInEveryCheckout(t *testing.T) {
+func TestNotesStoresExposeProjectAndLocalNotesInEveryCheckout(t *testing.T) {
 	root := initRepository(t)
 	writeFile(t, root, "tracked.txt", "tracked\n")
 	runGit(t, root, "add", "tracked.txt")
 	runGit(t, root, "commit", "-q", "-m", "fixture")
 	linked := filepath.Join(t.TempDir(), "linked checkout")
-	runGit(t, root, "worktree", "add", "-q", "-b", "scratch-linked", linked)
+	runGit(t, root, "worktree", "add", "-q", "-b", "notes-linked", linked)
 	t.Cleanup(func() { runGit(t, root, "worktree", "remove", "--force", linked) })
 
 	stateHome := t.TempDir()
@@ -126,12 +126,12 @@ func TestScratchStoresExposeProjectAndLocalNotesInEveryCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	primaryStores, err := primaryRepo.ScratchStores(lookup)
+	primaryStores, err := primaryRepo.NotesStores(lookup)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = primaryStores.Close() })
-	linkedStores, err := linkedRepo.ScratchStores(lookup)
+	linkedStores, err := linkedRepo.NotesStores(lookup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	}
 }
 
-func TestScratchPrivateStateDoesNotWriteRepository(t *testing.T) {
+func TestNotesPrivateStateDoesNotWriteRepository(t *testing.T) {
 	root := initRepository(t)
 	writeFile(t, root, "tracked.txt", "tracked\n")
 	runGit(t, root, "add", "tracked.txt")
@@ -326,7 +326,7 @@ func TestScratchPrivateStateDoesNotWriteRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	stateHome := t.TempDir()
-	store := scratch.NewPrivateStore(commonDir, func(key string) (string, bool) {
+	store := notes.NewPrivateStore(commonDir, func(key string) (string, bool) {
 		return stateHome, key == "XDG_STATE_HOME"
 	})
 	defer store.Close()
@@ -339,10 +339,10 @@ func TestScratchPrivateStateDoesNotWriteRepository(t *testing.T) {
 	}
 	after := captureGitState(t, root)
 	if !reflect.DeepEqual(after, before) {
-		t.Fatalf("Scratch private state changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+		t.Fatalf("Notes private state changed Git state\nbefore: %+v\nafter:  %+v", before, after)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".reviewr")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("Scratch created repository state: %v", err)
+		t.Fatalf("Notes created repository state: %v", err)
 	}
 }
 

@@ -183,7 +183,7 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	}
 }
 
-func TestPrimaryWorkspaceLifecycleAndActiveRefresh(t *testing.T) {
+func TestBrowserDestinationLifecycleAndActiveRefresh(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	if model.active != workspace.Files || !model.files.listLoading || !model.history.listLoading {
@@ -216,75 +216,105 @@ func TestPrimaryWorkspaceLifecycleAndActiveRefresh(t *testing.T) {
 	}
 }
 
-func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
+func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 24)
 	model.files.tree.Rebuild([]string{"file.go"})
 	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(filesFrame, "1 [files] git  | esc  scratch") || !strings.Contains(filesFrame, "\n1 files") {
+	if !strings.HasPrefix(filesFrame, "[ files | git | notes ]") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
 	}
 
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
 	model = next.(Model)
 	if model.active != workspace.Git || command != nil {
-		t.Fatalf("workspace toggle = active %v command=%v", model.active, command != nil)
+		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "[ files | git | notes ]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
 
-func TestScratchOverlayEditsAndPreservesPrimaryWorkspace(t *testing.T) {
+func TestDestinationKeysAndMouseAreDirectAndIdempotent(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
+	filesGeneration := model.files.listGeneration
+	if effect := model.apply(Action{Kind: ShowFiles}); effect.kind != effectNone || model.active != workspace.Files || model.files.listGeneration != filesGeneration {
+		t.Fatalf("idempotent Files = active %v effect %+v generation %d", model.active, effect, model.files.listGeneration)
+	}
+	model.history.loaded = true
+	model.history.listLoading = false
+	if effect := model.apply(Action{Kind: ShowGit}); effect.kind != effectNone || model.active != workspace.Git {
+		t.Fatalf("Git selection = active %v effect %+v", model.active, effect)
+	}
+	gitGeneration := model.history.listGeneration
+	if effect := model.apply(Action{Kind: ShowGit}); effect.kind != effectNone || model.history.listGeneration != gitGeneration {
+		t.Fatalf("idempotent Git = effect %+v generation %d", effect, model.history.listGeneration)
+	}
+
+	next, command := model.Update(tea.MouseClickMsg(tea.Mouse{X: model.geometry.HeaderFiles.X, Y: model.geometry.HeaderFiles.Y, Button: tea.MouseLeft}))
+	model = next.(Model)
+	if command != nil || model.active != workspace.Files {
+		t.Fatalf("Files mouse tab = active %v command=%v", model.active, command != nil)
+	}
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	model = next.(Model)
+	if command != nil || model.active != workspace.Files {
+		t.Fatalf("active Files key = active %v command=%v", model.active, command != nil)
+	}
+}
+
+func TestNotesDestinationEditsAndPreservesFilesPlace(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	model.files.place = navigation.State{Items: []string{"a", "b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
 	model = next.(Model)
-	if !model.scratch || model.active != workspace.Files || command == nil {
-		t.Fatalf("Scratch activation = scratch %v primary %v command=%v", model.scratch, model.active, command != nil)
+	if model.active != workspace.Notes || command == nil {
+		t.Fatalf("Notes activation = active %v command=%v", model.active, command != nil)
 	}
 	next, _ = model.Update(command())
 	model = next.(Model)
 	frame := ansi.Strip(model.View().Content)
-	if !strings.Contains(frame, "Scratch") || !strings.Contains(frame, "Ln 1, Col 1") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
-		t.Fatalf("Scratch editor frame = %q", frame)
+	if !strings.Contains(frame, "Notes") || !strings.Contains(frame, "Ln 1, Col 1") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
+		t.Fatalf("Notes editor frame = %q", frame)
 	}
 	if model.files.place.Selected != 1 || model.files.place.Top != 1 || model.files.place.ReaderOffset != 3 {
-		t.Fatalf("Scratch activation changed Files place: %+v", model.files.place)
+		t.Fatalf("Notes activation changed Files place: %+v", model.files.place)
 	}
 
-	for _, value := range []rune{'h', 'j', 'k', 'l'} {
+	for _, value := range []rune{'h', 'j', 'k', 'l', '1', '2', '3'} {
 		next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
 		model = next.(Model)
 		if command == nil {
 			t.Fatalf("typing %q did not schedule autosave", value)
 		}
 	}
-	if model.note.editor.Text() != "hjkl" {
+	if model.note.editor.Text() != "hjkl123" || model.active != workspace.Notes {
 		t.Fatalf("modeless text = %q", model.note.editor.Text())
 	}
-	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	model = next.(Model)
-	if !model.scratch || command == nil {
-		t.Fatalf("1 did not synchronously save before closing: scratch %v command=%v", model.scratch, command != nil)
+	if model.active != workspace.Notes || command == nil {
+		t.Fatalf("Esc did not synchronously save before leaving: active %v command=%v", model.active, command != nil)
 	}
 	next, _ = model.Update(command())
 	model = next.(Model)
-	if model.scratch || model.active != workspace.Files {
-		t.Fatalf("1 from Scratch = scratch %v primary %v", model.scratch, model.active)
+	if model.active != workspace.Files {
+		t.Fatalf("Esc from Notes = active %v", model.active)
 	}
 
 	model.apply(Action{Kind: ShowGit})
-	model.apply(Action{Kind: ShowScratch})
-	model.apply(Action{Kind: ToggleWorkspace})
-	if model.scratch || model.active != workspace.Git {
-		t.Fatalf("1 from Scratch after Git = scratch %v primary %v", model.scratch, model.active)
+	model.apply(Action{Kind: ShowNotes})
+	model.apply(Action{Kind: ShowFiles})
+	if model.active != workspace.Files {
+		t.Fatalf("Notes always returns home to Files, active %v", model.active)
 	}
 }
 
@@ -363,7 +393,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 	} {
 		next, command := model.Update(tea.KeyPressMsg(key))
 		model = next.(Model)
-		if command != nil || model.active != workspace.Files || model.scratch || model.controls != (workspace.Controls{}) {
+		if command != nil || model.active != workspace.Files || model.controls != (workspace.Controls{}) {
 			t.Fatalf("undersized input %q changed place: %+v command=%v", key.String(), model, command != nil)
 		}
 	}
@@ -388,7 +418,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 		t.Fatalf("minimum-size recovery = geometry %+v command=%v", model.geometry.Screen, command != nil)
 	}
 	frame = ansi.Strip(model.View().Content)
-	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "1 [files]") {
+	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "[ files") {
 		t.Fatalf("recovered frame = %q", frame)
 	}
 }
@@ -536,17 +566,17 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		t.Fatalf("Changed -> All did not reset reader to File: %+v", model.controls)
 	}
 
-	pressEscape()
-	beforeScratch := model.controls
+	press('3')
+	beforeNotes := model.controls
 	press('4')
 	press('5')
 	press('6')
-	if model.controls != beforeScratch {
-		t.Fatalf("Scratch keys changed hidden controls: before %+v after %+v", beforeScratch, model.controls)
+	if model.controls != beforeNotes {
+		t.Fatalf("Notes keys changed hidden controls: before %+v after %+v", beforeNotes, model.controls)
 	}
 	pressEscape()
 
-	if command := press('1'); command != nil || model.active != workspace.Git {
+	if command := press('2'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git activation = active %v command=%v", model.active, command != nil)
 	}
 	press('4')

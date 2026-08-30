@@ -3,7 +3,7 @@ package app
 import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
-	"github.com/josephembrey/reviewr/internal/scratch"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -13,14 +13,12 @@ type ActionKind uint8
 
 const (
 	ActionNone ActionKind = iota
-	ToggleWorkspace
-	ToggleScratch
 	ShowFiles
 	ShowGit
-	ShowScratch
-	ToggleScratchScope
-	SelectProjectScratch
-	SelectWorktreeScratch
+	ShowNotes
+	ToggleNotesScope
+	SelectProjectNotes
+	SelectWorktreeNotes
 	ToggleSecondary
 	ToggleTertiary
 	ToggleComparison
@@ -53,29 +51,29 @@ const (
 	Reload
 	Resize
 	Quit
-	ScratchInsert
-	ScratchBackspace
-	ScratchDelete
-	ScratchMoveLeft
-	ScratchMoveRight
-	ScratchMoveUp
-	ScratchMoveDown
-	ScratchMoveWordLeft
-	ScratchMoveWordRight
-	ScratchMoveHome
-	ScratchMoveEnd
-	ScratchPageUp
-	ScratchPageDown
-	ScratchSelectAll
-	ScratchUndo
-	ScratchRedo
-	ScratchBeginSelection
-	ScratchDragSelection
-	ScratchEndSelection
-	ScratchScroll
-	StartScratchScrollbarDrag
-	DragScratchScrollbar
-	FinishScratchScrollbarDrag
+	NotesInsert
+	NotesBackspace
+	NotesDelete
+	NotesMoveLeft
+	NotesMoveRight
+	NotesMoveUp
+	NotesMoveDown
+	NotesMoveWordLeft
+	NotesMoveWordRight
+	NotesMoveHome
+	NotesMoveEnd
+	NotesPageUp
+	NotesPageDown
+	NotesSelectAll
+	NotesUndo
+	NotesRedo
+	NotesBeginSelection
+	NotesDragSelection
+	NotesEndSelection
+	NotesScroll
+	StartNotesScrollbarDrag
+	DragNotesScrollbar
+	FinishNotesScrollbarDrag
 )
 
 // Action carries the small amount of data needed by a semantic intent.
@@ -95,76 +93,72 @@ type Action struct {
 	Selecting bool
 }
 
-func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch.Presentation, selectionDragging, scrollbarDragging bool, scoped ...bool) (Action, bool) {
+func routeNotesMessage(msg tea.Msg, geometry ui.Geometry, presentation notes.Presentation, selectionDragging, scrollbarDragging bool, scoped ...bool) (Action, bool) {
 	hasWorktree := len(scoped) > 0 && scoped[0]
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		key := msg.Key()
 		selecting := key.Mod&tea.ModShift != 0
 		if key.Code == tea.KeyEscape {
-			return Action{Kind: ToggleScratch}, true
-		}
-		// Keep the established overlay return binding ahead of printable input.
-		if key.Text == "1" && key.Mod == 0 {
-			return Action{Kind: ToggleWorkspace}, true
+			return Action{Kind: ShowFiles}, true
 		}
 		if key.Mod&tea.ModCtrl != 0 {
 			switch key.Code {
 			case 'c':
 				return Action{Kind: Quit}, true
 			case 'a':
-				return Action{Kind: ScratchSelectAll}, true
+				return Action{Kind: NotesSelectAll}, true
 			case 'z':
 				if selecting {
-					return Action{Kind: ScratchRedo}, true
+					return Action{Kind: NotesRedo}, true
 				}
-				return Action{Kind: ScratchUndo}, true
+				return Action{Kind: NotesUndo}, true
 			case 'y':
-				return Action{Kind: ScratchRedo}, true
+				return Action{Kind: NotesRedo}, true
 			case 't':
 				if hasWorktree {
-					return Action{Kind: ToggleScratchScope}, true
+					return Action{Kind: ToggleNotesScope}, true
 				}
 			case tea.KeyLeft:
-				return Action{Kind: ScratchMoveWordLeft, Selecting: selecting}, true
+				return Action{Kind: NotesMoveWordLeft, Selecting: selecting}, true
 			case tea.KeyRight:
-				return Action{Kind: ScratchMoveWordRight, Selecting: selecting}, true
+				return Action{Kind: NotesMoveWordRight, Selecting: selecting}, true
 			}
 			return Action{}, false
 		}
 		switch key.Code {
 		case tea.KeyLeft:
-			return Action{Kind: ScratchMoveLeft, Selecting: selecting}, true
+			return Action{Kind: NotesMoveLeft, Selecting: selecting}, true
 		case tea.KeyRight:
-			return Action{Kind: ScratchMoveRight, Selecting: selecting}, true
+			return Action{Kind: NotesMoveRight, Selecting: selecting}, true
 		case tea.KeyUp:
-			return Action{Kind: ScratchMoveUp, Selecting: selecting}, true
+			return Action{Kind: NotesMoveUp, Selecting: selecting}, true
 		case tea.KeyDown:
-			return Action{Kind: ScratchMoveDown, Selecting: selecting}, true
+			return Action{Kind: NotesMoveDown, Selecting: selecting}, true
 		case tea.KeyHome:
-			return Action{Kind: ScratchMoveHome, Selecting: selecting}, true
+			return Action{Kind: NotesMoveHome, Selecting: selecting}, true
 		case tea.KeyEnd:
-			return Action{Kind: ScratchMoveEnd, Selecting: selecting}, true
+			return Action{Kind: NotesMoveEnd, Selecting: selecting}, true
 		case tea.KeyPgUp:
-			return Action{Kind: ScratchPageUp, Selecting: selecting}, true
+			return Action{Kind: NotesPageUp, Selecting: selecting}, true
 		case tea.KeyPgDown:
-			return Action{Kind: ScratchPageDown, Selecting: selecting}, true
+			return Action{Kind: NotesPageDown, Selecting: selecting}, true
 		case tea.KeyBackspace:
-			return Action{Kind: ScratchBackspace}, true
+			return Action{Kind: NotesBackspace}, true
 		case tea.KeyDelete:
-			return Action{Kind: ScratchDelete}, true
+			return Action{Kind: NotesDelete}, true
 		case tea.KeyEnter:
-			return Action{Kind: ScratchInsert, Text: "\n"}, true
+			return Action{Kind: NotesInsert, Text: "\n"}, true
 		case tea.KeyTab:
 			if !selecting {
-				return Action{Kind: ScratchInsert, Text: "\t"}, true
+				return Action{Kind: NotesInsert, Text: "\t"}, true
 			}
 		}
 		if key.Text != "" && key.Mod&(tea.ModAlt|tea.ModMeta|tea.ModSuper|tea.ModHyper) == 0 {
-			return Action{Kind: ScratchInsert, Text: key.Text}, true
+			return Action{Kind: NotesInsert, Text: key.Text}, true
 		}
 	case tea.PasteMsg:
-		return Action{Kind: ScratchInsert, Text: msg.Content}, true
+		return Action{Kind: NotesInsert, Text: msg.Content}, true
 	case tea.WindowSizeMsg:
 		return Action{Kind: Resize, Width: msg.Width, Height: msg.Height}, true
 	case tea.MouseClickMsg:
@@ -172,49 +166,49 @@ func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch
 		if mouse.Button != tea.MouseLeft {
 			return Action{}, false
 		}
-		hit := geometry.ScratchHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
+		hit := geometry.NotesHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
 		switch hit.Kind {
 		case ui.HitFilesWorkspace:
 			return Action{Kind: ShowFiles}, true
 		case ui.HitGitWorkspace:
 			return Action{Kind: ShowGit}, true
-		case ui.HitScratchWorkspace:
-			return Action{Kind: ShowScratch}, true
-		case ui.HitScratchProjectScope:
-			return Action{Kind: SelectProjectScratch}, true
-		case ui.HitScratchWorktreeScope:
-			return Action{Kind: SelectWorktreeScratch}, true
-		case ui.HitScratchScrollbar:
-			return Action{Kind: StartScratchScrollbarDrag, Position: mouse.Y, Grab: hit.GrabOffset}, true
-		case ui.HitScratchText:
-			return Action{Kind: ScratchBeginSelection, X: mouse.X - geometry.ScratchText.X, Y: mouse.Y - geometry.ScratchText.Y}, true
+		case ui.HitNotesWorkspace:
+			return Action{Kind: ShowNotes}, true
+		case ui.HitNotesProjectScope:
+			return Action{Kind: SelectProjectNotes}, true
+		case ui.HitNotesWorktreeScope:
+			return Action{Kind: SelectWorktreeNotes}, true
+		case ui.HitNotesScrollbar:
+			return Action{Kind: StartNotesScrollbarDrag, Position: mouse.Y, Grab: hit.GrabOffset}, true
+		case ui.HitNotesText:
+			return Action{Kind: NotesBeginSelection, X: mouse.X - geometry.NotesText.X, Y: mouse.Y - geometry.NotesText.Y}, true
 		}
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
-		hit := geometry.ScratchHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
-		if hit.Kind != ui.HitScratchText && hit.Kind != ui.HitScratchScrollbar {
+		hit := geometry.NotesHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
+		if hit.Kind != ui.HitNotesText && hit.Kind != ui.HitNotesScrollbar {
 			return Action{}, false
 		}
 		switch mouse.Button {
 		case tea.MouseWheelUp:
-			return Action{Kind: ScratchScroll, Amount: -3}, true
+			return Action{Kind: NotesScroll, Amount: -3}, true
 		case tea.MouseWheelDown:
-			return Action{Kind: ScratchScroll, Amount: 3}, true
+			return Action{Kind: NotesScroll, Amount: 3}, true
 		}
 	case tea.MouseMotionMsg:
 		mouse := msg.Mouse()
 		if scrollbarDragging && mouse.Button == tea.MouseLeft {
-			return Action{Kind: DragScratchScrollbar, Position: mouse.Y}, true
+			return Action{Kind: DragNotesScrollbar, Position: mouse.Y}, true
 		}
 		if selectionDragging && mouse.Button == tea.MouseLeft {
-			return Action{Kind: ScratchDragSelection, X: mouse.X - geometry.ScratchText.X, Y: mouse.Y - geometry.ScratchText.Y}, true
+			return Action{Kind: NotesDragSelection, X: mouse.X - geometry.NotesText.X, Y: mouse.Y - geometry.NotesText.Y}, true
 		}
 	case tea.MouseReleaseMsg:
 		if scrollbarDragging {
-			return Action{Kind: FinishScratchScrollbarDrag}, true
+			return Action{Kind: FinishNotesScrollbarDrag}, true
 		}
 		if selectionDragging {
-			return Action{Kind: ScratchEndSelection}, true
+			return Action{Kind: NotesEndSelection}, true
 		}
 	}
 	return Action{}, false
@@ -231,9 +225,11 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 		case "q", "ctrl+c":
 			return Action{Kind: Quit}, true
 		case "1":
-			return Action{Kind: ToggleWorkspace}, true
-		case "esc":
-			return Action{Kind: ToggleScratch}, true
+			return Action{Kind: ShowFiles}, true
+		case "2":
+			return Action{Kind: ShowGit}, true
+		case "3":
+			return Action{Kind: ShowNotes}, true
 		case workspace.SecondaryControlKey:
 			return Action{Kind: ToggleSecondary}, true
 		case workspace.TertiaryControlKey:
@@ -243,6 +239,10 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 		case workspace.DiffHighlightKey:
 			if controls.RichDiff {
 				return Action{Kind: ToggleDiffHighlight}, true
+			}
+		case "esc":
+			if active == workspace.Git {
+				return Action{Kind: ShowFiles}, true
 			}
 		case "x":
 			if active == workspace.Files {
@@ -308,8 +308,8 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			return Action{Kind: ShowFiles}, true
 		case ui.HitGitWorkspace:
 			return Action{Kind: ShowGit}, true
-		case ui.HitScratchWorkspace:
-			return Action{Kind: ShowScratch}, true
+		case ui.HitNotesWorkspace:
+			return Action{Kind: ShowNotes}, true
 		case ui.HitSecondaryControl:
 			return Action{Kind: ToggleSecondary}, true
 		case ui.HitTertiaryControl:
@@ -334,7 +334,7 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
 		hit := geometry.HitTest(mouse.X, mouse.Y, active, controls, top, fileCount, readerOffset, readerLineCount)
-		if hit.Kind == ui.HitNone || hit.Kind == ui.HitFilesWorkspace || hit.Kind == ui.HitGitWorkspace || hit.Kind == ui.HitScratchWorkspace || hit.Kind == ui.HitDivider ||
+		if hit.Kind == ui.HitNone || hit.Kind == ui.HitFilesWorkspace || hit.Kind == ui.HitGitWorkspace || hit.Kind == ui.HitNotesWorkspace || hit.Kind == ui.HitDivider ||
 			hit.Kind == ui.HitSecondaryControl || hit.Kind == ui.HitTertiaryControl || hit.Kind == ui.HitComparisonControl || hit.Kind == ui.HitDiffHighlightControl {
 			return Action{}, false
 		}

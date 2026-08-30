@@ -1,4 +1,4 @@
-package scratch
+package notes
 
 import (
 	"crypto/sha256"
@@ -18,8 +18,8 @@ import (
 const stateVersion = "v1"
 
 var (
-	ErrReadOnly    = errors.New("scratch is read-only")
-	ErrInvalidUTF8 = errors.New("scratch note contains invalid UTF-8")
+	ErrReadOnly    = errors.New("notes is read-only")
+	ErrInvalidUTF8 = errors.New("Notes content contains invalid UTF-8")
 )
 
 // Store is the narrow persistence session consumed by the application.
@@ -29,7 +29,7 @@ type Store interface {
 	Close() error
 }
 
-// Scope identifies one independently edited and persisted Scratch note.
+// Scope identifies one independently edited and persisted Notes note.
 type Scope uint8
 
 const (
@@ -78,10 +78,11 @@ func (stores Stores) Close() error {
 // Paths identifies one clone's opaque private state without exposing the Git
 // common directory in filenames.
 type Paths struct {
-	Directory string
-	Note      string
-	Lock      string
-	stateBase string
+	Directory  string
+	Note       string
+	Lock       string
+	stateBase  string
+	legacyNote string
 }
 
 // StatePaths derives the private versioned path for a canonical Git common
@@ -95,18 +96,18 @@ func StatePaths(commonDir string, lookupEnv func(string) (string, bool)) (Paths,
 		return Paths{}, err
 	}
 	identity := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(commonDir))))
-	directory := filepath.Join(base, "reviewr", stateVersion, "scratch", identity)
+	directory := filepath.Join(base, "reviewr", stateVersion, "notes", identity)
 	return Paths{
-		Directory: directory,
-		Note:      filepath.Join(directory, "note.txt"),
-		Lock:      filepath.Join(directory, "edit.lock"),
-		stateBase: base,
+		Directory:  directory,
+		Note:       filepath.Join(directory, "note.txt"),
+		Lock:       filepath.Join(directory, "edit.lock"),
+		stateBase:  base,
+		legacyNote: filepath.Join(base, "reviewr", stateVersion, "scratch", identity, "note.txt"),
 	}, nil
 }
 
-// WorktreeStatePaths derives a second opaque path below the existing project
-// state directory. StatePaths remains unchanged so every existing note stays
-// at its original project path.
+// WorktreeStatePaths derives a second opaque Notes path below the project
+// state directory while retaining the matching legacy source identity.
 func WorktreeStatePaths(commonDir, worktreeRoot string, lookupEnv func(string) (string, bool)) (Paths, error) {
 	project, err := StatePaths(commonDir, lookupEnv)
 	if err != nil {
@@ -118,10 +119,11 @@ func WorktreeStatePaths(commonDir, worktreeRoot string, lookupEnv func(string) (
 	identity := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(worktreeRoot))))
 	directory := filepath.Join(project.Directory, "worktrees", identity)
 	return Paths{
-		Directory: directory,
-		Note:      filepath.Join(directory, "note.txt"),
-		Lock:      filepath.Join(directory, "edit.lock"),
-		stateBase: project.stateBase,
+		Directory:  directory,
+		Note:       filepath.Join(directory, "note.txt"),
+		Lock:       filepath.Join(directory, "edit.lock"),
+		stateBase:  project.stateBase,
+		legacyNote: filepath.Join(filepath.Dir(project.legacyNote), "worktrees", identity, "note.txt"),
 	}, nil
 }
 
@@ -190,44 +192,140 @@ func (s *PrivateStore) Load() (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return "", true, fmt.Errorf("load scratch: store is closed")
+		return "", true, fmt.Errorf("load notes: store is closed")
 	}
 	if s.pathErr != nil {
 		return "", true, s.pathErr
 	}
 	if err := ensurePrivateDirectory(s.paths.stateBase, s.paths.Directory); err != nil {
-		return "", true, fmt.Errorf("prepare scratch state: %w", err)
+		return "", true, fmt.Errorf("prepare notes state: %w", err)
 	}
 	var lockErr error
 	if !s.locked {
 		lockErr = s.tryLock()
 	}
-	data, readErr := os.ReadFile(s.paths.Note)
-	if errors.Is(readErr, os.ErrNotExist) {
+	migrationErr := s.importLegacyIfMissing()
+	data, targetExists, readErr := readNotesTarget(s.paths.Note)
+	if !targetExists && !s.locked {
+		// A concurrent Notes owner may still be publishing the import. Preserve
+		// readable legacy data for this read-only session, then give a target
+		// that appeared meanwhile one final chance to win.
+		legacyData, legacyErr := os.ReadFile(s.paths.legacyNote)
+		if legacyErr == nil {
+			if utf8.Valid(legacyData) {
+				data, readErr = legacyData, nil
+			} else {
+				data, readErr = legacyData, ErrInvalidUTF8
+			}
+		} else if !errors.Is(legacyErr, os.ErrNotExist) {
+			readErr = fmt.Errorf("read legacy note: %w", legacyErr)
+		}
+		if targetData, appeared, targetErr := readNotesTarget(s.paths.Note); appeared {
+			data, targetExists, readErr = targetData, true, targetErr
+		}
+	}
+	if !targetExists && errors.Is(readErr, os.ErrNotExist) {
 		readErr = nil
 		data = nil
 	}
 	if readErr == nil && !utf8.Valid(data) {
 		readErr = ErrInvalidUTF8
 	}
-	return string(data), !s.locked, errors.Join(lockErr, readErr)
+	return string(data), !s.locked, errors.Join(lockErr, migrationErr, readErr)
+}
+
+// readNotesTarget distinguishes an absent pathname from an existing target
+// whose content cannot be followed or read. That distinction is load-bearing
+// for target-wins migration, including dangling symlinks and other error
+// objects that report ENOENT through ReadFile.
+func readNotesTarget(path string) (data []byte, exists bool, err error) {
+	data, err = os.ReadFile(path)
+	if err == nil {
+		return data, true, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, true, err
+	}
+	_, statErr := os.Lstat(path)
+	if statErr == nil {
+		return nil, true, err
+	}
+	if errors.Is(statErr, os.ErrNotExist) {
+		return nil, false, err
+	}
+	return nil, true, errors.Join(err, statErr)
+}
+
+// importLegacyIfMissing makes a one-time, source-preserving copy while the
+// Notes destination lock is held. Any destination object wins, even when it is
+// empty, unreadable, or otherwise invalid.
+func (s *PrivateStore) importLegacyIfMissing() error {
+	if !s.locked || s.paths.legacyNote == "" {
+		return nil
+	}
+	if _, err := os.Lstat(s.paths.Note); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	data, err := os.ReadFile(s.paths.legacyNote)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("import legacy note: %w", err)
+	}
+	if !utf8.Valid(data) {
+		return ErrInvalidUTF8
+	}
+
+	temporary, err := os.CreateTemp(s.paths.Directory, ".legacy-note-*.tmp")
+	if err != nil {
+		return fmt.Errorf("stage legacy note: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	fail := func(operation string, operationErr error) error {
+		_ = temporary.Close()
+		return fmt.Errorf("%s legacy note: %w", operation, operationErr)
+	}
+	if err := temporary.Chmod(0o600); err != nil {
+		return fail("protect", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		return fail("write", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		return fail("flush", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close legacy note: %w", err)
+	}
+	// Link publishes without replacement: a destination created by another
+	// process between Lstat and here remains authoritative.
+	if err := os.Link(temporaryPath, s.paths.Note); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+		return fmt.Errorf("publish legacy note: %w", err)
+	}
+	_ = syncDirectory(s.paths.Directory)
+	return nil
 }
 
 func (s *PrivateStore) tryLock() error {
 	file, err := os.OpenFile(s.paths.Lock, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return fmt.Errorf("open scratch lock: %w", err)
+		return fmt.Errorf("open notes lock: %w", err)
 	}
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("protect scratch lock: %w", err)
+		return fmt.Errorf("protect notes lock: %w", err)
 	}
 	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		_ = file.Close()
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
 			return nil
 		}
-		return fmt.Errorf("lock scratch: %w", err)
+		return fmt.Errorf("lock notes: %w", err)
 	}
 	s.lockFile = file
 	s.locked = true
@@ -238,14 +336,14 @@ func (s *PrivateStore) Save(text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return fmt.Errorf("save scratch: store is closed")
+		return fmt.Errorf("save notes: store is closed")
 	}
 	if !s.locked {
 		return ErrReadOnly
 	}
 	temporary, err := os.CreateTemp(s.paths.Directory, ".note-*.tmp")
 	if err != nil {
-		return fmt.Errorf("stage scratch note: %w", err)
+		return fmt.Errorf("stage notes note: %w", err)
 	}
 	temporaryPath := temporary.Name()
 	removeTemporary := true
@@ -256,7 +354,7 @@ func (s *PrivateStore) Save(text string) error {
 	}()
 	fail := func(operation string, operationErr error) error {
 		_ = temporary.Close()
-		return fmt.Errorf("%s scratch note: %w", operation, operationErr)
+		return fmt.Errorf("%s notes note: %w", operation, operationErr)
 	}
 	if err := temporary.Chmod(0o600); err != nil {
 		return fail("protect", err)
@@ -268,10 +366,10 @@ func (s *PrivateStore) Save(text string) error {
 		return fail("flush", err)
 	}
 	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close scratch note: %w", err)
+		return fmt.Errorf("close notes note: %w", err)
 	}
 	if err := os.Rename(temporaryPath, s.paths.Note); err != nil {
-		return fmt.Errorf("replace scratch note: %w", err)
+		return fmt.Errorf("replace notes note: %w", err)
 	}
 	removeTemporary = false
 	// The staged file already has mode 0600. Once atomic replacement succeeds,
@@ -307,7 +405,7 @@ func ensurePrivateDirectory(base, directory string) error {
 	}
 	relative, err := filepath.Rel(base, directory)
 	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("scratch state directory is outside private state base")
+		return fmt.Errorf("notes state directory is outside private state base")
 	}
 	current := base
 	for _, component := range strings.Split(relative, string(filepath.Separator)) {

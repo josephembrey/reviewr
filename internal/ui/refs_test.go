@@ -26,7 +26,6 @@ func TestRefsRowsRenderDistinctRestrainedIconsTonesAndTrails(t *testing.T) {
 	model := Model{
 		Geometry:         Calculate(100, 16),
 		Workspace:        workspace.Git,
-		PrimaryWorkspace: workspace.Git,
 		Controls:         workspace.Controls{Git: workspace.GitRefs},
 		NavigatorTitle:   "refs · 5",
 		NavigatorRows:    rows,
@@ -143,7 +142,6 @@ func TestRefsPaintAndHitGeometryShareFullRowsAndScrollbars(t *testing.T) {
 	frame := Render(Model{
 		Geometry:         g,
 		Workspace:        workspace.Git,
-		PrimaryWorkspace: workspace.Git,
 		Controls:         workspace.Controls{Git: workspace.GitRefs},
 		NavigatorRows:    rows,
 		Selected:         7,

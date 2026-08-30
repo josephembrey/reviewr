@@ -120,14 +120,13 @@ func TestCommitRowsCoexistWithNavigatorScrollbar(t *testing.T) {
 		rows[index] = NavigatorRow{Identity: strconv.Itoa(index), Commit: &row}
 	}
 	frame := ansi.Strip(Render(Model{
-		Geometry:         g,
-		Workspace:        workspace.Git,
-		PrimaryWorkspace: workspace.Git,
-		NavigatorTitle:   "commits · 30",
-		NavigatorRows:    rows,
-		Selected:         8,
-		Top:              6,
-		Focus:            navigation.FocusNavigator,
+		Geometry:       g,
+		Workspace:      workspace.Git,
+		NavigatorTitle: "commits · 30",
+		NavigatorRows:  rows,
+		Selected:       8,
+		Top:            6,
+		Focus:          navigation.FocusNavigator,
 	}))
 	lines := strings.Split(frame, "\n")
 	for row := g.NavigatorRows.Y; row < g.NavigatorRows.Y+g.NavigatorRows.Height; row++ {

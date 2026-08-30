@@ -1,4 +1,4 @@
-package scratch
+package notes
 
 import (
 	"strings"

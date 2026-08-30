@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/josephembrey/reviewr/internal/herdr"
-	"github.com/josephembrey/reviewr/internal/scratch"
+	"github.com/josephembrey/reviewr/internal/notes"
 )
 
 type fakePaneStateStore struct {
@@ -21,7 +21,7 @@ func (store *fakePaneStateStore) SavePaneSwapped(generation uint64, swapped bool
 func TestPaneSideLoadsBeforeLayoutAndPersistsEachSwap(t *testing.T) {
 	t.Parallel()
 	store := &fakePaneStateStore{}
-	model := NewWithPaneState(&fakeSource{}, herdr.Context{}, scratch.NewMemoryStore(), store, true)
+	model := NewWithPaneState(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), store, true)
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	if !model.layout.swapped || model.geometry.Reader.X != 0 {
 		t.Fatalf("startup pane preference was not applied: layout=%+v geometry=%+v", model.layout, model.geometry)

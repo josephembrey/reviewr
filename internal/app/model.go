@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
-	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -40,7 +40,6 @@ type Model struct {
 	source    Source
 	host      herdr.Context
 	active    workspace.Kind
-	scratch   bool
 	controls  workspace.Controls
 	lab       labState
 	layout    layoutState
@@ -50,7 +49,7 @@ type Model struct {
 	history   historyState
 	refs      refsState
 	stashes   stashState
-	note      scopedScratchState
+	note      scopedNotesState
 	poll      repositoryPollState
 	paneStore PaneStateStore
 	paneSave  uint64
@@ -78,27 +77,27 @@ const (
 	effectLoadStashes
 	effectLoadStashFiles
 	effectLoadStashFile
-	effectLoadScratch
-	effectDebounceScratch
-	effectSaveScratch
+	effectLoadNotes
+	effectDebounceNotes
+	effectSaveNotes
 	effectSavePaneState
 	effectQuit
 )
 
 type effect struct {
-	kind         effectKind
-	generation   uint64
-	identity     string
-	entry        repository.Entry
-	query        repository.CommitQuery
-	refSource    repository.RefSource
-	stashSource  repository.ChangeSource
-	changedFile  repository.ChangedFile
-	text         string
-	swapped      bool
-	background   bool
-	activity     uint64
-	scratchScope scratch.Scope
+	kind        effectKind
+	generation  uint64
+	identity    string
+	entry       repository.Entry
+	query       repository.CommitQuery
+	refSource   repository.RefSource
+	stashSource repository.ChangeSource
+	changedFile repository.ChangedFile
+	text        string
+	swapped     bool
+	background  bool
+	activity    uint64
+	notesScope  notes.Scope
 
 	scope            string
 	reviewGeneration uint64
@@ -208,21 +207,21 @@ type commitLoadedMsg struct {
 	activity   uint64
 }
 
-type scratchLoadedMsg struct {
-	scope      scratch.Scope
+type notesLoadedMsg struct {
+	scope      notes.Scope
 	generation uint64
 	text       string
 	readOnly   bool
 	err        error
 }
 
-type scratchSaveDueMsg struct {
-	scope      scratch.Scope
+type notesSaveDueMsg struct {
+	scope      notes.Scope
 	generation uint64
 }
 
-type scratchSavedMsg struct {
-	scope      scratch.Scope
+type notesSavedMsg struct {
+	scope      notes.Scope
 	generation uint64
 	err        error
 }
@@ -276,32 +275,32 @@ type stashFileLoadedMsg struct {
 	activity     uint64
 }
 
-// New creates a model with both primary workspaces ready for their tagged
+// New creates a model with both repository browsers ready for their tagged
 // startup loads. History is warmed while Files remains the visible workspace.
 func New(source Source, host herdr.Context) Model {
-	return NewWithScratch(source, host, scratch.NewMemoryStore())
+	return NewWithNotes(source, host, notes.NewMemoryStore())
 }
 
-// NewWithScratch creates a model with an explicit project-scoped Scratch store.
-func NewWithScratch(source Source, host herdr.Context, store scratch.Store) Model {
+// NewWithNotes creates a model with an explicit project-scoped Notes store.
+func NewWithNotes(source Source, host herdr.Context, store notes.Store) Model {
 	return NewWithPaneState(source, host, store, nil, false)
 }
 
-// NewWithScratchScopes creates a model with project and optional linked-
-// worktree Scratch sessions.
-func NewWithScratchScopes(source Source, host herdr.Context, stores scratch.Stores) Model {
-	return NewWithPaneStateAndScratchScopes(source, host, stores, nil, false)
+// NewWithNotesScopes creates a model with project and optional linked-
+// worktree Notes sessions.
+func NewWithNotesScopes(source Source, host herdr.Context, stores notes.Stores) Model {
+	return NewWithPaneStateAndNotesScopes(source, host, stores, nil, false)
 }
 
 // NewWithPaneState creates a model with a startup pane-side preference and
 // its external persistence boundary.
-func NewWithPaneState(source Source, host herdr.Context, scratchStore scratch.Store, paneStore PaneStateStore, swapped bool) Model {
-	return NewWithPaneStateAndScratchScopes(source, host, scratch.Stores{Project: scratchStore}, paneStore, swapped)
+func NewWithPaneState(source Source, host herdr.Context, notesStore notes.Store, paneStore PaneStateStore, swapped bool) Model {
+	return NewWithPaneStateAndNotesScopes(source, host, notes.Stores{Project: notesStore}, paneStore, swapped)
 }
 
-// NewWithPaneStateAndScratchScopes creates a model with independently scoped
-// Scratch sessions plus a startup pane-side preference.
-func NewWithPaneStateAndScratchScopes(source Source, host herdr.Context, stores scratch.Stores, paneStore PaneStateStore, swapped bool) Model {
+// NewWithPaneStateAndNotesScopes creates a model with independently scoped
+// Notes sessions plus a startup pane-side preference.
+func NewWithPaneStateAndNotesScopes(source Source, host herdr.Context, stores notes.Stores, paneStore PaneStateStore, swapped bool) Model {
 	return Model{
 		source:    source,
 		host:      host,
@@ -312,7 +311,7 @@ func NewWithPaneStateAndScratchScopes(source Source, host herdr.Context, stores 
 		history:   newHistoryState(),
 		refs:      newRefsState(),
 		stashes:   newStashState(),
-		note:      newScopedScratchState(stores),
+		note:      newScopedNotesState(stores),
 		paneStore: paneStore,
 	}
 }
@@ -356,9 +355,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ui.MeetsMinimumSize(m.geometry.Screen.Width, m.geometry.Screen.Height) {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.WindowSizeMsg:
-			place := m.activePlace()
-			readerOffset := m.activeReaderVisualOffset()
-			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), readerOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+			action, ok := m.route(msg)
 			if !ok || (action.Kind != Resize && action.Kind != Quit && action.Kind != FinishPaneResize && action.Kind != FinishScrollbarDrag) {
 				return m, nil
 			}
@@ -436,15 +433,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
 		return m, nil
-	case scratchLoadedMsg:
+	case notesLoadedMsg:
 		m.note.landLoad(msg.scope, msg, m.geometry)
 		return m, nil
-	case scratchSaveDueMsg:
+	case notesSaveDueMsg:
 		return m, m.command(m.note.due(msg.scope, msg))
-	case scratchSavedMsg:
+	case notesSavedMsg:
 		exit, next := m.note.landSave(msg.scope, msg)
-		if exit != scratchExitNone {
-			next = m.finishScratchExit(exit)
+		if exit != notesExitNone {
+			next = m.finishNotesExit(exit)
+		} else if msg.err != nil && m.active != workspace.Notes && m.note.forScope(msg.scope).modified() {
+			// A failed quit-time flush must remain visible and recoverable.
+			m.active = workspace.Notes
+			m.note.scope = m.note.normalize(msg.scope)
 		}
 		return m, m.command(next)
 	case paneStateSavedMsg:
@@ -491,16 +492,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	var action Action
-	var ok bool
-	if m.scratch {
-		note := m.note.current()
-		action, ok = routeScratchMessage(msg, m.geometry, note.editor.Presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
-	} else {
-		place := m.activePlace()
-		readerOffset := m.activeReaderVisualOffset()
-		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), readerOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
-	}
+	action, ok := m.route(msg)
 	if !ok {
 		return m, nil
 	}
@@ -522,16 +514,16 @@ func (m Model) View() tea.View {
 		return view
 	}
 	var presentation ui.Model
-	if m.scratch {
+	if m.active == workspace.Notes {
 		note := m.note.current()
 		status, statusError := note.status()
 		presentation = ui.Model{
-			Geometry:           m.geometry,
-			Scratch:            note.editor.Presentation(),
-			ScratchStatus:      status,
-			ScratchError:       statusError,
-			ScratchScope:       m.note.scope,
-			ScratchHasWorktree: m.note.hasWorktree(),
+			Geometry:         m.geometry,
+			Notes:            note.presentation(),
+			NotesStatus:      status,
+			NotesError:       statusError,
+			NotesScope:       m.note.scope,
+			NotesHasWorktree: m.note.hasWorktree(),
 		}
 	} else if m.gitStashesActive() {
 		presentation = m.stashes.viewModel(m.geometry, time.Now())
@@ -542,8 +534,7 @@ func (m Model) View() tea.View {
 	} else {
 		presentation = m.files.viewModel(m.geometry)
 	}
-	presentation.Workspace = m.destination()
-	presentation.PrimaryWorkspace = m.active
+	presentation.Workspace = m.active
 	presentation.DividerDragging = m.layout.dragging
 	presentation.Controls = m.presentationControls()
 	if presentation.Workspace == workspace.Files {
@@ -566,53 +557,30 @@ func (m Model) View() tea.View {
 func (m *Model) apply(action Action) effect {
 	switch action.Kind {
 	case Quit:
-		pending := m.note.requestExit(scratchExitQuit)
+		pending := m.note.requestExit(notesExitQuit)
 		if pending.kind != effectNone || m.note.current().saving {
 			return pending
 		}
 		m.note.finishExit()
 		return effect{kind: effectQuit}
-	case ToggleWorkspace:
-		m.scrollbar.finish()
-		if m.scratch {
-			return m.requestScratchExit(scratchExitClose)
-		}
-		m.scratch = false
-		return m.activate(m.active.Toggle())
-	case ToggleScratch:
-		m.scrollbar.finish()
-		if m.scratch {
-			return m.requestScratchExit(scratchExitClose)
-		}
-		m.scratch = true
-		m.layout.finishDrag()
-		return m.note.open()
 	case ShowFiles:
-		m.scrollbar.finish()
-		if m.scratch {
-			return m.requestScratchExit(scratchExitFiles)
+		if m.active == workspace.Notes {
+			return m.requestNotesExit(notesExitFiles)
 		}
 		return m.activate(workspace.Files)
 	case ShowGit:
-		m.scrollbar.finish()
-		if m.scratch {
-			return m.requestScratchExit(scratchExitGit)
+		if m.active == workspace.Notes {
+			return m.requestNotesExit(notesExitGit)
 		}
 		return m.activate(workspace.Git)
-	case ShowScratch:
-		m.scrollbar.finish()
-		if m.scratch {
-			return effect{}
-		}
-		m.scratch = true
-		m.layout.finishDrag()
-		return m.note.open()
-	case ToggleScratchScope:
+	case ShowNotes:
+		return m.activate(workspace.Notes)
+	case ToggleNotesScope:
 		return m.note.toggleScope()
-	case SelectProjectScratch:
-		return m.note.selectScope(scratch.Project)
-	case SelectWorktreeScratch:
-		return m.note.selectScope(scratch.Worktree)
+	case SelectProjectNotes:
+		return m.note.selectScope(notes.Project)
+	case SelectWorktreeNotes:
+		return m.note.selectScope(notes.Worktree)
 	case ToggleSecondary:
 		if m.active == workspace.Git {
 			m.scrollbar.finish()
@@ -624,7 +592,7 @@ func (m *Model) apply(action Action) effect {
 			if m.controls.Git == workspace.GitStashes && !m.stashes.loaded && !m.stashes.listLoading {
 				return m.stashes.reload()
 			}
-		} else {
+		} else if m.active == workspace.Files {
 			m.controls.Files = m.controls.Files.Toggle()
 			if m.controls.Files == workspace.AllFiles {
 				m.controls.Reader = workspace.FileReader
@@ -637,12 +605,12 @@ func (m *Model) apply(action Action) effect {
 				m.controls.Traversal = m.controls.Traversal.Toggle()
 				return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 			}
-		} else {
+		} else if m.active == workspace.Files {
 			m.controls.Reader = m.controls.Reader.Toggle()
 			return m.files.requestMode(m.controls.Reader)
 		}
 	case ToggleComparison:
-		if m.destination() == workspace.Files {
+		if m.active == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
 			return m.files.requestComparison(m.controls.Comparison.Label())
 		}
@@ -651,19 +619,19 @@ func (m *Model) apply(action Action) effect {
 			m.controls.DiffHighlight = m.controls.DiffHighlight.Toggle()
 		}
 	case ToggleReview:
-		if m.destination() == workspace.Files {
+		if m.active == workspace.Files {
 			return m.files.requestReviewToggle(m.files.place.Focus, action.Index)
 		}
 	case ActivateReviewBadge:
-		if m.destination() == workspace.Files {
+		if m.active == workspace.Files {
 			return m.files.requestReviewToggle(navigation.FocusNavigator, action.Index)
 		}
 	case ToggleReviewBounds:
-		if m.destination() == workspace.Files {
+		if m.active == workspace.Files {
 			return m.files.toggleReviewBounds(m.controls.Reader)
 		}
 	case NextReviewGap:
-		if m.destination() == workspace.Files {
+		if m.active == workspace.Files {
 			return m.files.selectNextReviewGap(m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 	case Reload:
@@ -685,6 +653,7 @@ func (m *Model) apply(action Action) effect {
 		if !ui.MeetsMinimumSize(action.Width, action.Height) {
 			m.layout.finishDrag()
 			m.scrollbar.finish()
+			m.note.finishPointers()
 		}
 		m.resizeWorkspaceState()
 		m.note.resize(m.geometry)
@@ -821,19 +790,32 @@ func (m *Model) apply(action Action) effect {
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
 	default:
-		if m.scratch {
+		if m.active == workspace.Notes {
 			return m.note.apply(action, m.geometry)
 		}
 	}
 	return effect{}
 }
 
+func (m *Model) route(msg tea.Msg) (Action, bool) {
+	if m.active == workspace.Notes {
+		note := m.note.current()
+		return routeNotesMessage(msg, m.geometry, note.presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
+	}
+	place := m.activePlace()
+	return routeMessageWithRows(msg, place.Focus, m.geometry, m.active, m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), m.activeReaderVisualOffset(), m.activeReaderLineCount(), m.activeNavigatorRows())
+}
+
 func (m *Model) activate(next workspace.Kind) effect {
-	m.scratch = false
 	if next == m.active {
 		return effect{}
 	}
+	m.layout.finishDrag()
+	m.scrollbar.finish()
 	m.active = next
+	if next == workspace.Notes {
+		return m.note.open()
+	}
 	if next == workspace.Git {
 		if m.controls.Git == workspace.GitStashes {
 			if !m.stashes.loaded && !m.stashes.listLoading {
@@ -859,13 +841,6 @@ func (m *Model) activate(next workspace.Kind) effect {
 	return effect{}
 }
 
-func (m Model) destination() workspace.Kind {
-	if m.scratch {
-		return workspace.Scratch
-	}
-	return m.active
-}
-
 func (m *Model) activePlace() *navigation.State {
 	if m.gitStashesActive() {
 		return &m.stashes.place
@@ -879,23 +854,22 @@ func (m *Model) activePlace() *navigation.State {
 	return &m.files.place
 }
 
-func (m *Model) requestScratchExit(exit scratchExit) effect {
+func (m *Model) requestNotesExit(exit notesExit) effect {
 	pending := m.note.requestExit(exit)
 	if pending.kind != effectNone || m.note.current().saving {
 		return pending
 	}
-	return m.finishScratchExit(exit)
+	return m.finishNotesExit(exit)
 }
 
-func (m *Model) finishScratchExit(exit scratchExit) effect {
+func (m *Model) finishNotesExit(exit notesExit) effect {
 	m.note.finishExit()
-	m.scratch = false
 	switch exit {
-	case scratchExitFiles:
+	case notesExitFiles:
 		return m.activate(workspace.Files)
-	case scratchExitGit:
+	case notesExitGit:
 		return m.activate(workspace.Git)
-	case scratchExitQuit:
+	case notesExitQuit:
 		return effect{kind: effectQuit}
 	default:
 		return effect{}
@@ -972,7 +946,7 @@ func (m Model) clampDocumentReader(place *navigation.State, document ui.ReaderDo
 }
 
 func (m Model) activeNavigatorRows() []ui.NavigatorRow {
-	if m.destination() != workspace.Files {
+	if m.active != workspace.Files {
 		return nil
 	}
 	return m.files.viewModel(m.geometry).NavigatorRows
@@ -1011,7 +985,7 @@ func (m Model) gitStashesActive() bool {
 // diffHighlightEligible is the one visibility predicate used to derive input,
 // header, mouse, and footer behavior from the rich document actually visible.
 func (m Model) diffHighlightEligible() bool {
-	if m.scratch {
+	if m.active == workspace.Notes {
 		return false
 	}
 	if m.gitStashesActive() {
@@ -1183,27 +1157,27 @@ func (m Model) command(pending effect) tea.Cmd {
 				background: background, activity: activity,
 			}
 		}
-	case effectLoadScratch:
-		scope := pending.scratchScope
+	case effectLoadNotes:
+		scope := pending.notesScope
 		store := m.note.forScope(scope).store
 		generation := pending.generation
 		return func() tea.Msg {
 			text, readOnly, err := store.Load()
-			return scratchLoadedMsg{scope: scope, generation: generation, text: text, readOnly: readOnly, err: err}
+			return notesLoadedMsg{scope: scope, generation: generation, text: text, readOnly: readOnly, err: err}
 		}
-	case effectDebounceScratch:
-		scope := pending.scratchScope
+	case effectDebounceNotes:
+		scope := pending.notesScope
 		generation := pending.generation
-		return tea.Tick(scratchSaveDebounce, func(time.Time) tea.Msg {
-			return scratchSaveDueMsg{scope: scope, generation: generation}
+		return tea.Tick(notesSaveDebounce, func(time.Time) tea.Msg {
+			return notesSaveDueMsg{scope: scope, generation: generation}
 		})
-	case effectSaveScratch:
-		scope := pending.scratchScope
+	case effectSaveNotes:
+		scope := pending.notesScope
 		store := m.note.forScope(scope).store
 		generation := pending.generation
 		text := pending.text
 		return func() tea.Msg {
-			return scratchSavedMsg{scope: scope, generation: generation, err: store.Save(text)}
+			return notesSavedMsg{scope: scope, generation: generation, err: store.Save(text)}
 		}
 	case effectSavePaneState:
 		store := m.paneStore

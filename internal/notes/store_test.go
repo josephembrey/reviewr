@@ -1,10 +1,11 @@
-package scratch
+package notes
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -23,7 +24,7 @@ func TestStatePathsUseXDGAndCloneIdentity(t *testing.T) {
 	}
 	again, _ := StatePaths("/clone/one/.git", lookup)
 	two, _ := StatePaths("/clone/two/.git", lookup)
-	if one != again || one == two || !strings.HasPrefix(one.Directory, filepath.Join(base, "reviewr", "v1", "scratch")) {
+	if one != again || one == two || !strings.HasPrefix(one.Directory, filepath.Join(base, "reviewr", "v1", "notes")) {
 		t.Fatalf("paths one=%+v again=%+v two=%+v", one, again, two)
 	}
 	if strings.Contains(one.Directory, "/clone/one") {
@@ -263,6 +264,216 @@ func TestPrivateStoreReportsInvalidUTF8WithoutBlockingText(t *testing.T) {
 	text, readOnly, err := store.Load()
 	if !errors.Is(err, ErrInvalidUTF8) || readOnly || len(text) != 3 {
 		t.Fatalf("invalid UTF-8 = %q, readOnly %v, err %v", text, readOnly, err)
+	}
+}
+
+func TestLegacyImportPreservesProjectAndWorktreeSources(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+	commonDir := "/projects/import/.git"
+	worktreeRoot := "/worktrees/import"
+	projectPaths, err := StatePaths(commonDir, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreePaths, err := WorktreeStatePaths(commonDir, worktreeRoot, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, text := range map[string]string{
+		projectPaths.legacyNote:  "project legacy",
+		worktreePaths.legacyNote: "worktree legacy",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stores := NewStores(commonDir, worktreeRoot, lookup)
+	t.Cleanup(func() { _ = stores.Close() })
+	project, projectReadOnly, projectErr := stores.Project.Load()
+	worktree, worktreeReadOnly, worktreeErr := stores.Worktree.Load()
+	if projectErr != nil || worktreeErr != nil || projectReadOnly || worktreeReadOnly || project != "project legacy" || worktree != "worktree legacy" {
+		t.Fatalf("import = project %q/%v/%v worktree %q/%v/%v", project, projectReadOnly, projectErr, worktree, worktreeReadOnly, worktreeErr)
+	}
+	for source, want := range map[string]string{projectPaths.legacyNote: "project legacy", worktreePaths.legacyNote: "worktree legacy"} {
+		data, err := os.ReadFile(source)
+		if err != nil || string(data) != want {
+			t.Fatalf("legacy source %q = %q, %v", source, data, err)
+		}
+	}
+	for _, target := range []Paths{projectPaths, worktreePaths} {
+		assertMode(t, target.Directory, 0o700)
+		assertMode(t, target.Note, 0o600)
+		assertMode(t, target.Lock, 0o600)
+	}
+}
+
+func TestLegacyImportNeverCrossesProjectAndWorktreeScopes(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name         string
+		legacyScope  Scope
+		wantProject  string
+		wantWorktree string
+	}{
+		{name: "project only", legacyScope: Project, wantProject: "project legacy"},
+		{name: "worktree only", legacyScope: Worktree, wantWorktree: "worktree legacy"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			base := t.TempDir()
+			lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+			commonDir := "/projects/scope-import/.git"
+			worktreeRoot := "/worktrees/scope-import"
+			projectPaths, err := StatePaths(commonDir, lookup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			worktreePaths, err := WorktreeStatePaths(commonDir, worktreeRoot, lookup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacyPath := projectPaths.legacyNote
+			legacyText := "project legacy"
+			if test.legacyScope == Worktree {
+				legacyPath = worktreePaths.legacyNote
+				legacyText = "worktree legacy"
+			}
+			if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(legacyPath, []byte(legacyText), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			stores := NewStores(commonDir, worktreeRoot, lookup)
+			defer stores.Close()
+			project, _, projectErr := stores.Project.Load()
+			worktree, _, worktreeErr := stores.Worktree.Load()
+			if projectErr != nil || worktreeErr != nil || project != test.wantProject || worktree != test.wantWorktree {
+				t.Fatalf("scope import = project %q/%v worktree %q/%v", project, projectErr, worktree, worktreeErr)
+			}
+		})
+	}
+}
+
+func TestLegacyImportNeverReplacesAnyNotesTarget(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		target func(string) error
+		want   string
+	}{
+		{name: "empty", target: func(path string) error { return os.WriteFile(path, nil, 0o600) }},
+		{name: "newer", target: func(path string) error { return os.WriteFile(path, []byte("newer Notes"), 0o600) }, want: "newer Notes"},
+		{name: "invalid UTF-8", target: func(path string) error { return os.WriteFile(path, []byte{0xff}, 0o600) }, want: string([]byte{0xff})},
+		{name: "read error", target: func(path string) error { return os.Mkdir(path, 0o700) }},
+		{name: "dangling symlink", target: func(path string) error { return os.Symlink("missing-target", path) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			base := t.TempDir()
+			lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+			paths, err := StatePaths("/projects/target-wins/.git", lookup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(paths.legacyNote), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(paths.legacyNote, []byte("legacy must lose"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(paths.Directory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.target(paths.Note); err != nil {
+				t.Fatal(err)
+			}
+			store := NewPrivateStore("/projects/target-wins/.git", lookup)
+			defer store.Close()
+			text, _, loadErr := store.Load()
+			if text != test.want {
+				t.Fatalf("target text = %q, want %q (err %v)", text, test.want, loadErr)
+			}
+			if test.name == "invalid UTF-8" && !errors.Is(loadErr, ErrInvalidUTF8) {
+				t.Fatalf("invalid target error = %v", loadErr)
+			}
+			if (test.name == "read error" || test.name == "dangling symlink") && loadErr == nil {
+				t.Fatal("target read error was replaced by legacy data")
+			}
+		})
+	}
+}
+
+func TestLegacyImportRejectsInvalidUTF8AndIsSafeUnderContention(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+	commonDir := "/projects/concurrent-import/.git"
+	paths, err := StatePaths(commonDir, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.legacyNote), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.legacyNote, []byte{0xff}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	invalid := NewPrivateStore(commonDir, lookup)
+	if _, _, err := invalid.Load(); !errors.Is(err, ErrInvalidUTF8) {
+		t.Fatalf("invalid legacy load = %v", err)
+	}
+	_ = invalid.Close()
+	if _, err := os.Lstat(paths.Note); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("invalid legacy source created target: %v", err)
+	}
+	if err := os.WriteFile(paths.legacyNote, []byte("concurrent legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stores := []*PrivateStore{NewPrivateStore(commonDir, lookup), NewPrivateStore(commonDir, lookup)}
+	defer stores[0].Close()
+	defer stores[1].Close()
+	type result struct {
+		text     string
+		readOnly bool
+		err      error
+	}
+	results := make([]result, len(stores))
+	var wait sync.WaitGroup
+	for index, store := range stores {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			results[index].text, results[index].readOnly, results[index].err = store.Load()
+		}()
+	}
+	wait.Wait()
+	data, err := os.ReadFile(paths.Note)
+	if err != nil || string(data) != "concurrent legacy" {
+		t.Fatalf("concurrent target = %q, %v; results %+v", data, err, results)
+	}
+	owners := 0
+	for _, result := range results {
+		if result.err != nil {
+			t.Fatalf("concurrent load error: %+v", results)
+		}
+		if result.text != "concurrent legacy" {
+			t.Fatalf("concurrent session missed legacy text: %+v", results)
+		}
+		if !result.readOnly {
+			owners++
+		}
+	}
+	if owners != 1 {
+		t.Fatalf("concurrent lock owners = %d, want 1: %+v", owners, results)
 	}
 }
 

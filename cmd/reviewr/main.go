@@ -34,12 +34,12 @@ func run(args []string) error {
 	host := herdr.NewRuntime(herdr.Detect(os.LookupEnv))
 	host.Start()
 	defer host.Close()
-	stores, err := repo.ScratchStores(os.LookupEnv)
+	stores, err := repo.NotesStores(os.LookupEnv)
 	if err != nil {
 		return err
 	}
 	paneStore, paneState, _ := preferences.Open("")
-	model := app.NewWithPaneStateAndScratchScopes(repo, host.Context(), stores, paneStore, paneState.PanesSwapped)
+	model := app.NewWithPaneStateAndNotesScopes(repo, host.Context(), stores, paneStore, paneState.PanesSwapped)
 	final, runErr := tea.NewProgram(model).Run()
 	model, ok := final.(app.Model)
 	if !ok {

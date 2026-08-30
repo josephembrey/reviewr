@@ -14,41 +14,41 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	changes := ChangeSummary{Ready: true}
 
 	files := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Changes: changes}))
-	if !strings.HasPrefix(files, "1 [files] git  | esc  scratch  [all] [file] [uncommitted]") {
+	if !strings.HasPrefix(files, "[ files | git | notes ] [all] [file] [uncommitted]") {
 		t.Fatalf("Files header = %q", files)
 	}
 
 	controls := workspace.Controls{Files: workspace.ChangedFiles, Reader: workspace.DiffReader, Comparison: workspace.LastTurn}
 	files = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(files, "1 [files] git  | esc  scratch  [changed] [diff] [last-turn]") {
+	if !strings.HasPrefix(files, "[ files | git | notes ] [changed] [diff] [last-turn]") {
 		t.Fatalf("cycled Files header = %q", files)
 	}
 
 	git := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Changes: changes}))
-	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [log] [graph]") {
+	if !strings.HasPrefix(git, "[ files | git | notes ] [log] [graph]") {
 		t.Fatalf("Git Log header = %q", git)
 	}
 	controls.Git = workspace.GitRefs
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "[ files | git | notes ] [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Refs header = %q", git)
 	}
 	controls.Git = workspace.GitStashes
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "[ files | git | notes ] [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Stashes header = %q", git)
 	}
 
-	scratch := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Scratch, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(scratch, "1 [files] git  | esc [scratch]") || strings.Contains(scratch, "[refs]") || strings.Contains(scratch, "[changed]") {
-		t.Fatalf("Scratch header = %q", scratch)
+	notes := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Notes, Controls: controls, Changes: changes}))
+	if !strings.HasPrefix(notes, "[ files | git | notes ]") || strings.Contains(notes, "[refs]") || strings.Contains(notes, "[changed]") {
+		t.Fatalf("Notes header = %q", notes)
 	}
 }
 
 func TestWideHeaderControlsExposeNumberKeys(t *testing.T) {
 	t.Parallel()
 	plain := ansi.Strip(Render(Model{Geometry: Calculate(120, 1), Workspace: workspace.Files}))
-	if !strings.HasPrefix(plain, "1 [files] git  | esc  scratch   4 [all]  5 [file]  6 [uncommitted]") {
+	if !strings.HasPrefix(plain, "[ files | git | notes ]  4 [all]  5 [file]  6 [uncommitted]") {
 		t.Fatalf("wide Files header = %q", plain)
 	}
 }
@@ -67,22 +67,20 @@ func TestHeaderControlHitsUsePaintedLayout(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(80, 1)
 	controls := workspace.Controls{}
-	tests := []struct {
-		x    int
-		want HitKind
-	}{
-		{x: 31, want: HitSecondaryControl},
-		{x: 37, want: HitTertiaryControl},
-		{x: 44, want: HitComparisonControl},
-		{x: 30, want: HitNone},
+	visible := layoutHeaderControls(geometry, workspace.Files, controls)
+	if len(visible) != 3 {
+		t.Fatalf("Files controls = %+v", visible)
 	}
-	for _, test := range tests {
-		if got := geometry.HitTest(test.x, 0, workspace.Files, controls, 0, 0, 0, 0).Kind; got != test.want {
-			t.Fatalf("Files header x=%d hit %v, want %v", test.x, got, test.want)
+	for _, control := range visible {
+		if got := geometry.HitTest(control.rect.X, 0, workspace.Files, controls, 0, 0, 0, 0).Kind; got != control.hit {
+			t.Fatalf("Files header x=%d hit %v, want %v", control.rect.X, got, control.hit)
 		}
 	}
 	controls.Git = workspace.GitRefs
-	if got := geometry.HitTest(38, 0, workspace.Git, controls, 0, 0, 0, 0).Kind; got != HitNone {
+	if got := len(layoutHeaderControls(geometry, workspace.Git, controls)); got != 1 {
+		t.Fatalf("Git Refs controls = %d, want 1", got)
+	}
+	if got := geometry.HitTest(32, 0, workspace.Git, controls, 0, 0, 0, 0).Kind; got != HitNone {
 		t.Fatalf("Git Refs claimed absent tertiary control: %v", got)
 	}
 }

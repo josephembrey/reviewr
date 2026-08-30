@@ -1,19 +1,11 @@
-// Package workspace names reviewr's primary workspaces without owning their state.
+// Package workspace names reviewr's top-level destinations without owning their state.
 package workspace
 
-// Kind identifies the body document selected by the primary header control.
+// Kind identifies the active top-level destination.
 type Kind uint8
 
 const (
 	Files Kind = iota
 	Git
-	Scratch
+	Notes
 )
-
-// Toggle returns the other primary workspace.
-func (kind Kind) Toggle() Kind {
-	if kind == Git {
-		return Files
-	}
-	return Git
-}

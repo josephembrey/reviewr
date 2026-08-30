@@ -171,11 +171,11 @@ func TestDiffHighlightToggleIsGlobalRenderOnlyAndEligibilityIsVisibleDocument(t 
 		t.Fatal("ineligible semantic action changed preference")
 	}
 	model.controls.Reader = workspace.DiffReader
-	model.scratch = true
+	model.active = workspace.Notes
 	if model.diffHighlightEligible() {
-		t.Fatal("Scratch exposed diff highlight")
+		t.Fatal("Notes exposed diff highlight")
 	}
-	model.scratch = false
+	model.active = workspace.Files
 	model.active = workspace.Git
 	model.controls.Git = workspace.GitLog
 	if model.diffHighlightEligible() {

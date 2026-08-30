@@ -5,84 +5,82 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/josephembrey/reviewr/internal/scratch"
+	"github.com/josephembrey/reviewr/internal/highlight"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/ui"
 )
 
-const scratchSaveDebounce = 350 * time.Millisecond
+const notesSaveDebounce = 350 * time.Millisecond
 
-type scratchExit uint8
+type notesExit uint8
 
 const (
-	scratchExitNone scratchExit = iota
-	scratchExitClose
-	scratchExitFiles
-	scratchExitGit
-	scratchExitQuit
-	scratchExitScope
+	notesExitNone notesExit = iota
+	notesExitFiles
+	notesExitGit
+	notesExitQuit
+	notesExitScope
 )
 
-// scopedScratchState owns the two possible Scratch places while keeping the
+// scopedNotesState owns the two possible Notes places while keeping the
 // root model unaware of their persistence and transition details.
-type scopedScratchState struct {
-	scratchState
-	worktree        scratchState
+type scopedNotesState struct {
+	notesState
+	worktree        notesState
 	worktreeEnabled bool
-	scope           scratch.Scope
-	pendingScope    scratch.Scope
+	scope           notes.Scope
+	pendingScope    notes.Scope
 	switchPending   bool
 }
 
-func newScopedScratchState(stores scratch.Stores) scopedScratchState {
-	state := scopedScratchState{scratchState: newScratchState(stores.Project), scope: scratch.Project}
+func newScopedNotesState(stores notes.Stores) scopedNotesState {
+	state := scopedNotesState{notesState: newNotesState(stores.Project), scope: notes.Project}
 	if stores.Worktree != nil {
-		state.worktree = newScratchState(stores.Worktree)
+		state.worktree = newNotesState(stores.Worktree)
 		state.worktreeEnabled = true
 	}
 	return state
 }
 
-func (state *scopedScratchState) hasWorktree() bool { return state.worktreeEnabled }
+func (state *scopedNotesState) hasWorktree() bool { return state.worktreeEnabled }
 
-func (state *scopedScratchState) supports(scope scratch.Scope) bool {
-	return scope == scratch.Project || (scope == scratch.Worktree && state.worktreeEnabled)
+func (state *scopedNotesState) supports(scope notes.Scope) bool {
+	return scope == notes.Project || (scope == notes.Worktree && state.worktreeEnabled)
 }
 
-func (state *scopedScratchState) normalize(scope scratch.Scope) scratch.Scope {
-	if scope == scratch.Worktree && state.worktreeEnabled {
+func (state *scopedNotesState) normalize(scope notes.Scope) notes.Scope {
+	if scope == notes.Worktree && state.worktreeEnabled {
 		return scope
 	}
-	return scratch.Project
+	return notes.Project
 }
 
-func (state *scopedScratchState) forScope(scope scratch.Scope) *scratchState {
-	if state.normalize(scope) == scratch.Worktree {
+func (state *scopedNotesState) forScope(scope notes.Scope) *notesState {
+	if state.normalize(scope) == notes.Worktree {
 		return &state.worktree
 	}
-	return &state.scratchState
+	return &state.notesState
 }
 
-func (state *scopedScratchState) current() *scratchState {
+func (state *scopedNotesState) current() *notesState {
 	return state.forScope(state.scope)
 }
 
-func (state *scopedScratchState) tag(pending effect, scope scratch.Scope) effect {
-	if pending.kind == effectLoadScratch || pending.kind == effectDebounceScratch || pending.kind == effectSaveScratch {
-		pending.scratchScope = state.normalize(scope)
+func (state *scopedNotesState) tag(pending effect, scope notes.Scope) effect {
+	if pending.kind == effectLoadNotes || pending.kind == effectDebounceNotes || pending.kind == effectSaveNotes {
+		pending.notesScope = state.normalize(scope)
 	}
 	return pending
 }
 
-// open always enters at project scope; the worktree scope remains available
-// in every checkout, including the primary one.
-func (state *scopedScratchState) open() effect {
+// open preserves the current scope and editor place across destination visits.
+func (state *scopedNotesState) open() effect {
 	state.current().finishPointer()
-	state.scope = scratch.Project
 	state.switchPending = false
-	return state.tag(state.scratchState.open(), scratch.Project)
+	return state.tag(state.current().open(), state.scope)
 }
 
-func (state *scopedScratchState) selectScope(scope scratch.Scope) effect {
+func (state *scopedNotesState) selectScope(scope notes.Scope) effect {
 	scope = state.normalize(scope)
 	if !state.hasWorktree() || scope == state.scope || state.switchPending {
 		return effect{}
@@ -90,34 +88,34 @@ func (state *scopedScratchState) selectScope(scope scratch.Scope) effect {
 	state.pendingScope = scope
 	state.switchPending = true
 	currentScope := state.scope
-	pending := state.current().requestExit(scratchExitScope)
+	pending := state.current().requestExit(notesExitScope)
 	if pending.kind != effectNone || state.current().saving {
 		return state.tag(pending, currentScope)
 	}
 	return state.finishScopeSwitch()
 }
 
-func (state *scopedScratchState) toggleScope() effect {
-	if state.scope == scratch.Project {
-		return state.selectScope(scratch.Worktree)
+func (state *scopedNotesState) toggleScope() effect {
+	if state.scope == notes.Project {
+		return state.selectScope(notes.Worktree)
 	}
-	return state.selectScope(scratch.Project)
+	return state.selectScope(notes.Project)
 }
 
-func (state *scopedScratchState) finishScopeSwitch() effect {
-	state.current().pendingExit = scratchExitNone
+func (state *scopedNotesState) finishScopeSwitch() effect {
+	state.current().pendingExit = notesExitNone
 	state.scope = state.normalize(state.pendingScope)
 	state.switchPending = false
 	note := state.current()
 	if note.loaded && !note.readOnly {
-		note.pendingExit = scratchExitNone
+		note.pendingExit = notesExitNone
 		note.finishPointer()
 		return effect{}
 	}
 	return state.tag(note.open(), state.scope)
 }
 
-func (state *scopedScratchState) landLoad(scope scratch.Scope, msg scratchLoadedMsg, geometry ui.Geometry) {
+func (state *scopedNotesState) landLoad(scope notes.Scope, msg notesLoadedMsg, geometry ui.Geometry) {
 	if !state.supports(scope) {
 		return
 	}
@@ -126,58 +124,68 @@ func (state *scopedScratchState) landLoad(scope scratch.Scope, msg scratchLoaded
 	note.resize(geometry)
 }
 
-func (state *scopedScratchState) due(scope scratch.Scope, msg scratchSaveDueMsg) effect {
+func (state *scopedNotesState) due(scope notes.Scope, msg notesSaveDueMsg) effect {
 	if !state.supports(scope) {
 		return effect{}
 	}
 	return state.tag(state.forScope(scope).due(msg), scope)
 }
 
-func (state *scopedScratchState) landSave(scope scratch.Scope, msg scratchSavedMsg) (scratchExit, effect) {
+func (state *scopedNotesState) landSave(scope notes.Scope, msg notesSavedMsg) (notesExit, effect) {
 	if !state.supports(scope) {
-		return scratchExitNone, effect{}
+		return notesExitNone, effect{}
 	}
 	exit, pending := state.forScope(scope).landSave(msg)
-	if exit == scratchExitScope {
+	if msg.err != nil && state.switchPending && state.scope == state.normalize(scope) {
+		state.switchPending = false
+	}
+	if exit == notesExitScope {
 		if state.switchPending && state.scope == state.normalize(scope) {
-			return scratchExitNone, state.finishScopeSwitch()
+			return notesExitNone, state.finishScopeSwitch()
 		}
-		return scratchExitNone, effect{}
+		return notesExitNone, effect{}
 	}
 	return exit, state.tag(pending, scope)
 }
 
-func (state *scopedScratchState) apply(action Action, geometry ui.Geometry) effect {
+func (state *scopedNotesState) apply(action Action, geometry ui.Geometry) effect {
 	return state.tag(state.current().apply(action, geometry), state.scope)
 }
 
-func (state *scopedScratchState) requestExit(exit scratchExit) effect {
+func (state *scopedNotesState) requestExit(exit notesExit) effect {
 	return state.tag(state.current().requestExit(exit), state.scope)
 }
 
-func (state *scopedScratchState) finishExit() {
-	state.current().pendingExit = scratchExitNone
+func (state *scopedNotesState) finishExit() {
+	state.current().pendingExit = notesExitNone
 	state.switchPending = false
 }
 
-func (state *scopedScratchState) resize(geometry ui.Geometry) {
-	state.scratchState.resize(geometry)
+func (state *scopedNotesState) finishPointers() {
+	state.notesState.finishPointer()
+	if state.worktreeEnabled {
+		state.worktree.finishPointer()
+	}
+}
+
+func (state *scopedNotesState) resize(geometry ui.Geometry) {
+	state.notesState.resize(geometry)
 	if state.worktreeEnabled {
 		state.worktree.resize(geometry)
 	}
 }
 
-func (state *scopedScratchState) shutdown() error {
-	projectErr := state.scratchState.shutdown()
+func (state *scopedNotesState) shutdown() error {
+	projectErr := state.notesState.shutdown()
 	if !state.worktreeEnabled {
 		return projectErr
 	}
 	return errors.Join(projectErr, state.worktree.shutdown())
 }
 
-type scratchState struct {
-	editor              scratch.Editor
-	store               scratch.Store
+type notesState struct {
+	editor              notes.Editor
+	store               notes.Store
 	loaded              bool
 	loading             bool
 	readOnly            bool
@@ -187,20 +195,22 @@ type scratchState struct {
 	savingGeneration    uint64
 	saving              bool
 	statusErr           error
-	pendingExit         scratchExit
+	pendingExit         notesExit
 	scrollbarDragging   bool
 	scrollbarGrabOffset int
+	markdownGeneration  uint64
+	markdownStyles      []highlight.Style
 }
 
-func newScratchState(store scratch.Store) scratchState {
+func newNotesState(store notes.Store) notesState {
 	if store == nil {
-		store = scratch.NewMemoryStore()
+		store = notes.NewMemoryStore()
 	}
-	return scratchState{editor: scratch.NewEditor(), store: store}
+	return notesState{editor: notes.NewEditor(), store: store}
 }
 
-func (state *scratchState) open() effect {
-	state.pendingExit = scratchExitNone
+func (state *notesState) open() effect {
+	state.pendingExit = notesExitNone
 	state.finishPointer()
 	// Never replace an edited buffer after a failed save. A clean or read-only
 	// buffer reloads on every open so it sees the latest disk note.
@@ -209,10 +219,10 @@ func (state *scratchState) open() effect {
 	}
 	state.loadGeneration++
 	state.loading = true
-	return effect{kind: effectLoadScratch, generation: state.loadGeneration}
+	return effect{kind: effectLoadNotes, generation: state.loadGeneration}
 }
 
-func (state *scratchState) landLoad(msg scratchLoadedMsg) {
+func (state *notesState) landLoad(msg notesLoadedMsg) {
 	if !state.loading || msg.generation != state.loadGeneration {
 		return
 	}
@@ -224,79 +234,80 @@ func (state *scratchState) landLoad(msg scratchLoadedMsg) {
 	state.generation++
 	state.savedGeneration = state.generation
 	state.saving = false
-	state.pendingExit = scratchExitNone
+	state.pendingExit = notesExitNone
 	if wasLoaded {
 		state.editor.Reconcile(msg.text)
 	} else {
 		state.editor.Load(msg.text)
 	}
+	state.refreshMarkdown()
 }
 
-func (state *scratchState) apply(action Action, geometry ui.Geometry) effect {
-	if state.loading || state.pendingExit != scratchExitNone {
+func (state *notesState) apply(action Action, geometry ui.Geometry) effect {
+	if state.loading || state.pendingExit != notesExitNone {
 		return effect{}
 	}
 	changed := false
 	switch action.Kind {
-	case ScratchInsert:
+	case NotesInsert:
 		if !state.readOnly {
 			changed = state.editor.Insert(action.Text)
 		}
-	case ScratchBackspace:
+	case NotesBackspace:
 		if !state.readOnly {
 			changed = state.editor.Backspace()
 		}
-	case ScratchDelete:
+	case NotesDelete:
 		if !state.readOnly {
 			changed = state.editor.Delete()
 		}
-	case ScratchUndo:
+	case NotesUndo:
 		if !state.readOnly {
 			changed = state.editor.Undo()
 		}
-	case ScratchRedo:
+	case NotesRedo:
 		if !state.readOnly {
 			changed = state.editor.Redo()
 		}
-	case ScratchSelectAll:
+	case NotesSelectAll:
 		state.editor.SelectAll()
-	case ScratchMoveLeft:
+	case NotesMoveLeft:
 		state.editor.MoveHorizontal(-1, action.Selecting)
-	case ScratchMoveRight:
+	case NotesMoveRight:
 		state.editor.MoveHorizontal(1, action.Selecting)
-	case ScratchMoveUp:
+	case NotesMoveUp:
 		state.editor.MoveVertical(-1, action.Selecting)
-	case ScratchMoveDown:
+	case NotesMoveDown:
 		state.editor.MoveVertical(1, action.Selecting)
-	case ScratchMoveWordLeft:
+	case NotesMoveWordLeft:
 		state.editor.MoveWord(-1, action.Selecting)
-	case ScratchMoveWordRight:
+	case NotesMoveWordRight:
 		state.editor.MoveWord(1, action.Selecting)
-	case ScratchMoveHome:
+	case NotesMoveHome:
 		state.editor.MoveHome(action.Selecting)
-	case ScratchMoveEnd:
+	case NotesMoveEnd:
 		state.editor.MoveEnd(action.Selecting)
-	case ScratchPageUp:
+	case NotesPageUp:
 		state.editor.MovePage(-1, action.Selecting)
-	case ScratchPageDown:
+	case NotesPageDown:
 		state.editor.MovePage(1, action.Selecting)
-	case ScratchBeginSelection:
+	case NotesBeginSelection:
 		state.scrollbarDragging = false
 		state.editor.BeginDrag(action.X, action.Y)
-	case ScratchDragSelection:
+	case NotesDragSelection:
 		state.editor.DragTo(action.X, action.Y)
-	case ScratchEndSelection:
+	case NotesEndSelection:
 		state.editor.EndDrag()
-	case ScratchScroll:
+	case NotesScroll:
 		state.editor.Scroll(action.Amount)
-	case StartScratchScrollbarDrag:
+	case StartNotesScrollbarDrag:
 		state.editor.EndDrag()
 		state.scrollbarDragging = true
 		state.scrollbarGrabOffset = action.Grab
 		state.dragScrollbarTo(action.Position, geometry)
-	case DragScratchScrollbar:
+	case DragNotesScrollbar:
 		state.dragScrollbarTo(action.Position, geometry)
-	case FinishScratchScrollbarDrag:
+	case FinishNotesScrollbarDrag:
 		state.scrollbarDragging = false
 	}
 	if !changed {
@@ -304,15 +315,30 @@ func (state *scratchState) apply(action Action, geometry ui.Geometry) effect {
 	}
 	state.resize(geometry)
 	state.generation++
-	return effect{kind: effectDebounceScratch, generation: state.generation}
+	state.refreshMarkdown()
+	return effect{kind: effectDebounceNotes, generation: state.generation}
 }
 
-func (state *scratchState) dragScrollbarTo(y int, geometry ui.Geometry) {
+func (state *notesState) refreshMarkdown() {
+	if state.markdownGeneration == state.generation {
+		return
+	}
+	state.markdownStyles = notes.MarkdownStyles(state.editor.Text())
+	state.markdownGeneration = state.generation
+}
+
+func (state notesState) presentation() notes.Presentation {
+	presentation := state.editor.Presentation()
+	presentation.Styles = state.markdownStyles
+	return presentation
+}
+
+func (state *notesState) dragScrollbarTo(y int, geometry ui.Geometry) {
 	if !state.scrollbarDragging {
 		return
 	}
 	presentation := state.editor.Presentation()
-	bar, ok := ui.CalculateScrollbar(geometry.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	bar, ok := ui.CalculateScrollbar(geometry.NotesRows, len(presentation.Document.Rows), presentation.Top)
 	if !ok {
 		state.scrollbarDragging = false
 		return
@@ -320,8 +346,8 @@ func (state *scratchState) dragScrollbarTo(y int, geometry ui.Geometry) {
 	state.editor.SetScroll(bar.OffsetAt(y, state.scrollbarGrabOffset))
 }
 
-func (state *scratchState) due(msg scratchSaveDueMsg) effect {
-	if msg.generation != state.generation || !state.modified() || state.readOnly || state.loading || state.pendingExit != scratchExitNone {
+func (state *notesState) due(msg notesSaveDueMsg) effect {
+	if msg.generation != state.generation || !state.modified() || state.readOnly || state.loading || state.pendingExit != notesExitNone {
 		return effect{}
 	}
 	if state.saving {
@@ -330,13 +356,13 @@ func (state *scratchState) due(msg scratchSaveDueMsg) effect {
 	return state.beginSave()
 }
 
-func (state *scratchState) beginSave() effect {
+func (state *notesState) beginSave() effect {
 	state.saving = true
 	state.savingGeneration = state.generation
-	return effect{kind: effectSaveScratch, generation: state.generation, text: state.editor.Text()}
+	return effect{kind: effectSaveNotes, generation: state.generation, text: state.editor.Text()}
 }
 
-func (state *scratchState) requestExit(exit scratchExit) effect {
+func (state *notesState) requestExit(exit notesExit) effect {
 	state.finishPointer()
 	if state.modified() && !state.readOnly {
 		state.pendingExit = exit
@@ -349,41 +375,48 @@ func (state *scratchState) requestExit(exit scratchExit) effect {
 	return effect{}
 }
 
-func (state *scratchState) landSave(msg scratchSavedMsg) (scratchExit, effect) {
+func (state *notesState) landSave(msg notesSavedMsg) (notesExit, effect) {
 	if !state.saving || msg.generation != state.savingGeneration {
-		return scratchExitNone, effect{}
+		return notesExitNone, effect{}
 	}
 	state.saving = false
 	if msg.err != nil {
 		state.statusErr = msg.err
+		if state.pendingExit != notesExitNone {
+			// A save-gated transition cannot complete while its authored text is
+			// still only in memory. Keep the editor visible and allow an explicit
+			// retry after the user resolves the error.
+			state.pendingExit = notesExitNone
+			return notesExitNone, effect{}
+		}
 	} else if msg.generation == state.generation {
 		state.savedGeneration = msg.generation
 		state.statusErr = nil
 	}
-	if state.pendingExit != scratchExitNone {
+	if state.pendingExit != notesExitNone {
 		if msg.generation != state.generation && !state.readOnly {
-			return scratchExitNone, state.beginSave()
+			return notesExitNone, state.beginSave()
 		}
 		exit := state.pendingExit
-		state.pendingExit = scratchExitNone
+		state.pendingExit = notesExitNone
 		return exit, effect{}
 	}
 	if state.modified() && !state.readOnly && msg.generation != state.generation {
-		return scratchExitNone, effect{kind: effectDebounceScratch, generation: state.generation}
+		return notesExitNone, effect{kind: effectDebounceNotes, generation: state.generation}
 	}
-	return scratchExitNone, effect{}
+	return notesExitNone, effect{}
 }
 
-func (state *scratchState) modified() bool {
+func (state *notesState) modified() bool {
 	return state.loaded && state.generation != state.savedGeneration
 }
 
-func (state *scratchState) finishPointer() {
+func (state *notesState) finishPointer() {
 	state.editor.EndDrag()
 	state.scrollbarDragging = false
 }
 
-func (state scratchState) status() (string, bool) {
+func (state notesState) status() (string, bool) {
 	line, column := state.editor.CursorLineColumn()
 	label := "saved"
 	errorTone := false
@@ -406,8 +439,8 @@ func (state scratchState) status() (string, bool) {
 	return fmt.Sprintf("Ln %d, Col %d  •  %s", line, column, label), errorTone
 }
 
-func (state *scratchState) resize(geometry ui.Geometry) {
-	rows := geometry.ScratchRows
+func (state *notesState) resize(geometry ui.Geometry) {
+	rows := geometry.NotesRows
 	state.editor.Resize(rows.Width, rows.Height)
 	presentation := state.editor.Presentation()
 	if bar, ok := ui.CalculateScrollbar(rows, len(presentation.Document.Rows), presentation.Top); ok {
@@ -415,7 +448,7 @@ func (state *scratchState) resize(geometry ui.Geometry) {
 	}
 }
 
-func (state *scratchState) shutdown() error {
+func (state *notesState) shutdown() error {
 	var saveErr error
 	if state.modified() && !state.readOnly {
 		saveErr = state.store.Save(state.editor.Text())

@@ -14,7 +14,7 @@ import (
 const (
 	destinationFiles = iota
 	destinationGit
-	destinationScratch
+	destinationNotes
 )
 
 const (
@@ -53,10 +53,10 @@ type variantSpec struct {
 }
 
 var variants = []variantSpec{
-	{name: "numbered auxiliary", description: "Scratch is global but remains in the numbered control family.", render: renderNumbered},
-	{name: "drawer key", description: "Backtick treats Scratch like a temporary drawer instead of a workspace.", render: renderDrawer},
-	{name: "notes key", description: "A semantic n binding favors discoverability over symmetry.", render: renderNotes},
-	{name: "minimal rail", description: "No container; active state is typography plus a small marker.", render: renderRail},
+	{name: "top-level destinations", description: "The stable tab group keeps every destination visible and clickable.", render: renderDestinations},
+	{name: "Files controls", description: "Files owns 4/5/6; key 7 remains reserved for eligible rich diffs.", render: renderFilesControls},
+	{name: "Git controls", description: "Git owns 4 and conditionally 5 without changing destination keys.", render: renderGitControls},
+	{name: "Notes help", description: "Notes advertises Esc home and scope help, never printable digit shortcuts.", render: renderNotesHelp},
 }
 
 // View renders a fixed-size development page.
@@ -72,7 +72,7 @@ func (model Model) viewSwitchers(width, height int) string {
 	height = max(0, height)
 	lines := []string{
 		title.Render("lab / switchers"),
-		quiet.Render("j/k choose  •  h/l preview destination  •  1/2/3/4 change sample  •  0, `, or n opens Scratch"),
+		quiet.Render("j/k choose  •  h/l preview destination  •  1/2/3 destination  •  4/5/6 Files controls"),
 		"",
 	}
 	for index, spec := range variants {
@@ -106,77 +106,43 @@ func fitPage(lines []string, width, height int) string {
 	return strings.Join(fitted, "\n")
 }
 
-func renderNumbered(model Model) string {
-	primary := "1 " + group(
-		option("files", model.destination == destinationFiles, underlineSelection),
-		option("git", model.destination == destinationGit, underlineSelection),
-	)
-	scratch := "0 " + group(option("scratch", model.destination == destinationScratch, underlineSelection))
-	return primary + "  " + scratch + "  " + secondary(model)
+func renderDestinations(model Model) string {
+	return topTabs(model.destination)
 }
 
-func renderDrawer(model Model) string {
-	primary := "1  " + option("files", model.destination == destinationFiles, bracketSelection) + "  " +
-		option("git", model.destination == destinationGit, bracketSelection)
-	scratch := quiet.Render("| ` ") + option("scratch", model.destination == destinationScratch, bracketSelection)
-	return primary + "  " + scratch + "  " + secondary(model)
+func renderFilesControls(model Model) string {
+	return topTabs(model.destination) + "  " + secondary(model) + "  " + neutralControl("7", "sidebar", accent)
 }
 
-func renderNotes(model Model) string {
-	primary := option("1 files", model.destination == destinationFiles, foregroundSelection) + "  " +
-		option("git", model.destination == destinationGit, foregroundSelection)
-	scratch := quiet.Render("| ") + option("n notes", model.destination == destinationScratch, foregroundSelection)
-	return primary + "  " + scratch + "  " + secondary(model)
+func renderGitControls(model Model) string {
+	return topTabs(model.destination) + "  " + neutralControl("4", "log", green) + "  " + neutralControl("5", "graph", purple)
 }
 
-func renderRail(model Model) string {
-	labels := []string{"files", "git", "scratch"}
-	parts := make([]string, len(labels))
-	for index, label := range labels {
-		marker := "  "
-		style := quiet
-		if index == model.destination {
-			marker = title.Render("> ")
-			style = lipgloss.NewStyle().Bold(true).Foreground(accent)
-		}
-		parts[index] = marker + style.Render(label)
-	}
-	return strings.Join(parts, quiet.Render("  /  ")) + "  " + secondary(model)
+func renderNotesHelp(model Model) string {
+	return topTabs(model.destination) + "  " + title.Render("Esc") + quiet.Render(" Files • ") + title.Render("ctrl+t") + quiet.Render(" scope")
 }
 
-type selectionKind uint8
-
-const (
-	underlineSelection selectionKind = iota
-	bracketSelection
-	foregroundSelection
-)
-
-func option(label string, active bool, kind selectionKind) string {
+func option(label string, active bool) string {
 	if !active {
 		return quiet.Render(label)
 	}
-	style := lipgloss.NewStyle().Bold(true).Foreground(accent)
-	switch kind {
-	case underlineSelection:
-		return style.Underline(true).Render(label)
-	case bracketSelection:
-		return title.Render("[" + label + "]")
-	default:
-		return style.Render(label)
-	}
+	return lipgloss.NewStyle().Reverse(true).Bold(true).Render(label)
 }
 
-func group(options ...string) string {
-	return quiet.Render("[ ") + strings.Join(options, "  ") + quiet.Render(" ]")
+func topTabs(destination int) string {
+	return quiet.Render("[ ") + strings.Join([]string{
+		option("files", destination == destinationFiles),
+		option("git", destination == destinationGit),
+		option("notes", destination == destinationNotes),
+	}, quiet.Render(" | ")) + quiet.Render(" ]")
 }
 
 func secondary(model Model) string {
 	sets := []string{"all", "changed"}
 	readers := []string{"file", "diff"}
-	return neutralControl("2", sets[model.fileSet], green) + "  " +
-		neutralControl("3", readers[model.reader], purple) + "  " +
-		neutralControl("4", comparisonLabels[model.comparison], yellow)
+	return neutralControl("4", sets[model.fileSet], green) + "  " +
+		neutralControl("5", readers[model.reader], purple) + "  " +
+		neutralControl("6", comparisonLabels[model.comparison], yellow)
 }
 
 func neutralControl(key, value string, foreground color.Color) string {
