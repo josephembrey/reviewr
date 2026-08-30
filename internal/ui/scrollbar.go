@@ -69,10 +69,12 @@ func roundedScale(value, scale, denominator int) int {
 // verticalScrollbar paints one cell for every row in an already-calculated
 // track. Paint and hit testing therefore consume the same Scrollbar geometry.
 func verticalScrollbar(bar Scrollbar, focused bool) []string {
-	thumbGlyph := "▕"
+	// Keep the thumb wider than the track even when its pane is unfocused.
+	// Terminal themes commonly collapse faint and muted shades, which made an
+	// unfocused thumb indistinguishable from the surrounding track.
+	thumbGlyph := "▐"
 	thumbStyle := scrollbarUnfocusedThumbStyle
 	if focused {
-		thumbGlyph = "▐"
 		thumbStyle = scrollbarFocusedThumbStyle
 	}
 	cells := make([]string, bar.Track.Height)

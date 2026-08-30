@@ -145,7 +145,7 @@ func TestScrollbarTrackClicksThumbGrabsAndDragging(t *testing.T) {
 	}
 }
 
-func TestVerticalScrollbarMatchesHerdrGlyphAndANSIHierarchy(t *testing.T) {
+func TestVerticalScrollbarKeepsThumbVisibleAcrossANSIHierarchy(t *testing.T) {
 	t.Parallel()
 	bar, _ := CalculateScrollbar(Rect{X: 7, Y: 3, Width: 2, Height: 5}, 10, 0)
 	focused := verticalScrollbar(bar, true)
@@ -153,27 +153,27 @@ func TestVerticalScrollbarMatchesHerdrGlyphAndANSIHierarchy(t *testing.T) {
 	if got := ansi.Strip(focused[0]); got != "▐" {
 		t.Fatalf("focused thumb glyph = %q, want ▐", got)
 	}
-	if got := ansi.Strip(unfocused[0]); got != "▕" {
-		t.Fatalf("unfocused thumb glyph = %q, want ▕", got)
+	if got := ansi.Strip(unfocused[0]); got != "▐" {
+		t.Fatalf("unfocused thumb glyph = %q, want ▐", got)
 	}
 	if got := ansi.Strip(focused[len(focused)-1]); got != "▕" {
 		t.Fatalf("track glyph = %q, want ▕", got)
 	}
 	if focused[0] != scrollbarFocusedThumbStyle.Render("▐") ||
-		unfocused[0] != scrollbarUnfocusedThumbStyle.Render("▕") ||
+		unfocused[0] != scrollbarUnfocusedThumbStyle.Render("▐") ||
 		focused[len(focused)-1] != scrollbarTrackStyle.Render("▕") {
 		t.Fatalf("scrollbar cells do not use semantic styles: focused=%q unfocused=%q track=%q",
 			focused[0], unfocused[0], focused[len(focused)-1])
 	}
 	assertSameColor(t, scrollbarTrackStyle.GetForeground(), mutedColor)
 	assertSameColor(t, scrollbarUnfocusedThumbStyle.GetForeground(), mutedColor)
-	assertSameColor(t, scrollbarFocusedThumbStyle.GetForeground(), secondaryColor)
+	assertSameColor(t, scrollbarFocusedThumbStyle.GetForeground(), accentColor)
 	if !scrollbarTrackStyle.GetFaint() || scrollbarUnfocusedThumbStyle.GetFaint() || scrollbarFocusedThumbStyle.GetFaint() {
 		t.Fatalf("faint hierarchy = track %v unfocused %v focused %v",
 			scrollbarTrackStyle.GetFaint(), scrollbarUnfocusedThumbStyle.GetFaint(), scrollbarFocusedThumbStyle.GetFaint())
 	}
-	if scrollbarFocusedThumbStyle.GetBold() || scrollbarFocusedThumbStyle.GetForeground() == headerStyle.GetForeground() {
-		t.Fatal("focused scrollbar thumb reintroduced bold accent styling")
+	if scrollbarFocusedThumbStyle.GetBold() {
+		t.Fatal("focused scrollbar thumb unexpectedly uses bold styling")
 	}
 }
 
@@ -207,14 +207,14 @@ func TestRenderAddsIndependentNavigatorAndReaderScrollbars(t *testing.T) {
 		for row := g.NavigatorRows.Y; row < g.NavigatorRows.Y+g.NavigatorRows.Height; row++ {
 			cells := []rune(lines[row])
 			wantNavigator := '▕'
-			if focus == navigation.FocusNavigator && navigatorBar.Thumb.Contains(navigatorBar.Thumb.X, row) {
+			if navigatorBar.Thumb.Contains(navigatorBar.Thumb.X, row) {
 				wantNavigator = '▐'
 			}
 			if got := cells[navigatorBar.Track.X]; got != wantNavigator {
 				t.Fatalf("focus %v navigator row %d scrollbar = %q, want %q", focus, row, got, wantNavigator)
 			}
 			wantReader := '▕'
-			if focus == navigation.FocusReader && readerBar.Thumb.Contains(readerBar.Thumb.X, row) {
+			if readerBar.Thumb.Contains(readerBar.Thumb.X, row) {
 				wantReader = '▐'
 			}
 			if got := cells[readerBar.Track.X]; got != wantReader {
@@ -318,8 +318,9 @@ func TestGitModesUseSharedIndependentPaneScrollbars(t *testing.T) {
 			lines := strings.Split(plain, "\n")
 			for row := g.NavigatorRows.Y; row < g.NavigatorRows.Y+g.NavigatorRows.Height; row++ {
 				cells := []rune(lines[row])
-				if got := cells[g.NavigatorRows.X+g.NavigatorRows.Width-1]; got != '▕' {
-					t.Fatalf("unfocused navigator row %d glyph = %q", row, got)
+				gotNavigator := cells[g.NavigatorRows.X+g.NavigatorRows.Width-1]
+				if gotNavigator != '▕' && gotNavigator != '▐' {
+					t.Fatalf("unfocused navigator row %d glyph = %q", row, gotNavigator)
 				}
 				got := cells[g.ReaderRows.X+g.ReaderRows.Width-1]
 				if got != '▕' && got != '▐' {

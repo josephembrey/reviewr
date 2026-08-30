@@ -34,7 +34,7 @@ var (
 	// within reviewr's terminal ANSI roles.
 	scrollbarTrackStyle          = mutedStyle.Faint(true)
 	scrollbarUnfocusedThumbStyle = mutedStyle
-	scrollbarFocusedThumbStyle   = chromeStyle
+	scrollbarFocusedThumbStyle   = lipgloss.NewStyle().Foreground(accentColor)
 	errorStyle                   = lipgloss.NewStyle().Foreground(errorColor)
 	addedStyle                   = lipgloss.NewStyle().Foreground(addedColor)
 	purpleStyle                  = lipgloss.NewStyle().Foreground(purpleColor)
