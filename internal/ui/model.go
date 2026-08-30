@@ -20,6 +20,20 @@ type Line struct {
 	Tone Tone
 }
 
+// NavigatorStatus is semantic repository state. Rendering owns its restrained
+// marker while later icon work can style the same metadata independently.
+type NavigatorStatus uint8
+
+const (
+	StatusNone NavigatorStatus = iota
+	StatusModified
+	StatusAdded
+	StatusDeleted
+	StatusRenamed
+	StatusUntracked
+	StatusIgnored
+)
+
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
 	Identity  string
@@ -28,6 +42,8 @@ type NavigatorRow struct {
 	Depth     int
 	Directory bool
 	Expanded  bool
+	Status    NavigatorStatus
+	Dimmed    bool
 }
 
 // ChangeSummary is the aggregate worktree status shown in the header.

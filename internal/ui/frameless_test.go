@@ -281,6 +281,56 @@ func TestBontreeStatusSeamKeepsMarkerAndFiletypeIndependent(t *testing.T) {
 	}
 }
 
+func TestTreeStatusMarkersComposeWithIconsWithoutChangingMouseRows(t *testing.T) {
+	t.Parallel()
+	g := Calculate(80, 16)
+	statuses := []NavigatorStatus{
+		StatusModified,
+		StatusAdded,
+		StatusDeleted,
+		StatusRenamed,
+		StatusUntracked,
+		StatusIgnored,
+	}
+	markers := []string{"M", "A", "D", "R", "?", "I"}
+	rows := make([]NavigatorRow, len(statuses))
+	for index, status := range statuses {
+		rows[index] = NavigatorRow{
+			Identity: "file",
+			Label:    "hostile\nname.go",
+			Tree:     true,
+			Status:   status,
+			Dimmed:   status == StatusIgnored,
+		}
+		row := renderNavigatorPresentationRow(rows[index], 18, false, false)
+		if width := lipgloss.Width(row); width != 18 {
+			t.Fatalf("status %v row width = %d, want 18", status, width)
+		}
+		plain := ansi.Strip(row)
+		want := " " + markers[index] + " " + treeFileIcon(rows[index].Label).glyph + " "
+		if !strings.Contains(plain, want) {
+			t.Fatalf("status %v row = %q, want marker/icon columns %q", status, plain, want)
+		}
+	}
+	frame := Render(Model{
+		Geometry:       g,
+		NavigatorRows:  rows,
+		NavigatorTitle: "status files",
+		ReaderTitle:    "reader",
+		ReaderLines:    []Line{{Text: "content"}},
+		Focus:          navigation.FocusNavigator,
+	})
+	if width, height := lipgloss.Size(frame); width != g.Screen.Width || height != g.Screen.Height {
+		t.Fatalf("decorated frame = %dx%d, want %dx%d", width, height, g.Screen.Width, g.Screen.Height)
+	}
+	for index := range rows {
+		hit := g.HitTest(g.NavigatorRows.X+g.NavigatorRows.Width-1, g.NavigatorRows.Y+index, workspace.Files, workspace.Controls{}, 0, len(rows), 0, 0)
+		if hit.Kind != HitNavigatorRow || hit.Index != index {
+			t.Fatalf("status row %d hit = %+v", index, hit)
+		}
+	}
+}
+
 func TestTreeRowsCoexistWithNavigatorScrollbar(t *testing.T) {
 	t.Parallel()
 	g := Calculate(60, 12)

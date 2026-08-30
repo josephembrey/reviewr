@@ -100,7 +100,7 @@ func TestReadFileClassifications(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got := repo.ReadFile(test.path)
+			got := repo.ReadFile(Entry{Path: test.path})
 			sizeMismatch := (test.kind == FileReady || test.kind == FileBinary || test.kind == FileTooLarge) && got.Size != test.size
 			if got.Kind != test.kind || got.Content != test.content || sizeMismatch || got.Symlink != test.symlink || (got.Err != nil) != test.wantErr {
 				t.Fatalf("ReadFile(%q) = %+v", test.path, got)
@@ -124,7 +124,7 @@ func TestReadFileUnreadable(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
 	repo := &Repository{root: root, git: gitadapter.New(), maxBytes: DefaultMaxFileBytes}
-	got := repo.ReadFile("private.txt")
+	got := repo.ReadFile(Entry{Path: "private.txt"})
 	if got.Kind != FileUnreadable || got.Err == nil {
 		t.Fatalf("ReadFile() = %+v, want unreadable error", got)
 	}
@@ -144,18 +144,25 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := repo.ListFiles()
+	snapshot, err := repo.Snapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(files, "tracked.txt") || !slices.Contains(files, "untracked space.txt") || slices.Contains(files, "ignored.txt") {
-		t.Fatalf("ListFiles() = %#v", files)
+	files := snapshot.All()
+	if !slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "tracked.txt" && entry.State == FileUnchanged }) ||
+		!slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "untracked space.txt" && entry.State == FileUntracked }) ||
+		!slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "ignored.txt" && entry.State == FileIgnored }) {
+		t.Fatalf("Snapshot().All() = %#v", files)
 	}
-	for _, path := range files {
-		result := repo.ReadFile(path)
+	for _, entry := range files {
+		result := repo.ReadFile(entry)
 		if result.Kind != FileReady {
-			t.Fatalf("ReadFile(%q) = %+v", path, result)
+			t.Fatalf("ReadFile(%q) = %+v", entry.Path, result)
 		}
+	}
+	diff := repo.ReadDiff(Entry{Path: "untracked space.txt", State: FileUntracked})
+	if diff.Kind != DiffReady || !strings.Contains(diff.Content, "+untracked") {
+		t.Fatalf("ReadDiff(untracked) = %+v", diff)
 	}
 	commits, err := repo.ListCommits()
 	if err != nil || len(commits) != 1 {
@@ -174,6 +181,48 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	after := captureGitState(t, root)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("repository operations changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+func TestDeletedAndRenamedEntriesReadCoherently(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "old.go", "package old\n")
+	writeFile(t, root, "gone.go", "package gone\n")
+	runGit(t, root, "add", "old.go", "gone.go")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	runGit(t, root, "mv", "old.go", "new.go")
+	if err := os.Remove(filepath.Join(root, "gone.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repo.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := make(map[string]Entry)
+	for _, entry := range snapshot.Changed() {
+		byPath[entry.Path] = entry
+	}
+	renamed := byPath["new.go"]
+	deleted := byPath["gone.go"]
+	if renamed.State != FileRenamed || renamed.PreviousPath != "old.go" || deleted.State != FileDeleted {
+		t.Fatalf("changed entries = %#v", byPath)
+	}
+	if file := repo.ReadFile(renamed); file.Kind != FileReady || !strings.Contains(file.Content, "package old") {
+		t.Fatalf("renamed file read = %+v", file)
+	}
+	if file := repo.ReadFile(deleted); file.Kind != FileMissing {
+		t.Fatalf("deleted file read = %+v", file)
+	}
+	if diff := repo.ReadDiff(renamed); diff.Kind != DiffReady || !strings.Contains(diff.Content, "old.go") || !strings.Contains(diff.Content, "new.go") {
+		t.Fatalf("renamed diff = %+v", diff)
+	}
+	if diff := repo.ReadDiff(deleted); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-package gone") {
+		t.Fatalf("deleted diff = %+v", diff)
 	}
 }
 

@@ -12,8 +12,9 @@ import (
 
 // Source is the exact read-only repository contract consumed by the TUI.
 type Source interface {
-	ListFiles() ([]string, error)
-	ReadFile(path string) repository.File
+	Snapshot() (repository.Snapshot, error)
+	ReadFile(entry repository.Entry) repository.File
+	ReadDiff(entry repository.Entry) repository.Diff
 	WorktreeSummary() (repository.ChangeSummary, error)
 	ListCommits() ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
@@ -40,8 +41,9 @@ type effectKind uint8
 
 const (
 	effectNone effectKind = iota
-	effectLoadFiles
+	effectLoadSnapshot
 	effectLoadFile
+	effectLoadDiff
 	effectLoadSummary
 	effectLoadCommits
 	effectLoadCommit
@@ -52,18 +54,25 @@ type effect struct {
 	kind       effectKind
 	generation uint64
 	identity   string
+	entry      repository.Entry
 }
 
-type filesLoadedMsg struct {
+type snapshotLoadedMsg struct {
 	generation uint64
-	files      []string
+	snapshot   repository.Snapshot
 	err        error
 }
 
-type contentLoadedMsg struct {
+type fileLoadedMsg struct {
 	generation uint64
-	path       string
+	entry      repository.Entry
 	file       repository.File
+}
+
+type diffLoadedMsg struct {
+	generation uint64
+	entry      repository.Entry
+	diff       repository.Diff
 }
 
 type summaryLoadedMsg struct {
@@ -103,7 +112,7 @@ func New(source Source, host herdr.Context) Model {
 // a pure place-state change rather than a visible first-visit load.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		m.command(effect{kind: effectLoadFiles, generation: m.files.listGeneration}),
+		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration}),
 		m.command(effect{kind: effectLoadCommits, generation: m.history.listGeneration}),
 		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
 	)
@@ -128,11 +137,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var pending effect
 	switch msg := msg.(type) {
-	case filesLoadedMsg:
-		m.files, pending = m.files.landFiles(msg, m.geometry.NavigatorRows.Height)
+	case snapshotLoadedMsg:
+		m.files, pending = m.files.landSnapshot(msg, m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
 		return m, m.command(pending)
-	case contentLoadedMsg:
-		m.files = m.files.landContent(msg, m.geometry.ReaderRows.Height)
+	case fileLoadedMsg:
+		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case diffLoadedMsg:
+		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case summaryLoadedMsg:
 		m.summary = m.summary.land(msg)
@@ -235,6 +247,7 @@ func (m *Model) apply(action Action) effect {
 			if m.controls.Files == workspace.AllFiles {
 				m.controls.Reader = workspace.FileReader
 			}
+			return m.files.switchScope(m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
 		}
 	case ToggleTertiary:
 		if m.active == workspace.Git {
@@ -243,6 +256,7 @@ func (m *Model) apply(action Action) effect {
 			}
 		} else {
 			m.controls.Reader = m.controls.Reader.Toggle()
+			return m.files.requestMode(m.controls.Reader)
 		}
 	case ToggleComparison:
 		if m.active == workspace.Files {
@@ -285,14 +299,14 @@ func (m *Model) apply(action Action) effect {
 		m.activePlace().Focus = navigation.FocusReader
 	case SelectNext:
 		if m.active == workspace.Files {
-			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height)
+			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 		if m.history.place.SelectDelta(1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
 		}
 	case SelectPrevious:
 		if m.active == workspace.Files {
-			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height)
+			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 		if m.history.place.SelectDelta(-1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
@@ -300,7 +314,7 @@ func (m *Model) apply(action Action) effect {
 	case SelectIndex:
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
-			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
@@ -309,7 +323,7 @@ func (m *Model) apply(action Action) effect {
 	case ActivateNavigatorRow:
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
-			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height, m.controls.Reader)
 			m.files.toggleSelected(m.geometry.NavigatorRows.Height)
 			return pending
 		}
@@ -376,14 +390,14 @@ func (m Model) activeReaderLineCount() int {
 	if m.active == workspace.Git {
 		return len(commitSummaryLines(m.history.summary))
 	}
-	return len(fileReaderLines(m.files.reader))
+	return len(m.files.readerLines())
 }
 
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	if m.files.reader.Kind != 0 {
-		m.files.place.ClampReader(len(fileReaderLines(m.files.reader)), m.geometry.ReaderRows.Height)
+	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 {
+		m.files.place.ClampReader(len(m.files.readerLines()), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
@@ -392,19 +406,26 @@ func (m *Model) resizeWorkspaceState() {
 
 func (m Model) command(pending effect) tea.Cmd {
 	switch pending.kind {
-	case effectLoadFiles:
+	case effectLoadSnapshot:
 		source := m.source
 		generation := pending.generation
 		return func() tea.Msg {
-			files, err := source.ListFiles()
-			return filesLoadedMsg{generation: generation, files: files, err: err}
+			snapshot, err := source.Snapshot()
+			return snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err}
 		}
 	case effectLoadFile:
 		source := m.source
 		generation := pending.generation
-		path := pending.identity
+		entry := pending.entry
 		return func() tea.Msg {
-			return contentLoadedMsg{generation: generation, path: path, file: source.ReadFile(path)}
+			return fileLoadedMsg{generation: generation, entry: entry, file: source.ReadFile(entry)}
+		}
+	case effectLoadDiff:
+		source := m.source
+		generation := pending.generation
+		entry := pending.entry
+		return func() tea.Msg {
+			return diffLoadedMsg{generation: generation, entry: entry, diff: source.ReadDiff(entry)}
 		}
 	case effectLoadSummary:
 		source := m.source

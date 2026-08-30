@@ -243,7 +243,14 @@ func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focu
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}
-	return renderTreeNavigatorRow(item, width, treeRowStyleLayers{selected: selected, focused: focused})
+	marker, accent := treeNavigatorStatus(item.Status)
+	return renderTreeNavigatorRow(item, width, treeRowStyleLayers{
+		statusMarker: marker,
+		statusAccent: accent,
+		ignored:      item.Dimmed,
+		selected:     selected,
+		focused:      focused,
+	})
 }
 
 func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLayers) string {
@@ -269,6 +276,25 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 		styles.filename.Inherit(selection).Render(label)
 	row = lipgloss.NewStyle().MaxWidth(width).Render(row)
 	return row + selection.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
+}
+
+func treeNavigatorStatus(status NavigatorStatus) (string, treeStatusAccent) {
+	switch status {
+	case StatusModified:
+		return "M", treeStatusModified
+	case StatusAdded:
+		return "A", treeStatusAdded
+	case StatusDeleted:
+		return "D", treeStatusDeleted
+	case StatusRenamed:
+		return "R", treeStatusRenamed
+	case StatusUntracked:
+		return "?", treeStatusUntracked
+	case StatusIgnored:
+		return "I", treeStatusNone
+	default:
+		return "", treeStatusNone
+	}
 }
 
 func renderReader(model Model) string {

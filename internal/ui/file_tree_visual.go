@@ -228,6 +228,7 @@ const (
 	treeStatusModified
 	treeStatusDeleted
 	treeStatusRenamed
+	treeStatusUntracked
 )
 
 type resolvedTreeRowStyles struct {
@@ -288,13 +289,15 @@ func fileTreeIconColor(tone fileIconTone) color.Color {
 func treeStatusColor(accent treeStatusAccent) (color.Color, bool) {
 	switch accent {
 	case treeStatusAdded:
-		return addedColor, true
+		return lipgloss.Color("2"), true
 	case treeStatusModified:
-		return accentColor, true
+		return lipgloss.Color("3"), true
 	case treeStatusDeleted:
-		return errorColor, true
+		return lipgloss.Color("1"), true
 	case treeStatusRenamed:
-		return purpleColor, true
+		return lipgloss.Color("5"), true
+	case treeStatusUntracked:
+		return lipgloss.Color("6"), true
 	default:
 		return nil, false
 	}

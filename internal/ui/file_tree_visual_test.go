@@ -135,9 +135,9 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			item:             file,
 			icon:             icon,
 			layers:           treeRowStyleLayers{statusAccent: treeStatusModified},
-			wantMarker:       accentColor,
+			wantMarker:       lipgloss.Color("3"),
 			wantIcon:         fileIconOrangeColor,
-			wantFilename:     accentColor,
+			wantFilename:     lipgloss.Color("3"),
 			filenameHasColor: true,
 		},
 		{
