@@ -38,8 +38,12 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 		}
 		byteIndex := strings.Index(plain, payload)
 		codeX := lipgloss.Width(plain[:byteIndex])
-		if codeX != geometry.Prefix {
-			t.Fatalf("kind %d code x = %d, want %d: %q", row.Kind, codeX, geometry.Prefix, plain)
+		wantX := geometry.Prefix
+		if row.Kind == ReaderFold {
+			wantX = 0
+		}
+		if codeX != wantX {
+			t.Fatalf("kind %d code x = %d, want %d: %q", row.Kind, codeX, wantX, plain)
 		}
 	}
 	if plain := ansi.Strip(renderReaderRow(document.Rows[2], geometry, workspace.DiffHighlightSidebar)); !strings.HasPrefix(plain, "▌ 9999 ") {
@@ -48,11 +52,14 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 	if plain := ansi.Strip(renderReaderRow(document.Rows[3], geometry, workspace.DiffHighlightSidebar)); !strings.HasPrefix(plain, "▌10000 ") {
 		t.Fatalf("insertion gutter = %q", plain)
 	}
-	for _, index := range []int{4, 5, 6} {
+	for _, index := range []int{4, 5} {
 		plain := ansi.Strip(renderReaderRow(document.Rows[index], geometry, workspace.DiffHighlightSidebar))
 		if !strings.HasPrefix(plain, strings.Repeat(" ", geometry.Prefix)) {
-			t.Fatalf("metadata/notice/fold fabricated gutter at row %d: %q", index, plain)
+			t.Fatalf("metadata/notice fabricated gutter at row %d: %q", index, plain)
 		}
+	}
+	if plain := ansi.Strip(renderReaderRow(document.Rows[6], geometry, workspace.DiffHighlightSidebar)); !strings.HasPrefix(plain, "── ▸ folded") || lipgloss.Width(plain) != geometry.Content.Width {
+		t.Fatalf("fold did not replace the full gutter row: %q", plain)
 	}
 }
 

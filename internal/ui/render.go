@@ -674,6 +674,9 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 	if width <= 0 {
 		return ""
 	}
+	if row.Kind == ReaderFold {
+		return renderReaderFoldPayload(row.Text, width)
+	}
 	changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 	background := changed && highlight == workspace.DiffHighlightBackground
 
@@ -710,11 +713,7 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 		return line
 	}
 
-	payload := renderReaderPayload(row, nil)
-	if row.Kind == ReaderFold {
-		payload = renderReaderFoldPayload(row.Text, geometry.Code.Width)
-	}
-	line := barStyle.Render(bar) + mutedStyle.Render(number) + payload
+	line := barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
 	return fit(line, width)
 }
 
