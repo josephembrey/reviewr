@@ -22,8 +22,12 @@ type Line struct {
 
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
-	Identity string
-	Label    string
+	Identity  string
+	Label     string
+	Tree      bool
+	Depth     int
+	Directory bool
+	Expanded  bool
 }
 
 // ChangeSummary is the aggregate worktree status shown in the header.

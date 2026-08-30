@@ -23,6 +23,9 @@ const (
 	SelectNext
 	SelectPrevious
 	SelectIndex
+	ActivateNavigatorRow
+	ExpandDirectory
+	CollapseDirectory
 	FocusNavigator
 	FocusReader
 	ToggleFocus
@@ -81,6 +84,14 @@ func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, act
 				return Action{Kind: SelectPrevious}, true
 			}
 			return Action{Kind: ScrollReader, Amount: -1}, true
+		case "l", "right":
+			if active == workspace.Files && focus == navigation.FocusNavigator {
+				return Action{Kind: ExpandDirectory}, true
+			}
+		case "h", "left":
+			if active == workspace.Files && focus == navigation.FocusNavigator {
+				return Action{Kind: CollapseDirectory}, true
+			}
 		}
 	case tea.WindowSizeMsg:
 		return Action{Kind: Resize, Width: msg.Width, Height: msg.Height}, true
@@ -109,7 +120,7 @@ func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, act
 		case ui.HitReaderScrollbar:
 			return Action{Kind: StartScrollbarDrag, Pane: navigation.FocusReader, Position: mouse.Y, Grab: hit.GrabOffset}, true
 		case ui.HitNavigatorRow:
-			return Action{Kind: SelectIndex, Index: hit.Index}, true
+			return Action{Kind: ActivateNavigatorRow, Index: hit.Index}, true
 		case ui.HitNavigator:
 			return Action{Kind: FocusNavigator}, true
 		case ui.HitReader:

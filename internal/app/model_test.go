@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -165,7 +166,8 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 24)
-	model.files.place.Reconcile([]string{"file.go"})
+	model.files.tree.Rebuild([]string{"file.go"})
+	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
 	if !strings.HasPrefix(filesFrame, "1 [files] git  | esc  scratch") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
@@ -203,8 +205,63 @@ func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
 
 	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
 	model = next.(Model)
-	if model.scratch || model.active != workspace.Git {
+	if model.scratch || model.active != workspace.Files {
 		t.Fatalf("1 from Scratch = scratch %v primary %v", model.scratch, model.active)
+	}
+
+	model.apply(Action{Kind: ShowGit})
+	model.apply(Action{Kind: ShowScratch})
+	model.apply(Action{Kind: ToggleWorkspace})
+	if model.scratch || model.active != workspace.Git {
+		t.Fatalf("1 from Scratch after Git = scratch %v primary %v", model.scratch, model.active)
+	}
+}
+
+func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
+	model.files, _ = model.files.landFiles(filesLoadedMsg{
+		generation: model.files.listGeneration,
+		files:      []string{"src/a.go", "src/b.go", "root.go"},
+	}, model.geometry.NavigatorRows.Height)
+	model.files.reader = repository.File{Path: "src/a.go", Kind: repository.FileReady, Content: strings.Repeat("line\n", 20)}
+	model.files.readerLoading = false
+	model.files.place.ReaderOffset = 3
+
+	update := func(msg tea.Msg) tea.Cmd {
+		next, command := model.Update(msg)
+		model = next.(Model)
+		return command
+	}
+	if command := update(tea.KeyPressMsg(tea.Key{Code: 'k', Text: "k"})); command != nil {
+		t.Fatal("directory selection produced a reader command")
+	}
+	selected, _ := model.files.place.SelectedIdentity()
+	if selected != filetree.DirectoryIdentity("src") || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+		t.Fatalf("directory selection = %q files %+v", selected, model.files)
+	}
+
+	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
+	row, _ := model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if row.Expanded || len(model.files.place.Items) != 2 || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+		t.Fatalf("collapsed tree = row %+v files %+v", row, model.files)
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
+	if len(model.files.place.Items) != 2 {
+		t.Fatal("repeated collapse changed visible rows")
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if !row.Expanded || len(model.files.place.Items) != 4 {
+		t.Fatalf("expanded tree = row %+v items %#v", row, model.files.place.Items)
+	}
+
+	directoryY := model.geometry.NavigatorRows.Y + model.files.place.Selected - model.files.place.Top
+	update(tea.MouseClickMsg(tea.Mouse{X: model.geometry.NavigatorRows.X, Y: directoryY, Button: tea.MouseLeft}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if row.Expanded || model.files.place.Focus != navigation.FocusNavigator || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+		t.Fatalf("mouse fold = row %+v files %+v", row, model.files)
 	}
 }
 
@@ -532,13 +589,15 @@ func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 	}
 
 	model.geometry = ui.Calculate(80, 20)
-	model.files.place = navigation.State{Items: []string{"a", "b", "c"}, Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
+	model.files.tree.Rebuild([]string{"a", "b", "c"})
+	model.files.place = navigation.State{Items: model.files.tree.Identities(), Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
+	model.files.loaded = true
 	model.files.readerPath = "b"
 	model.files.reader = repository.File{Path: "b", Kind: repository.FileReady, Content: strings.Repeat("line\n", 10)}
 	model.files.listGeneration = second.generation
 	model.files, pending = model.files.landFiles(filesLoadedMsg{generation: second.generation, files: []string{"a", "c"}}, model.geometry.NavigatorRows.Height)
 	path, _ := model.files.place.SelectedIdentity()
-	if path != "c" || pending.identity != "c" || model.files.readerPath != "c" || model.files.reader.Kind != 0 || !model.files.readerLoading {
+	if path != filetree.FileIdentity("c") || pending.identity != "c" || model.files.readerPath != "c" || model.files.reader.Kind != 0 || !model.files.readerLoading {
 		t.Fatalf("removal reconciliation = path %q, effect %+v, files %+v", path, pending, model.files)
 	}
 	if model.files.place.ReaderOffset != 3 || model.files.place.Focus != navigation.FocusReader {

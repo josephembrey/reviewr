@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 func TestRenderUsesOneContinuousFloatingDivider(t *testing.T) {
@@ -157,6 +158,82 @@ func TestNavigatorRowsKeepFullWidthAcrossContentAndFocus(t *testing.T) {
 				t.Fatalf("render size = %dx%d, want %dx%d", width, height, g.Screen.Width, g.Screen.Height)
 			}
 		})
+	}
+}
+
+func TestTreeRowsRenderStructureSafelyWithinFixedWidth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		row  NavigatorRow
+		want string
+	}{
+		{
+			name: "expanded directory",
+			row:  NavigatorRow{Tree: true, Label: "src", Directory: true, Expanded: true},
+			want: "▾ " + openFolderIcon + " src/",
+		},
+		{
+			name: "collapsed directory",
+			row:  NavigatorRow{Tree: true, Label: "src", Directory: true},
+			want: "▸ " + closedFolderIcon + " src/",
+		},
+		{
+			name: "nested file",
+			row:  NavigatorRow{Tree: true, Label: "app\nunsafe.go", Depth: 2},
+			want: fileIcon + " app↵",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			for _, focused := range []bool{true, false} {
+				got := renderNavigatorPresentationRow(test.row, 18, true, focused)
+				if width := lipgloss.Width(got); width != 18 {
+					t.Fatalf("row width = %d, want 18: %q", width, got)
+				}
+				if plain := ansi.Strip(got); !strings.Contains(plain, test.want) {
+					t.Fatalf("row = %q, want structure %q", plain, test.want)
+				}
+			}
+		})
+	}
+
+	if got := lipgloss.Width(renderNavigatorPresentationRow(
+		NavigatorRow{Tree: true, Label: strings.Repeat("deep/", 20) + "file.go", Depth: 8},
+		7,
+		false,
+		false,
+	)); got != 7 {
+		t.Fatalf("narrow clipped tree row width = %d, want 7", got)
+	}
+}
+
+func TestTreeRowsCoexistWithNavigatorScrollbar(t *testing.T) {
+	t.Parallel()
+	g := Calculate(60, 12)
+	rows := make([]NavigatorRow, 40)
+	for index := range rows {
+		rows[index] = NavigatorRow{Identity: "file", Label: "file.go", Tree: true, Depth: index % 4}
+	}
+	frame := Render(Model{
+		Geometry:         g,
+		Workspace:        workspace.Files,
+		PrimaryWorkspace: workspace.Files,
+		NavigatorTitle:   "40 files",
+		NavigatorRows:    rows,
+		Selected:         8,
+		Top:              5,
+		Focus:            navigation.FocusNavigator,
+		ReaderTitle:      "file.go",
+		ReaderLines:      []Line{{Text: "content"}},
+	})
+	width, height := lipgloss.Size(frame)
+	if width != g.Screen.Width || height != g.Screen.Height {
+		t.Fatalf("render size = %dx%d, want %dx%d", width, height, g.Screen.Width, g.Screen.Height)
+	}
+	if !strings.Contains(ansi.Strip(frame), "▐") {
+		t.Fatalf("tree frame lacks scrollbar thumb:\n%s", ansi.Strip(frame))
 	}
 }
 

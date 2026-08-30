@@ -47,6 +47,9 @@ func Render(model Model) string {
 	}
 	if g.Footer.Height > 0 {
 		footer := "j/k or ↑/↓ navigate  •  tab focus  •  r refresh  •  q quit"
+		if model.Workspace == workspace.Files {
+			footer = "j/k move • h/l fold • tab focus • r refresh • q quit"
+		}
 		if model.Workspace == workspace.Scratch {
 			footer = "esc close scratch  •  1 files/git  •  q quit"
 		}
@@ -216,8 +219,8 @@ func renderNavigator(model Model) string {
 			}
 			continue
 		}
-		line := renderNavigatorRow(
-			SafeSingleLine(model.NavigatorRows[index].Label),
+		line := renderNavigatorPresentationRow(
+			model.NavigatorRows[index],
 			contentWidth,
 			index == model.Selected,
 			model.Focus == navigation.FocusNavigator,
@@ -234,6 +237,37 @@ func renderNavigator(model Model) string {
 		renderTitle(title, model.Focus == navigation.FocusNavigator),
 		rows,
 	)
+}
+
+const (
+	closedFolderIcon = ""
+	openFolderIcon   = ""
+	fileIcon         = ""
+)
+
+func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
+	if !item.Tree {
+		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
+	}
+	depth := max(0, item.Depth)
+	marker := " "
+	icon := fileIcon
+	label := SafeSingleLine(item.Label)
+	if item.Directory {
+		marker = "▸"
+		icon = closedFolderIcon
+		if item.Expanded {
+			marker = "▾"
+			icon = openFolderIcon
+		}
+		label += "/"
+	}
+	prefix := " " + strings.Repeat("  ", depth) + dimStyle.Render(marker+" "+icon) + " "
+	row := fit(prefix+label, width)
+	if !selected {
+		return row
+	}
+	return selectionStyle(focused).Render(row)
 }
 
 func renderReader(model Model) string {

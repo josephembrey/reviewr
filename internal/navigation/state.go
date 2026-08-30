@@ -138,6 +138,30 @@ func reconcileIndex(old []string, oldIndex int, current []string) int {
 	return clamp(oldIndex, 0, len(current)-1)
 }
 
+// ReconcileIdentity preserves one identity across a replacement sequence,
+// falling back to the nearest old survivor and finally the first current item.
+func ReconcileIdentity(old []string, identity string, current []string) (string, bool) {
+	if len(current) == 0 {
+		return "", false
+	}
+	for _, candidate := range current {
+		if candidate == identity {
+			return identity, true
+		}
+	}
+	oldIndex := -1
+	for index, candidate := range old {
+		if candidate == identity {
+			oldIndex = index
+			break
+		}
+	}
+	if oldIndex < 0 {
+		return current[0], true
+	}
+	return current[reconcileIndex(old, oldIndex, current)], true
+}
+
 func clamp(value, low, high int) int {
 	if value < low {
 		return low

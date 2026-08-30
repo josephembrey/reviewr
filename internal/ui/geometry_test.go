@@ -261,3 +261,15 @@ func TestSafeContentLines(t *testing.T) {
 		}
 	}
 }
+
+func TestNavigatorRowHitCoversTreePrefixAndLabelCells(t *testing.T) {
+	t.Parallel()
+	g := Calculate(80, 20)
+	y := g.NavigatorRows.Y + 2
+	for _, x := range []int{g.NavigatorRows.X, g.NavigatorRows.X + g.NavigatorRows.Width - 2} {
+		hit := g.HitTest(x, y, workspace.Files, workspace.Controls{}, 4, 20, 0, 0)
+		if hit.Kind != HitNavigatorRow || hit.Index != 6 {
+			t.Fatalf("HitTest(%d, %d) = %+v, want row index 6", x, y, hit)
+		}
+	}
+}

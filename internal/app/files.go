@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -10,6 +11,7 @@ import (
 
 type filesState struct {
 	place      navigation.State
+	tree       filetree.Tree
 	reader     repository.File
 	readerPath string
 
@@ -24,6 +26,7 @@ type filesState struct {
 func newFilesState() filesState {
 	return filesState{
 		place:          navigation.State{Focus: navigation.FocusNavigator},
+		tree:           filetree.New(nil),
 		listGeneration: 1,
 		listLoading:    true,
 	}
@@ -40,6 +43,8 @@ func (state filesState) landFiles(msg filesLoadedMsg, visibleRows int) (filesSta
 	if msg.generation != state.listGeneration {
 		return state, effect{}
 	}
+	firstLoad := !state.loaded
+	oldFiles := state.tree.Files()
 	state.loaded = true
 	state.listLoading = false
 	if msg.err != nil {
@@ -47,22 +52,32 @@ func (state filesState) landFiles(msg filesLoadedMsg, visibleRows int) (filesSta
 		return state, effect{}
 	}
 	state.listError = nil
-	state.place.Reconcile(msg.files)
+	state.tree.Rebuild(msg.files)
+	state.place.Reconcile(state.tree.Identities())
+	if firstLoad {
+		state.selectFirstVisibleFile()
+	}
 	state.place.EnsureSelectionVisible(visibleRows)
-	if _, ok := state.place.SelectedIdentity(); !ok {
-		state.contentGeneration++
-		state.reader = repository.File{}
-		state.readerPath = ""
-		state.readerLoading = false
-		state.place.ReaderOffset = 0
+	files := state.tree.Files()
+	if state.readerPath == "" {
+		if row, ok := state.tree.FirstVisibleFile(); ok {
+			state.selectIdentity(row.Identity)
+			state.place.EnsureSelectionVisible(visibleRows)
+			return state, state.requestFile(row.Path)
+		}
+		state.clearReader()
 		return state, effect{}
 	}
-	return state, state.requestSelectedContent()
+	path, ok := navigation.ReconcileIdentity(oldFiles, state.readerPath, files)
+	if !ok {
+		state.clearReader()
+		return state, effect{}
+	}
+	return state, state.requestFile(path)
 }
 
 func (state filesState) landContent(msg contentLoadedMsg, visibleRows int) filesState {
-	selectedPath, ok := state.place.SelectedIdentity()
-	if msg.generation != state.contentGeneration || !ok || msg.path != selectedPath || msg.path != state.readerPath {
+	if msg.generation != state.contentGeneration || msg.path != state.readerPath {
 		return state
 	}
 	state.reader = msg.file
@@ -71,11 +86,7 @@ func (state filesState) landContent(msg contentLoadedMsg, visibleRows int) files
 	return state
 }
 
-func (state *filesState) requestSelectedContent() effect {
-	path, ok := state.place.SelectedIdentity()
-	if !ok {
-		return effect{}
-	}
+func (state *filesState) requestFile(path string) effect {
 	state.contentGeneration++
 	if state.readerPath != path {
 		state.reader = repository.File{}
@@ -85,10 +96,92 @@ func (state *filesState) requestSelectedContent() effect {
 	return effect{kind: effectLoadFile, generation: state.contentGeneration, identity: path}
 }
 
+func (state *filesState) selectDelta(delta, visibleRows int) effect {
+	return state.selectIndex(state.place.Selected+delta, visibleRows)
+}
+
+func (state *filesState) selectIndex(index, visibleRows int) effect {
+	readerOffset := state.place.ReaderOffset
+	if !state.place.SelectIndex(index, visibleRows) {
+		return effect{}
+	}
+	identity, _ := state.place.SelectedIdentity()
+	row, ok := state.tree.Row(identity)
+	if !ok || row.Kind == filetree.Directory {
+		state.place.ReaderOffset = readerOffset
+		return effect{}
+	}
+	return state.requestFile(row.Path)
+}
+
+func (state *filesState) expandSelected(visibleRows int) bool {
+	identity, ok := state.place.SelectedIdentity()
+	if !ok || !state.tree.Expand(identity) {
+		return false
+	}
+	state.reconcileVisibleRows(visibleRows)
+	return true
+}
+
+func (state *filesState) collapseSelected(visibleRows int) bool {
+	identity, ok := state.place.SelectedIdentity()
+	if !ok || !state.tree.Collapse(identity) {
+		return false
+	}
+	state.reconcileVisibleRows(visibleRows)
+	return true
+}
+
+func (state *filesState) toggleSelected(visibleRows int) bool {
+	identity, ok := state.place.SelectedIdentity()
+	if !ok || !state.tree.Toggle(identity) {
+		return false
+	}
+	state.reconcileVisibleRows(visibleRows)
+	return true
+}
+
+func (state *filesState) reconcileVisibleRows(visibleRows int) {
+	state.place.Reconcile(state.tree.Identities())
+	state.place.EnsureSelectionVisible(visibleRows)
+}
+
+func (state *filesState) selectFirstVisibleFile() {
+	row, ok := state.tree.FirstVisibleFile()
+	if ok {
+		state.selectIdentity(row.Identity)
+	}
+}
+
+func (state *filesState) selectIdentity(identity string) {
+	for index, candidate := range state.place.Items {
+		if candidate == identity {
+			state.place.Selected = index
+			return
+		}
+	}
+}
+
+func (state *filesState) clearReader() {
+	state.contentGeneration++
+	state.reader = repository.File{}
+	state.readerPath = ""
+	state.readerLoading = false
+	state.place.ReaderOffset = 0
+}
+
 func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
-	rows := make([]ui.NavigatorRow, len(state.place.Items))
-	for index, path := range state.place.Items {
-		rows[index] = ui.NavigatorRow{Identity: path, Label: path}
+	treeRows := state.tree.Rows()
+	rows := make([]ui.NavigatorRow, len(treeRows))
+	for index, row := range treeRows {
+		rows[index] = ui.NavigatorRow{
+			Identity:  row.Identity,
+			Label:     row.Name,
+			Tree:      true,
+			Depth:     row.Depth,
+			Directory: row.Kind == filetree.Directory,
+			Expanded:  row.Expanded,
+		}
 	}
 
 	emptyNavigator := ui.Line{Text: "No files", Tone: ui.ToneQuiet}
@@ -112,7 +205,7 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 
 	return ui.Model{
 		Geometry:       geometry,
-		NavigatorTitle: fmt.Sprintf("%d files", len(rows)),
+		NavigatorTitle: fmt.Sprintf("%d files", state.tree.FileCount()),
 		NavigatorRows:  rows,
 		NavigatorEmpty: emptyNavigator,
 		Selected:       state.place.Selected,

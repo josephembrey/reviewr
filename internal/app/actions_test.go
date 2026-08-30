@@ -22,6 +22,10 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "down scrolls reader", key: tea.Key{Code: tea.KeyDown}, focus: navigation.FocusReader, want: Action{Kind: ScrollReader, Amount: 1}},
 		{name: "k selects previous", key: tea.Key{Code: 'k', Text: "k"}, focus: navigation.FocusNavigator, want: Action{Kind: SelectPrevious}},
 		{name: "up scrolls reader", key: tea.Key{Code: tea.KeyUp}, focus: navigation.FocusReader, want: Action{Kind: ScrollReader, Amount: -1}},
+		{name: "l expands directory", key: tea.Key{Code: 'l', Text: "l"}, focus: navigation.FocusNavigator, want: Action{Kind: ExpandDirectory}},
+		{name: "right expands directory", key: tea.Key{Code: tea.KeyRight}, focus: navigation.FocusNavigator, want: Action{Kind: ExpandDirectory}},
+		{name: "h collapses directory", key: tea.Key{Code: 'h', Text: "h"}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseDirectory}},
+		{name: "left collapses directory", key: tea.Key{Code: tea.KeyLeft}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseDirectory}},
 		{name: "tab toggles focus", key: tea.Key{Code: tea.KeyTab}, want: Action{Kind: ToggleFocus}},
 		{name: "one toggles primary workspace", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleWorkspace}},
 		{name: "escape toggles scratch", key: tea.Key{Code: tea.KeyEscape}, want: Action{Kind: ToggleScratch}},
@@ -44,6 +48,24 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: 's', Text: "s"}), navigation.FocusNavigator, ui.Geometry{}, workspace.Files, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
 		t.Fatalf("retired Scratch key routed as (%+v, true)", got)
 	}
+	for _, test := range []struct {
+		name   string
+		focus  navigation.Focus
+		active workspace.Kind
+	}{
+		{name: "reader focus", focus: navigation.FocusReader, active: workspace.Files},
+		{name: "Git workspace", focus: navigation.FocusNavigator, active: workspace.Git},
+	} {
+		t.Run("fold keys ignore "+test.name, func(t *testing.T) {
+			t.Parallel()
+			if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}), test.focus, ui.Geometry{}, test.active, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
+				t.Fatalf("h routed as (%+v, true)", got)
+			}
+			if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: 'l', Text: "l"}), test.focus, ui.Geometry{}, test.active, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
+				t.Fatalf("l routed as (%+v, true)", got)
+			}
+		})
+	}
 }
 
 func TestMouseRoutingPrecedence(t *testing.T) {
@@ -61,7 +83,7 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 		scrollDrag bool
 		files      int
 	}{
-		{name: "left click selects visible row", msg: tea.MouseClickMsg(tea.Mouse{X: rowX, Y: rowY, Button: tea.MouseLeft}), want: Action{Kind: SelectIndex, Index: 3}, ok: true},
+		{name: "left click activates visible row", msg: tea.MouseClickMsg(tea.Mouse{X: rowX, Y: rowY, Button: tea.MouseLeft}), want: Action{Kind: ActivateNavigatorRow, Index: 3}, ok: true},
 		{name: "files label selects Files", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderFiles.X, Y: g.HeaderFiles.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowFiles}, ok: true},
 		{name: "git label selects Git", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowGit}, ok: true},
 		{name: "scratch label selects Scratch", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderScratch.X, Y: g.HeaderScratch.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowScratch}, ok: true},

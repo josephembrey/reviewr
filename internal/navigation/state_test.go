@@ -125,3 +125,23 @@ func TestViewportReconciliationPreservesValidPlace(t *testing.T) {
 		t.Fatalf("clamped place = %+v", state)
 	}
 }
+
+func TestReconcileIdentityUsesNearestSurvivingItem(t *testing.T) {
+	t.Parallel()
+	old := []string{"a", "b", "c", "d"}
+	if got, ok := ReconcileIdentity(old, "b", []string{"d", "b"}); !ok || got != "b" {
+		t.Fatalf("surviving identity = %q, %v", got, ok)
+	}
+	if got, ok := ReconcileIdentity(old, "b", []string{"a", "c"}); !ok || got != "c" {
+		t.Fatalf("nearest successor = %q, %v", got, ok)
+	}
+	if got, ok := ReconcileIdentity(old, "d", []string{"a"}); !ok || got != "a" {
+		t.Fatalf("nearest predecessor = %q, %v", got, ok)
+	}
+	if got, ok := ReconcileIdentity(old, "missing", []string{"x", "y"}); !ok || got != "x" {
+		t.Fatalf("unknown fallback = %q, %v", got, ok)
+	}
+	if got, ok := ReconcileIdentity(old, "b", nil); ok || got != "" {
+		t.Fatalf("empty current = %q, %v", got, ok)
+	}
+}

@@ -205,6 +205,10 @@ func (m *Model) apply(action Action) effect {
 		return effect{kind: effectQuit}
 	case ToggleWorkspace:
 		m.scrollbar.finish()
+		if m.scratch {
+			m.scratch = false
+			return effect{}
+		}
 		m.scratch = false
 		return m.activate(m.active.Toggle())
 	case ToggleScratch:
@@ -280,17 +284,46 @@ func (m *Model) apply(action Action) effect {
 	case FocusReader:
 		m.activePlace().Focus = navigation.FocusReader
 	case SelectNext:
-		if m.activePlace().SelectDelta(1, m.geometry.NavigatorRows.Height) {
-			return m.requestActiveReader()
+		if m.active == workspace.Files {
+			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height)
+		}
+		if m.history.place.SelectDelta(1, m.geometry.NavigatorRows.Height) {
+			return m.history.requestSelectedSummary()
 		}
 	case SelectPrevious:
-		if m.activePlace().SelectDelta(-1, m.geometry.NavigatorRows.Height) {
-			return m.requestActiveReader()
+		if m.active == workspace.Files {
+			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height)
+		}
+		if m.history.place.SelectDelta(-1, m.geometry.NavigatorRows.Height) {
+			return m.history.requestSelectedSummary()
 		}
 	case SelectIndex:
-		m.activePlace().Focus = navigation.FocusNavigator
-		if m.activePlace().SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
-			return m.requestActiveReader()
+		if m.active == workspace.Files {
+			m.files.place.Focus = navigation.FocusNavigator
+			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		m.history.place.Focus = navigation.FocusNavigator
+		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
+			return m.history.requestSelectedSummary()
+		}
+	case ActivateNavigatorRow:
+		if m.active == workspace.Files {
+			m.files.place.Focus = navigation.FocusNavigator
+			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+			m.files.toggleSelected(m.geometry.NavigatorRows.Height)
+			return pending
+		}
+		m.history.place.Focus = navigation.FocusNavigator
+		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
+			return m.history.requestSelectedSummary()
+		}
+	case ExpandDirectory:
+		if m.active == workspace.Files {
+			m.files.expandSelected(m.geometry.NavigatorRows.Height)
+		}
+	case CollapseDirectory:
+		if m.active == workspace.Files {
+			m.files.collapseSelected(m.geometry.NavigatorRows.Height)
 		}
 	case ScrollReader:
 		m.activePlace().ScrollReader(action.Amount, m.activeReaderLineCount(), m.geometry.ReaderRows.Height)
@@ -337,13 +370,6 @@ func (m *Model) activePlace() *navigation.State {
 		return &m.history.place
 	}
 	return &m.files.place
-}
-
-func (m *Model) requestActiveReader() effect {
-	if m.active == workspace.Git {
-		return m.history.requestSelectedSummary()
-	}
-	return m.files.requestSelectedContent()
 }
 
 func (m Model) activeReaderLineCount() int {
