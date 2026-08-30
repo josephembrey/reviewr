@@ -132,12 +132,12 @@ func TestChangedFilesPaneOmitsZeroChangeTotals(t *testing.T) {
 	}
 }
 
-func TestBrowserFooterAdvertisesPaneFocus(t *testing.T) {
+func TestBrowserFooterLeavesPaneFocusInHelp(t *testing.T) {
 	t.Parallel()
 	for _, active := range []workspace.Kind{workspace.Files, workspace.Git} {
 		plain := ansi.Strip(renderFooter(Model{Geometry: Calculate(120, 20), Workspace: active}))
-		if !strings.HasPrefix(plain, "tab focus") {
-			t.Fatalf("workspace %v footer = %q, want pane-focus hint first", active, plain)
+		if strings.Contains(plain, "tab focus") || !strings.HasSuffix(plain, "?") {
+			t.Fatalf("workspace %v footer = %q, want pane focus only in help", active, plain)
 		}
 	}
 }

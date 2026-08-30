@@ -237,6 +237,14 @@ type Settings struct {
 	Entries []SettingEntry
 }
 
+// FileFooterActions describes only workflow actions that are meaningful for
+// the current Files selection. Routine navigation belongs in the help popup.
+type FileFooterActions struct {
+	Review       bool
+	ReviewBounds bool
+	NextGap      bool
+}
+
 // Model contains only the workspace-neutral derived state needed to paint a frame.
 type Model struct {
 	Geometry        Geometry
@@ -245,6 +253,7 @@ type Model struct {
 	HelpOpen        bool
 	Settings        Settings
 	Controls        workspace.Controls
+	FileActions     FileFooterActions
 	Changes         ChangeSummary
 
 	NavigatorTitle string

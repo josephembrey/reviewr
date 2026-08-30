@@ -13,14 +13,6 @@ type footerEntry struct {
 
 const hunkNavigationKey = "[/]"
 
-var (
-	standardFooterEntries = []footerEntry{
-		{key: "tab", label: "focus"},
-		{key: "j/k or ↑/↓", label: "navigate"},
-		{key: "z", label: "swap"},
-	}
-)
-
 func renderFooter(model Model) string {
 	if model.Settings.Open {
 		return fit(renderFooterEntry(footerEntry{key: ",/Esc", label: "close"}), model.Geometry.Footer.Width)
@@ -34,11 +26,7 @@ func renderFooter(model Model) string {
 		case model.Workspace == workspace.Notes:
 			content = renderNotesFooter(model)
 		case model.Workspace == workspace.Files:
-			entries = fileFooterEntries(model.Controls)
-		case model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes:
-			entries = stashFooterEntries(model.Controls.RichDiff, model.ReaderContextFoldable)
-		default:
-			entries = standardFooterEntries
+			entries = fileFooterEntries(model.Controls, model.FileActions)
 		}
 		if content == "" {
 			content = renderFooterEntries(entries)
@@ -47,16 +35,8 @@ func renderFooter(model Model) string {
 	return renderFooterHelp(content, model.Geometry)
 }
 
-func fileFooterEntries(controls workspace.Controls) []footerEntry {
-	entries := []footerEntry{
-		{key: "tab", label: "focus"},
-		{key: "j/k", label: "move"},
-		{key: "h/l", label: "less/more"},
-		{key: "e", label: "edit"},
-	}
-	if controls.RichDiff {
-		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})
-	}
+func fileFooterEntries(controls workspace.Controls, actions FileFooterActions) []footerEntry {
+	entries := make([]footerEntry, 0, 4)
 	if controls.MarkdownPreviewEligible {
 		label := "preview"
 		if controls.MarkdownPreview {
@@ -64,12 +44,16 @@ func fileFooterEntries(controls workspace.Controls) []footerEntry {
 		}
 		entries = append(entries, footerEntry{key: "m", label: label})
 	}
-	return append(entries,
-		footerEntry{key: "z", label: "swap"},
-		footerEntry{key: "x", label: "review"},
-		footerEntry{key: "R", label: "bounds"},
-		footerEntry{key: "X", label: "next gap"},
-	)
+	if actions.Review {
+		entries = append(entries, footerEntry{key: "x", label: "review"})
+	}
+	if actions.ReviewBounds {
+		entries = append(entries, footerEntry{key: "R", label: "bounds"})
+	}
+	if actions.NextGap {
+		entries = append(entries, footerEntry{key: "X", label: "next gap"})
+	}
+	return entries
 }
 
 func renderFooterHelp(content string, geometry Geometry) string {
@@ -93,35 +77,17 @@ func renderNotesFooter(model Model) string {
 	}
 	priorityStatus := model.NotesStatusPriority || model.NotesError
 	status := style.Render(SafeSingleLine(model.NotesStatus))
+	if !model.NotesHasWorktree {
+		return status
+	}
+	scope := renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
+	if status == "" {
+		return scope
+	}
 	if priorityStatus {
-		footer := status + renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
-		if model.NotesHasWorktree {
-			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
-		}
-		return footer
+		return status + renderFooterSeparator() + scope
 	}
-	footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
-	if model.NotesHasWorktree {
-		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
-	}
-	return footer + renderFooterSeparator() + status
-}
-
-func stashFooterEntries(richDiff, contextFoldable bool) []footerEntry {
-	entries := []footerEntry{
-		{key: "tab", label: "focus"},
-		{key: "j/k", label: "move stashes"},
-		{key: "f/F", label: "move files"},
-	}
-	if richDiff {
-		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})
-	}
-	if contextFoldable {
-		entries = append(entries, footerEntry{key: "h/l", label: "context"})
-	}
-	return append(entries,
-		footerEntry{key: "z", label: "swap"},
-	)
+	return scope + renderFooterSeparator() + status
 }
 
 func renderFooterEntries(entries []footerEntry) string {

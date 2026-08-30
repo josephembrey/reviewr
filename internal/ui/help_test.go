@@ -9,7 +9,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-func TestFooterReservesRightmostHelpAndKeepsOnlyLocalHints(t *testing.T) {
+func TestFooterReservesRightmostHelpAndOmitsRoutineHints(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(120, 20)
 	models := []Model{
@@ -24,9 +24,9 @@ func TestFooterReservesRightmostHelpAndKeepsOnlyLocalHints(t *testing.T) {
 		if lipgloss.Width(footer) != geometry.Footer.Width || !strings.HasSuffix(plain, "?") {
 			t.Fatalf("workspace %v footer = %q", model.Workspace, plain)
 		}
-		for _, global := range []string{"q quit", "r refresh"} {
-			if strings.Contains(plain, global) {
-				t.Fatalf("workspace %v footer retained global hint %q: %q", model.Workspace, global, plain)
+		for _, routine := range []string{"q quit", "r refresh", "tab focus", "j/k", "h/l", "z swap", "f/F files", "[/] hunks", "e edit"} {
+			if strings.Contains(plain, routine) {
+				t.Fatalf("workspace %v footer retained routine hint %q: %q", model.Workspace, routine, plain)
 			}
 		}
 	}
@@ -78,19 +78,6 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	for _, retired := range []string{"tab/S-tab", "home/G ends", "C-u/C-d half"} {
 		if strings.Contains(plain, retired) {
 			t.Errorf("help popup still contains retired binding %q", retired)
-		}
-	}
-}
-
-func TestHunkShortcutIsUnambiguousInFileAndStashFooters(t *testing.T) {
-	t.Parallel()
-	for name, entries := range map[string][]footerEntry{
-		"files":   fileFooterEntries(workspace.Controls{RichDiff: true}),
-		"stashes": stashFooterEntries(true, true),
-	} {
-		plain := ansi.Strip(renderFooterEntries(entries))
-		if !strings.Contains(plain, "[/] hunks") || strings.Contains(plain, "[] hunks") {
-			t.Errorf("%s footer hunk shortcut = %q", name, plain)
 		}
 	}
 }

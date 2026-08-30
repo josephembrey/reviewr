@@ -244,11 +244,14 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	frame := ui.Render(model)
 	plain := ansi.Strip(frame)
 	for _, want := range []string{
-		"1 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "old", "new", "f/F move files",
+		"1 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "old", "new",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stash frame misses %q:\n%s", want, plain)
 		}
+	}
+	if strings.Contains(plain, "f/F move files") {
+		t.Fatalf("stash footer retained routine navigation help:\n%s", plain)
 	}
 	if !strings.Contains(frame, "\x1b[35m") ||
 		!strings.Contains(frame, "\x1b[32m") ||

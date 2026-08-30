@@ -262,11 +262,7 @@ func (state filesState) landReviewPersisted(msg reviewPersistedMsg) (filesState,
 }
 
 func (state *filesState) toggleReviewBounds(mode workspace.ReaderMode) effect {
-	if mode != workspace.DiffReader || state.readerEntry.Path == "" {
-		return effect{}
-	}
-	comparison, ok := state.reviewSnapshot.Comparisons[state.readerEntry.Path]
-	if !ok || state.reviewAssessment(state.readerEntry.Path, comparison).State != review.Updated {
+	if !state.canToggleReviewBounds(mode) {
 		return effect{}
 	}
 	state.reviewFull[state.readerEntry.Path] = !state.reviewFull[state.readerEntry.Path]
@@ -275,20 +271,7 @@ func (state *filesState) toggleReviewBounds(mode workspace.ReaderMode) effect {
 }
 
 func (state *filesState) selectNextReviewGap(visibleRows int, mode workspace.ReaderMode) effect {
-	ordered := make([]string, 0)
-	files := state.tree.Files()
-	for priority := 0; priority < 4; priority++ {
-		for _, path := range files {
-			comparison, ok := state.reviewSnapshot.Comparisons[path]
-			if !ok {
-				continue
-			}
-			candidatePriority, gap := state.reviewAssessment(path, comparison).State.GapPriority()
-			if gap && candidatePriority == priority {
-				ordered = append(ordered, path)
-			}
-		}
-	}
+	ordered := state.reviewGapPaths()
 	if len(ordered) == 0 {
 		state.comparisonWarning = "All changed files are reviewed."
 		return effect{}
@@ -311,6 +294,54 @@ func (state *filesState) selectNextReviewGap(visibleRows int, mode workspace.Rea
 	}
 	state.comparisonWarning = ""
 	return state.requestReader(entry, mode)
+}
+
+func (state filesState) fileFooterActions() ui.FileFooterActions {
+	return ui.FileFooterActions{
+		Review:       state.canToggleReview(),
+		ReviewBounds: state.canToggleReviewBounds(state.readerMode),
+		NextGap:      len(state.reviewGapPaths()) > 0,
+	}
+}
+
+func (state filesState) canToggleReview() bool {
+	path, ok := state.reviewTargetPath(state.place.Focus, -1)
+	if !ok {
+		return false
+	}
+	entry, exists := state.entry(path)
+	comparison, reviewable := state.reviewSnapshot.Comparisons[path]
+	if !exists || !entry.Changed() || !reviewable || !comparison.Exact() {
+		return false
+	}
+	_, ok = state.reviewToggleBounds(state.place.Focus, path, comparison)
+	return ok
+}
+
+func (state filesState) canToggleReviewBounds(mode workspace.ReaderMode) bool {
+	if mode != workspace.DiffReader || state.readerEntry.Path == "" {
+		return false
+	}
+	comparison, ok := state.reviewSnapshot.Comparisons[state.readerEntry.Path]
+	return ok && state.reviewAssessment(state.readerEntry.Path, comparison).State == review.Updated
+}
+
+func (state filesState) reviewGapPaths() []string {
+	ordered := make([]string, 0)
+	files := state.tree.Files()
+	for priority := 0; priority < 4; priority++ {
+		for _, path := range files {
+			comparison, ok := state.reviewSnapshot.Comparisons[path]
+			if !ok {
+				continue
+			}
+			candidatePriority, gap := state.reviewAssessment(path, comparison).State.GapPriority()
+			if gap && candidatePriority == priority {
+				ordered = append(ordered, path)
+			}
+		}
+	}
+	return ordered
 }
 
 func (state filesState) directoryReviewProgress(directory string) (int, int) {
