@@ -17,11 +17,15 @@ import (
 type fakeSource struct {
 	files         []string
 	listErr       error
+	snapshot      repository.Snapshot
+	snapshots     int
 	contents      map[string]repository.File
+	diffs         map[string]repository.Diff
 	summary       repository.ChangeSummary
 	summaryErr    error
 	commits       []repository.Commit
 	commitErr     error
+	commitQueries []repository.CommitQuery
 	summaries     map[string]repository.CommitSummary
 	summaryErrs   map[string]error
 	refSources    []repository.RefSource
@@ -30,22 +34,38 @@ type fakeSource struct {
 	refCommitErrs map[repository.RefSourceID]error
 }
 
-func (s *fakeSource) ListFiles() ([]string, error) {
-	return append([]string(nil), s.files...), s.listErr
+func (s *fakeSource) Snapshot() (repository.Snapshot, error) {
+	s.snapshots++
+	if len(s.snapshot.All()) > 0 {
+		return s.snapshot, s.listErr
+	}
+	entries := make([]repository.Entry, len(s.files))
+	for index, path := range s.files {
+		entries[index] = repository.Entry{Path: path}
+	}
+	return repository.NewSnapshot(entries), s.listErr
 }
 
-func (s *fakeSource) ReadFile(path string) repository.File {
-	if file, ok := s.contents[path]; ok {
+func (s *fakeSource) ReadFile(entry repository.Entry) repository.File {
+	if file, ok := s.contents[entry.Path]; ok {
 		return file
 	}
-	return repository.File{Path: path, Kind: repository.FileMissing, Err: errors.New("missing")}
+	return repository.File{Path: entry.Path, Kind: repository.FileMissing, Err: errors.New("missing")}
+}
+
+func (s *fakeSource) ReadDiff(entry repository.Entry) repository.Diff {
+	if diff, ok := s.diffs[entry.Path]; ok {
+		return diff
+	}
+	return repository.Diff{Entry: entry, Kind: repository.DiffReady}
 }
 
 func (s *fakeSource) WorktreeSummary() (repository.ChangeSummary, error) {
 	return s.summary, s.summaryErr
 }
 
-func (s *fakeSource) ListCommits() ([]repository.Commit, error) {
+func (s *fakeSource) ListCommits(query repository.CommitQuery) ([]repository.Commit, error) {
+	s.commitQueries = append(s.commitQueries, query)
 	return append([]repository.Commit(nil), s.commits...), s.commitErr
 }
 
@@ -91,11 +111,11 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	if !ok || len(batch) != 3 {
 		t.Fatalf("Init() message = %T, want three-command warmup batch", initial())
 	}
-	var loaded filesLoadedMsg
+	var loaded snapshotLoadedMsg
 	var historyLoaded bool
 	for _, command := range batch {
 		switch message := command().(type) {
-		case filesLoadedMsg:
+		case snapshotLoadedMsg:
 			loaded = message
 		case commitsLoadedMsg:
 			historyLoaded = true
@@ -114,7 +134,7 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	}
 	next, contentCommand := model.Update(loaded)
 	model = next.(Model)
-	if model.files.readerPath != "a" || !model.files.readerLoading || contentCommand == nil {
+	if model.files.readerEntry.Path != "a" || !model.files.readerLoading || contentCommand == nil {
 		t.Fatalf("after list load: %+v", model.files)
 	}
 	next, _ = model.Update(contentCommand())
@@ -124,7 +144,7 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	}
 
 	selectEffect := model.apply(Action{Kind: SelectNext})
-	if selectEffect.kind != effectLoadFile || selectEffect.identity != "b" || model.files.readerPath != "b" || model.files.reader.Kind != 0 {
+	if selectEffect.kind != effectLoadFile || selectEffect.entry.Path != "b" || model.files.readerEntry.Path != "b" || model.files.reader.Kind != 0 {
 		t.Fatalf("selection effect/state = %+v / %+v", selectEffect, model.files)
 	}
 	next, _ = model.Update(model.command(selectEffect)())
@@ -134,12 +154,12 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	}
 
 	reloadEffect := model.apply(Action{Kind: Reload})
-	if reloadEffect.kind != effectLoadFiles || !model.files.listLoading {
+	if reloadEffect.kind != effectLoadSnapshot || !model.files.listLoading {
 		t.Fatalf("reload effect/state = %+v / %+v", reloadEffect, model.files)
 	}
-	refreshResult := model.command(reloadEffect)().(filesLoadedMsg)
-	model.files, selectEffect = model.files.landFiles(refreshResult, model.geometry.NavigatorRows.Height)
-	if model.files.reader.Content != "b1\nb2" || !model.files.readerLoading || selectEffect.identity != "b" {
+	refreshResult := model.command(reloadEffect)().(snapshotLoadedMsg)
+	model.files, selectEffect = model.files.landSnapshot(refreshResult, model.controls.Files, model.controls.Reader, model.geometry.NavigatorRows.Height)
+	if model.files.reader.Content != "b1\nb2" || !model.files.readerLoading || selectEffect.entry.Path != "b" {
 		t.Fatalf("same-identity refresh discarded content: %+v / %+v", model.files, selectEffect)
 	}
 }
@@ -172,7 +192,7 @@ func TestPrimaryWorkspaceLifecycleAndActiveRefresh(t *testing.T) {
 	}
 	model.apply(Action{Kind: ShowFiles})
 	filesRefresh := model.apply(Action{Kind: Reload})
-	if filesRefresh.kind != effectLoadFiles || model.files.listGeneration <= filesGeneration || model.history.listGeneration != gitRefresh.generation {
+	if filesRefresh.kind != effectLoadSnapshot || model.files.listGeneration <= filesGeneration || model.history.listGeneration != gitRefresh.generation {
 		t.Fatalf("Files refresh crossed workspace generations: %+v", model)
 	}
 }
@@ -194,7 +214,7 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 		t.Fatalf("workspace toggle = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\n0 commits") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
@@ -236,10 +256,14 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
-	model.files, _ = model.files.landFiles(filesLoadedMsg{
+	model.files, _ = model.files.landSnapshot(snapshotLoadedMsg{
 		generation: model.files.listGeneration,
-		files:      []string{"src/a.go", "src/b.go", "root.go"},
-	}, model.geometry.NavigatorRows.Height)
+		snapshot: snapshotOf(
+			repository.Entry{Path: "src/a.go"},
+			repository.Entry{Path: "src/b.go"},
+			repository.Entry{Path: "root.go"},
+		),
+	}, workspace.AllFiles, workspace.FileReader, model.geometry.NavigatorRows.Height)
 	model.files.reader = repository.File{Path: "src/a.go", Kind: repository.FileReady, Content: strings.Repeat("line\n", 20)}
 	model.files.readerLoading = false
 	model.files.place.ReaderOffset = 3
@@ -253,13 +277,13 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 		t.Fatal("directory selection produced a reader command")
 	}
 	selected, _ := model.files.place.SelectedIdentity()
-	if selected != filetree.DirectoryIdentity("src") || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+	if selected != filetree.DirectoryIdentity("src") || model.files.readerEntry.Path != "src/a.go" || model.files.place.ReaderOffset != 3 {
 		t.Fatalf("directory selection = %q files %+v", selected, model.files)
 	}
 
 	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
 	row, _ := model.files.tree.Row(filetree.DirectoryIdentity("src"))
-	if row.Expanded || len(model.files.place.Items) != 2 || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+	if row.Expanded || len(model.files.place.Items) != 2 || model.files.readerEntry.Path != "src/a.go" || model.files.place.ReaderOffset != 3 {
 		t.Fatalf("collapsed tree = row %+v files %+v", row, model.files)
 	}
 	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
@@ -275,7 +299,7 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 	directoryY := model.geometry.NavigatorRows.Y + model.files.place.Selected - model.files.place.Top
 	update(tea.MouseClickMsg(tea.Mouse{X: model.geometry.NavigatorRows.X, Y: directoryY, Button: tea.MouseLeft}))
 	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
-	if row.Expanded || model.files.place.Focus != navigation.FocusNavigator || model.files.readerPath != "src/a.go" || model.files.place.ReaderOffset != 3 {
+	if row.Expanded || model.files.place.Focus != navigation.FocusNavigator || model.files.readerEntry.Path != "src/a.go" || model.files.place.ReaderOffset != 3 {
 		t.Fatalf("mouse fold = row %+v files %+v", row, model.files)
 	}
 }
@@ -304,7 +328,10 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 
 	// Repository completions remain world-state updates and continue warming
 	// while place input is gated.
-	next, _ := model.Update(filesLoadedMsg{generation: model.files.listGeneration, files: []string{"ready.go"}})
+	next, _ := model.Update(snapshotLoadedMsg{
+		generation: model.files.listGeneration,
+		snapshot:   snapshotOf(repository.Entry{Path: "ready.go"}),
+	})
 	model = next.(Model)
 	if !model.files.loaded {
 		t.Fatal("minimum-size screen blocked repository warmup")
@@ -467,6 +494,35 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 	}
 }
 
+func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {
+	t.Parallel()
+	source := &fakeSource{snapshot: snapshotOf(
+		repository.Entry{Path: "changed.go", State: repository.FileModified},
+		repository.Entry{Path: "ignored.go", State: repository.FileIgnored},
+		repository.Entry{Path: "unchanged.go", State: repository.FileUnchanged},
+	)}
+	model := newTestModel(source)
+	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
+	loaded := model.command(effect{kind: effectLoadSnapshot, generation: model.files.listGeneration})()
+	next, _ := model.Update(loaded)
+	model = next.(Model)
+	if source.snapshots != 1 || model.files.tree.FileCount() != 3 {
+		t.Fatalf("initial snapshot count/tree = %d/%d", source.snapshots, model.files.tree.FileCount())
+	}
+
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
+	model = next.(Model)
+	if source.snapshots != 1 || model.controls.Files != workspace.ChangedFiles || model.files.tree.FileCount() != 1 {
+		t.Fatalf("keyboard scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())
+	}
+
+	next, _ = model.Update(tea.MouseClickMsg(tea.Mouse{X: 31, Y: model.geometry.Header.Y, Button: tea.MouseLeft}))
+	model = next.(Model)
+	if source.snapshots != 1 || model.controls.Files != workspace.AllFiles || model.files.tree.FileCount() != 3 {
+		t.Fatalf("mouse scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())
+	}
+}
+
 func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	t.Parallel()
 	const oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -516,7 +572,7 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	model.history.place.Top = 1
 	model.history.place.Focus = navigation.FocusReader
 	model.history.place.ReaderOffset = 3
-	refresh := model.history.reload()
+	refresh := model.history.reload(workspace.GitGraph, "")
 	model.history, _ = model.history.landCommits(commitsLoadedMsg{
 		generation: refresh.generation,
 		commits: []repository.Commit{
@@ -526,6 +582,101 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	}, model.geometry.NavigatorRows.Height)
 	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB || model.history.place.Focus != navigation.FocusReader || model.history.place.ReaderOffset != 3 {
 		t.Fatalf("history refresh reset place: selected=%q state=%+v", selected, model.history.place)
+	}
+}
+
+func TestHistoryTraversalSwitchesUniversesAndKeepsFullOID(t *testing.T) {
+	t.Parallel()
+	const (
+		oidHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidSide = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		oidRoot = "cccccccccccccccccccccccccccccccccccccccc"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history.listLoading = true
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{Traversal: repository.CommitGraph},
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidHead {
+		t.Fatalf("initial graph selection = %q, want HEAD", selected)
+	}
+	model.history.place.SelectIndex(0, model.geometry.NavigatorRows.Height)
+
+	firstParent := model.apply(Action{Kind: ToggleTertiary})
+	if model.controls.Traversal != workspace.GitFirstParent || firstParent.query != (repository.CommitQuery{Traversal: repository.CommitFirstParent, StartOID: oidSide}) {
+		t.Fatalf("first-parent switch = controls %+v effect %+v", model.controls, firstParent)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: firstParent.generation,
+		query:      firstParent.query,
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("first-parent selection = %q", selected)
+	}
+
+	refresh := model.apply(Action{Kind: Reload})
+	if refresh.query.StartOID != oidSide || refresh.query.Traversal != repository.CommitFirstParent {
+		t.Fatalf("first-parent refresh query = %+v", refresh.query)
+	}
+	graph := model.apply(Action{Kind: ToggleTertiary})
+	if graph.query != (repository.CommitQuery{Traversal: repository.CommitGraph}) {
+		t.Fatalf("graph switch query = %+v", graph.query)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: graph.generation,
+		query:      graph.query,
+		commits: []repository.Commit{
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("graph return selection = %q", selected)
+	}
+}
+
+func TestHistoryMouseRowsUseSharedNavigatorGeometry(t *testing.T) {
+	t.Parallel()
+	const (
+		oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{},
+		commits: []repository.Commit{
+			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first", Head: true},
+			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	click := tea.MouseClickMsg(tea.Mouse{
+		X:      model.geometry.NavigatorRows.X,
+		Y:      model.geometry.NavigatorRows.Y + 1,
+		Button: tea.MouseLeft,
+	})
+	next, command := model.Update(click)
+	model = next.(Model)
+	if command == nil {
+		t.Fatal("commit-row click did not request selected summary")
+	}
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB {
+		t.Fatalf("commit-row click selected %q, want %q", selected, oidB)
 	}
 }
 
@@ -598,7 +749,10 @@ func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 	if first.generation >= second.generation {
 		t.Fatalf("generations are not monotonic: %d, %d", first.generation, second.generation)
 	}
-	stale, pending := model.files.landFiles(filesLoadedMsg{generation: first.generation, files: []string{"stale"}}, 10)
+	stale, pending := model.files.landSnapshot(snapshotLoadedMsg{
+		generation: first.generation,
+		snapshot:   snapshotOf(repository.Entry{Path: "stale"}),
+	}, workspace.AllFiles, workspace.FileReader, 10)
 	if len(stale.place.Items) != 0 || pending.kind != effectNone || !stale.listLoading {
 		t.Fatalf("stale list landed: %+v, %+v", stale, pending)
 	}
@@ -607,12 +761,17 @@ func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {
 	model.files.tree.Rebuild([]string{"a", "b", "c"})
 	model.files.place = navigation.State{Items: model.files.tree.Identities(), Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 	model.files.loaded = true
-	model.files.readerPath = "b"
+	model.files.snapshot = snapshotOf(repository.Entry{Path: "a"}, repository.Entry{Path: "b"}, repository.Entry{Path: "c"})
+	model.files.entries = model.files.snapshot.All()
+	model.files.readerEntry = repository.Entry{Path: "b"}
 	model.files.reader = repository.File{Path: "b", Kind: repository.FileReady, Content: strings.Repeat("line\n", 10)}
 	model.files.listGeneration = second.generation
-	model.files, pending = model.files.landFiles(filesLoadedMsg{generation: second.generation, files: []string{"a", "c"}}, model.geometry.NavigatorRows.Height)
+	model.files, pending = model.files.landSnapshot(snapshotLoadedMsg{
+		generation: second.generation,
+		snapshot:   snapshotOf(repository.Entry{Path: "a"}, repository.Entry{Path: "c"}),
+	}, workspace.AllFiles, workspace.FileReader, model.geometry.NavigatorRows.Height)
 	path, _ := model.files.place.SelectedIdentity()
-	if path != filetree.FileIdentity("c") || pending.identity != "c" || model.files.readerPath != "c" || model.files.reader.Kind != 0 || !model.files.readerLoading {
+	if path != filetree.FileIdentity("c") || pending.entry.Path != "c" || model.files.readerEntry.Path != "c" || model.files.reader.Kind != 0 || !model.files.readerLoading {
 		t.Fatalf("removal reconciliation = path %q, effect %+v, files %+v", path, pending, model.files)
 	}
 	if model.files.place.ReaderOffset != 3 || model.files.place.Focus != navigation.FocusReader {

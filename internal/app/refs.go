@@ -3,8 +3,9 @@ package app
 import (
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/josephembrey/reviewr/internal/commitgraph"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -312,54 +313,36 @@ func refSourcePresentation(source repository.RefSource) (icon string, tone ui.To
 	}
 }
 
-func refCommitRows(commits []repository.RefCommit) []ui.CommitRow {
-	rows := make([]ui.CommitRow, len(commits))
-	now := time.Now()
+func refCommitRows(commits []repository.RefCommit) []commitrow.Row {
+	rows := make([]commitrow.Row, len(commits))
 	for index, commit := range commits {
-		decorations := make([]ui.Segment, 0, len(commit.Decorations))
+		refs := make([]commitrow.Ref, 0, len(commit.Decorations))
 		for _, decoration := range commit.Decorations {
-			tone := ui.ToneAdded
-			if decoration.Kind == repository.RefDecorationRemote {
-				tone = ui.ToneInfo
-			} else if decoration.Kind == repository.RefDecorationTag {
-				tone = ui.ToneWarning
+			kind := commitrow.Branch
+			switch decoration.Kind {
+			case repository.RefDecorationRemote:
+				kind = commitrow.Remote
+			case repository.RefDecorationTag:
+				kind = commitrow.Tag
 			}
-			decorations = append(decorations, ui.Segment{Text: decoration.Label, Tone: tone})
+			refs = append(refs, commitrow.Ref{Kind: kind, Name: decoration.Label})
 		}
-		rows[index] = ui.CommitRow{
-			Identity:    commit.OID,
-			Lane:        []ui.Segment{{Text: "○", Tone: ui.ToneWarning}},
-			ShortOID:    commit.ShortOID,
-			Subject:     commit.Subject,
-			Decorations: decorations,
-			Author:      commit.Author,
-			Age:         compactAge(now, commit.CommittedAt),
+		graph := commitgraph.Layout([]commitgraph.Commit{{
+			OID:   commit.OID,
+			Merge: commit.Merge,
+		}})
+		rows[index] = commitrow.Row{
+			Graph:        graph[0],
+			OID:          commit.OID,
+			ShortOID:     commit.ShortOID,
+			Subject:      commit.Subject,
+			Author:       commit.Author,
+			AuthoredUnix: commit.AuthoredUnix,
+			Refs:         refs,
+			Merge:        commit.Merge,
 		}
 	}
 	return rows
-}
-
-func compactAge(now time.Time, unixTime int64) string {
-	if unixTime <= 0 {
-		return ""
-	}
-	age := now.Sub(time.Unix(unixTime, 0))
-	if age < 0 || age < time.Minute {
-		return "now"
-	}
-	if age < time.Hour {
-		return fmt.Sprintf("%dm", int(age/time.Minute))
-	}
-	if age < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(age/time.Hour))
-	}
-	if age < 7*24*time.Hour {
-		return fmt.Sprintf("%dd", int(age/(24*time.Hour)))
-	}
-	if age < 365*24*time.Hour {
-		return fmt.Sprintf("%dw", int(age/(7*24*time.Hour)))
-	}
-	return fmt.Sprintf("%dy", int(age/(365*24*time.Hour)))
 }
 
 func abbreviateOID(oid string) string {

@@ -3,9 +3,12 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitgraph"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -30,10 +33,7 @@ func TestRefsRowsRenderDistinctRestrainedIconsTonesAndTrails(t *testing.T) {
 		Selected:         1,
 		Focus:            navigation.FocusNavigator,
 		ReaderTitle:      "history · main · aaaaaaa · 2 commits",
-		ReaderCommitRows: []CommitRow{
-			{Identity: "a", Lane: []Segment{{Text: "○", Tone: ToneWarning}}, ShortOID: "aaaaaaa", Subject: "tip subject", Decorations: []Segment{{Text: "main", Tone: ToneAdded}}, Author: "Ada", Age: "2h"},
-			{Identity: "b", Lane: []Segment{{Text: "│", Tone: ToneAccent}, {Text: "○", Tone: ToneWarning}}, ShortOID: "bbbbbbb", Subject: "root subject"},
-		},
+		ReaderCommitRows: refTestCommitRows(),
 	}
 	frame := Render(model)
 	plain := ansi.Strip(frame)
@@ -69,7 +69,7 @@ func TestRefsNavigatorPrioritizesLabelAndKeepsSelectionFullWidth(t *testing.T) {
 		Suffix:   []Segment{{Text: "  /an/extremely/long/worktree/path/that/is/secondary", Tone: ToneQuiet}},
 	}
 	for _, focused := range []bool{false, true} {
-		rendered := renderNavigatorPresentationRow(row, 18, true, focused)
+		rendered := renderNavigatorPresentationRow(row, 18, true, focused, commitrow.Columns{}, time.Time{})
 		plain := ansi.Strip(rendered)
 		if lipgloss.Width(rendered) != 18 || lipgloss.Width(plain) != 18 {
 			t.Fatalf("selected metadata row width = %d/%d, want 18: %q", lipgloss.Width(rendered), lipgloss.Width(plain), rendered)
@@ -82,12 +82,12 @@ func TestRefsNavigatorPrioritizesLabelAndKeepsSelectionFullWidth(t *testing.T) {
 		}
 	}
 
-	short := renderNavigatorPresentationRow(NavigatorRow{Prefix: []Segment{{Text: "  ", Tone: ToneAdded}}, Label: "main", Suffix: []Segment{{Text: "  origin/main =", Tone: ToneQuiet}}}, 28, false, false)
+	short := renderNavigatorPresentationRow(NavigatorRow{Prefix: []Segment{{Text: "  ", Tone: ToneAdded}}, Label: "main", Suffix: []Segment{{Text: "  origin/main =", Tone: ToneQuiet}}}, 28, false, false, commitrow.Columns{}, time.Time{})
 	if plain := ansi.Strip(short); !strings.Contains(plain, "main  origin/main =") {
 		t.Fatalf("roomy branch row omitted useful trail: %q", plain)
 	}
 
-	hostile := renderNavigatorPresentationRow(NavigatorRow{Prefix: []Segment{{Text: "  "}}, Label: "topic\x1b[31m\nnext", Suffix: []Segment{{Text: "  remote\rtrail", Tone: ToneQuiet}}}, 40, false, false)
+	hostile := renderNavigatorPresentationRow(NavigatorRow{Prefix: []Segment{{Text: "  "}}, Label: "topic\x1b[31m\nnext", Suffix: []Segment{{Text: "  remote\rtrail", Tone: ToneQuiet}}}, 40, false, false, commitrow.Columns{}, time.Time{})
 	plain := ansi.Strip(hostile)
 	if strings.ContainsRune(plain, '\x1b') || strings.ContainsRune(plain, '\n') || strings.ContainsRune(plain, '\r') || !strings.Contains(plain, "␛") || !strings.Contains(plain, "↵") {
 		t.Fatalf("hostile metadata row was not inert: %q", plain)
@@ -96,34 +96,33 @@ func TestRefsNavigatorPrioritizesLabelAndKeepsSelectionFullWidth(t *testing.T) {
 
 func TestCommitRowSeamPrioritizesSubjectAndAcceptsGraphCells(t *testing.T) {
 	t.Parallel()
-	row := CommitRow{
-		Identity: "oid",
-		Lane: []Segment{
-			{Text: "│", Tone: ToneAccent},
-			{Text: "○", Tone: ToneWarning},
-		},
+	graph := commitgraph.Layout([]commitgraph.Commit{{OID: "oid", Merge: true}})
+	row := commitrow.Row{
+		Graph:    graph[0],
+		OID:      "oid",
 		ShortOID: "abcdef0",
 		Subject:  "the commit subject is the primary content",
-		Decorations: []Segment{
-			{Text: "origin/very-long-decoration", Tone: ToneInfo},
-			{Text: "tag: release", Tone: ToneWarning},
+		Refs: []commitrow.Ref{
+			{Kind: commitrow.Remote, Name: "origin/topic"},
+			{Kind: commitrow.Tag, Name: "release"},
 		},
-		Author: "A Very Long Author Name",
-		Age:    "2d",
+		Author:       "A Very Long Author Name",
+		AuthoredUnix: time.Now().Add(-48 * time.Hour).Unix(),
+		Merge:        true,
 	}
-	narrow := ansi.Strip(renderCommitRow(row, 30))
-	if !strings.Contains(narrow, "│○") || !strings.Contains(narrow, "abcdef0") || !strings.Contains(narrow, "the commit") {
+	narrow := ansi.Strip(renderCommitRow(row, commitrow.Measure([]commitrow.Row{row}, 30), 30, false, false, time.Now()))
+	if !strings.Contains(narrow, "◎") || !strings.Contains(narrow, "abcdef0") || !strings.Contains(narrow, "the commit") {
 		t.Fatalf("narrow commit row lost graph/SHA/subject: %q", narrow)
 	}
-	if strings.Contains(narrow, "origin/") || strings.Contains(narrow, "Author") || strings.Contains(narrow, "2d") {
+	if strings.Contains(narrow, "origin/") || strings.Contains(narrow, "Author") {
 		t.Fatalf("narrow commit row retained lower-priority metadata: %q", narrow)
 	}
 	if lipgloss.Width(narrow) != 30 {
 		t.Fatalf("narrow commit row width = %d, want 30", lipgloss.Width(narrow))
 	}
 
-	wide := ansi.Strip(renderCommitRow(row, 150))
-	for _, want := range []string{"the commit subject", "origin/very-long-decoration", "tag: release", "A Very Long Author Name", "2d"} {
+	wide := ansi.Strip(renderCommitRow(row, commitrow.Measure([]commitrow.Row{row}, 150), 150, false, false, time.Now()))
+	for _, want := range []string{"the commit subject", "origin/topic", "release", "A Very Lon", "2d"} {
 		if !strings.Contains(wide, want) {
 			t.Fatalf("wide commit row lacks %q: %q", want, wide)
 		}
@@ -137,9 +136,9 @@ func TestRefsPaintAndHitGeometryShareFullRowsAndScrollbars(t *testing.T) {
 	for index := range rows {
 		rows[index] = NavigatorRow{Identity: "source", Prefix: []Segment{{Text: "  ", Tone: ToneAdded}}, Label: "source"}
 	}
-	commits := make([]CommitRow, 24)
+	commits := make([]commitrow.Row, 24)
 	for index := range commits {
-		commits[index] = CommitRow{Identity: "commit", ShortOID: "aaaaaaa", Subject: "subject"}
+		commits[index] = commitrow.Row{Graph: commitgraph.Layout([]commitgraph.Commit{{OID: "commit"}})[0], OID: "commit", ShortOID: "aaaaaaa", Subject: "subject"}
 	}
 	frame := Render(Model{
 		Geometry:         g,
@@ -168,5 +167,14 @@ func TestRefsPaintAndHitGeometryShareFullRowsAndScrollbars(t *testing.T) {
 	}
 	if hit := g.HitTest(readerBar.Thumb.X, readerBar.Thumb.Y, workspace.Git, workspace.Controls{Git: workspace.GitRefs}, 5, len(rows), 4, len(commits)); hit.Kind != HitReaderScrollbar {
 		t.Fatalf("reader thumb hit = %+v", hit)
+	}
+}
+
+func refTestCommitRows() []commitrow.Row {
+	now := time.Now().Unix()
+	graphs := commitgraph.Layout([]commitgraph.Commit{{OID: "a", Parents: []string{"b"}}, {OID: "b"}})
+	return []commitrow.Row{
+		{Graph: graphs[0], OID: "a", ShortOID: "aaaaaaa", Subject: "tip subject", Refs: []commitrow.Ref{{Kind: commitrow.Branch, Name: "main"}}, Author: "Ada", AuthoredUnix: now - 2*60*60},
+		{Graph: graphs[1], OID: "b", ShortOID: "bbbbbbb", Subject: "root subject"},
 	}
 }

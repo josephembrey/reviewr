@@ -118,7 +118,7 @@ func TestRefSourcesCoverWorktreesBranchesRemotesTagsPackedRefsAndSameTips(t *tes
 		t.Fatalf("branch preview = %#v", commits)
 	}
 	if !slices.ContainsFunc(commits[0].Decorations, func(decoration RefDecoration) bool {
-		return decoration.Kind == RefDecorationTag && decoration.Label == "tag: v1"
+		return decoration.Kind == RefDecorationTag && decoration.Label == "v1"
 	}) {
 		t.Fatalf("branch preview decorations = %#v", commits[0].Decorations)
 	}
@@ -126,6 +126,36 @@ func TestRefSourcesCoverWorktreesBranchesRemotesTagsPackedRefsAndSameTips(t *tes
 	all, err := client.ListRefCommits(root, sources[0])
 	if err != nil || len(all) != 2 || all[0].OID != tipOID {
 		t.Fatalf("All refs preview = (%#v, %v)", all, err)
+	}
+}
+
+func TestRefPreviewCarriesAuthoritativeMergeFact(t *testing.T) {
+	root := initGitTestRepository(t)
+	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "root")
+	mainBranch := strings.TrimSpace(runGitTest(t, root, "branch", "--show-current"))
+	runGitTest(t, root, "checkout", "-q", "-b", "side")
+	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "side")
+	runGitTest(t, root, "checkout", "-q", mainBranch)
+	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "main")
+	runGitTest(t, root, "merge", "-q", "--no-ff", "side", "-m", "merge")
+
+	client := New()
+	sources, err := client.ListRefSources(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := slices.IndexFunc(sources, func(source RefSource) bool {
+		return source.Kind() == RefSourceCurrentWorktree
+	})
+	if current < 0 {
+		t.Fatalf("current worktree absent from %#v", sources)
+	}
+	commits, err := client.ListRefCommits(root, sources[current])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) == 0 || commits[0].Subject != "merge" || !commits[0].Merge {
+		t.Fatalf("merge preview row = %#v", commits)
 	}
 }
 

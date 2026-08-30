@@ -4,16 +4,20 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
+	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 type historyState struct {
 	place      navigation.State
 	commits    []repository.Commit
+	rows       []commitrow.Row
 	summary    repository.CommitSummary
 	summaryOID string
+	traversal  workspace.GitTraversal
 
 	listGeneration    uint64
 	summaryGeneration uint64
@@ -32,11 +36,15 @@ func newHistoryState() historyState {
 	}
 }
 
-func (state *historyState) reload() effect {
+func (state *historyState) reload(traversal workspace.GitTraversal, startOID string) effect {
 	state.listGeneration++
 	state.listLoading = true
 	state.listError = nil
-	return effect{kind: effectLoadCommits, generation: state.listGeneration}
+	return effect{
+		kind:       effectLoadCommits,
+		generation: state.listGeneration,
+		query:      commitQuery(traversal, startOID),
+	}
 }
 
 func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (historyState, effect) {
@@ -45,17 +53,28 @@ func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (hi
 	}
 	state.loaded = true
 	state.listLoading = false
+	state.traversal = traversalForQuery(msg.query)
 	if msg.err != nil {
 		state.listError = msg.err
 		return state, effect{}
 	}
 	state.listError = nil
+	_, hadSelection := state.place.SelectedIdentity()
 	state.commits = append([]repository.Commit(nil), msg.commits...)
+	state.rows = buildCommitRows(state.commits, state.traversal)
 	identities := make([]string, len(state.commits))
 	for index, commit := range state.commits {
 		identities[index] = commit.OID
 	}
 	state.place.Reconcile(identities)
+	if !hadSelection {
+		for index, commit := range state.commits {
+			if commit.Head {
+				state.place.SelectIndex(index, visibleRows)
+				break
+			}
+		}
+	}
 	state.place.EnsureSelectionVisible(visibleRows)
 	if _, ok := state.place.SelectedIdentity(); !ok {
 		state.summaryGeneration++
@@ -101,7 +120,7 @@ func (state *historyState) requestSelectedSummary() effect {
 func (state historyState) viewModel(geometry ui.Geometry) ui.Model {
 	rows := make([]ui.NavigatorRow, len(state.commits))
 	for index, commit := range state.commits {
-		rows[index] = ui.NavigatorRow{Identity: commit.OID, Label: commit.ShortOID + "  " + commit.Subject}
+		rows[index] = ui.NavigatorRow{Identity: commit.OID, Commit: &state.rows[index]}
 	}
 	emptyNavigator := ui.Line{Text: "No commits", Tone: ui.ToneQuiet}
 	if state.listLoading {
@@ -124,9 +143,15 @@ func (state historyState) viewModel(geometry ui.Geometry) ui.Model {
 		readerEmpty = ui.Line{Text: "Git error: " + state.summaryError.Error(), Tone: ui.ToneError}
 	}
 
+	navigatorTitle := fmt.Sprintf("commits · %d", len(rows))
+	if state.listLoading {
+		navigatorTitle += " · loading"
+	} else if state.listError != nil {
+		navigatorTitle += " · error"
+	}
 	return ui.Model{
 		Geometry:       geometry,
-		NavigatorTitle: fmt.Sprintf("%d commits", len(rows)),
+		NavigatorTitle: navigatorTitle,
 		NavigatorRows:  rows,
 		NavigatorEmpty: emptyNavigator,
 		Selected:       state.place.Selected,

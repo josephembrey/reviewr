@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -77,12 +76,13 @@ type RefDecoration struct {
 // RefCommit is one compact source-preview row. Graph topology is deliberately
 // absent here; the UI seam accepts graph cells supplied by the Log component.
 type RefCommit struct {
-	OID         string
-	ShortOID    string
-	Subject     string
-	Author      string
-	CommittedAt int64
-	Decorations []RefDecoration
+	OID          string
+	ShortOID     string
+	Subject      string
+	Author       string
+	AuthoredUnix int64
+	Decorations  []RefDecoration
+	Merge        bool
 }
 
 type worktreeRecord struct {
@@ -234,12 +234,12 @@ func (Client) ListRefCommits(root string, source RefSource) ([]RefCommit, error)
 		"-z",
 		"--topo-order",
 		"--max-count=" + strconv.Itoa(CommitLimit),
-		"--format=%H%x00%h%x00%s%x00%an%x00%ct%x00",
+		"--format=%H%x00%h%x00%s%x00%an%x00%at%x00",
 	}
 	switch source.Kind() {
 	case RefSourceAll:
 		args = append(args, "--branches", "--remotes", "--tags")
-		hasCurrentHead, err := hasHead(root)
+		_, hasCurrentHead, err := resolveHead(root)
 		if err != nil {
 			return nil, err
 		}
@@ -281,12 +281,33 @@ func (Client) ListRefCommits(root string, source RefSource) ([]RefCommit, error)
 	if err != nil {
 		return nil, err
 	}
-	decorations, err := listCommitDecorations(root)
+	parentInput := make([]Commit, len(commits))
+	for index, commit := range commits {
+		parentInput[index].OID = commit.OID
+	}
+	parents, err := readCommitParents(root, parentInput)
+	if err != nil {
+		return nil, err
+	}
+	decorations, err := listCommitRefs(root)
 	if err != nil {
 		return nil, err
 	}
 	for index := range commits {
-		commits[index].Decorations = append([]RefDecoration(nil), decorations[commits[index].OID]...)
+		commits[index].Merge = len(parents[index]) > 1
+		for _, reference := range decorations[commits[index].OID] {
+			kind := RefDecorationBranch
+			switch reference.Kind {
+			case RemoteRef:
+				kind = RefDecorationRemote
+			case TagRef:
+				kind = RefDecorationTag
+			}
+			commits[index].Decorations = append(commits[index].Decorations, RefDecoration{
+				Kind:  kind,
+				Label: reference.Name,
+			})
+		}
 	}
 	return commits, nil
 }
@@ -358,76 +379,22 @@ func parseRefCommitLog(data []byte) ([]RefCommit, error) {
 		if len(fields) != 5 || !validObjectID(string(fields[0])) || len(fields[1]) == 0 {
 			return nil, fmt.Errorf("parse git ref log: invalid record")
 		}
-		committedAt, _ := strconv.ParseInt(string(fields[4]), 10, 64)
+		authoredUnix, err := strconv.ParseInt(string(fields[4]), 10, 64)
+		if err != nil || authoredUnix < 0 {
+			return nil, fmt.Errorf("parse git ref log: invalid authored timestamp")
+		}
 		result = append(result, RefCommit{
-			OID:         string(fields[0]),
-			ShortOID:    string(fields[1]),
-			Subject:     string(fields[2]),
-			Author:      string(fields[3]),
-			CommittedAt: committedAt,
+			OID:          string(fields[0]),
+			ShortOID:     string(fields[1]),
+			Subject:      string(fields[2]),
+			Author:       string(fields[3]),
+			AuthoredUnix: authoredUnix,
 		})
 		if len(result) == CommitLimit {
 			break
 		}
 	}
 	return result, nil
-}
-
-func listCommitDecorations(root string) (map[string][]RefDecoration, error) {
-	out, err := runBounded(
-		root,
-		DefaultMaxHistoryBytes,
-		"for-each-ref",
-		"--sort=refname",
-		"--format=%(refname)%00%(objectname)%00%(*objectname)%00",
-		"refs/heads",
-		"refs/remotes",
-		"refs/tags",
-	)
-	if err != nil {
-		return nil, err
-	}
-	lines := bytes.Split(bytes.TrimSuffix(out, []byte{'\n'}), []byte{'\n'})
-	decorations := make(map[string][]RefDecoration)
-	for _, line := range lines {
-		if len(line) == 0 {
-			continue
-		}
-		fields := bytes.Split(bytes.TrimSuffix(line, []byte{0}), []byte{0})
-		if len(fields) != 3 {
-			return nil, fmt.Errorf("parse git ref decorations: record has %d fields", len(fields))
-		}
-		name := string(fields[0])
-		oid := string(fields[1])
-		if len(fields[2]) != 0 {
-			oid = string(fields[2])
-		}
-		var decoration RefDecoration
-		switch {
-		case strings.HasPrefix(name, "refs/heads/"):
-			decoration = RefDecoration{Kind: RefDecorationBranch, Label: strings.TrimPrefix(name, "refs/heads/")}
-		case strings.HasPrefix(name, "refs/remotes/"):
-			label := strings.TrimPrefix(name, "refs/remotes/")
-			if strings.HasSuffix(label, "/HEAD") {
-				continue
-			}
-			decoration = RefDecoration{Kind: RefDecorationRemote, Label: label}
-		case strings.HasPrefix(name, "refs/tags/"):
-			decoration = RefDecoration{Kind: RefDecorationTag, Label: "tag: " + strings.TrimPrefix(name, "refs/tags/")}
-		default:
-			continue
-		}
-		decorations[oid] = append(decorations[oid], decoration)
-	}
-	for oid := range decorations {
-		sort.SliceStable(decorations[oid], func(left, right int) bool {
-			if decorations[oid][left].Kind != decorations[oid][right].Kind {
-				return decorations[oid][left].Kind < decorations[oid][right].Kind
-			}
-			return decorations[oid][left].Label < decorations[oid][right].Label
-		})
-	}
-	return decorations, nil
 }
 
 func validNamedSource(source RefSource, prefix string) bool {

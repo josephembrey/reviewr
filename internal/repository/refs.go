@@ -57,12 +57,13 @@ type RefDecoration struct {
 
 // RefCommit is one compact log-style preview row.
 type RefCommit struct {
-	OID         string
-	ShortOID    string
-	Subject     string
-	Author      string
-	CommittedAt int64
-	Decorations []RefDecoration
+	OID          string
+	ShortOID     string
+	Subject      string
+	Author       string
+	AuthoredUnix int64
+	Decorations  []RefDecoration
+	Merge        bool
 }
 
 // AllRefsSource returns the synthetic complete public-ref source.
@@ -99,12 +100,13 @@ func (r *Repository) ListRefCommits(source RefSource) ([]RefCommit, error) {
 			}
 		}
 		result[index] = RefCommit{
-			OID:         commit.OID,
-			ShortOID:    commit.ShortOID,
-			Subject:     commit.Subject,
-			Author:      commit.Author,
-			CommittedAt: commit.CommittedAt,
-			Decorations: decorations,
+			OID:          commit.OID,
+			ShortOID:     commit.ShortOID,
+			Subject:      commit.Subject,
+			Author:       commit.Author,
+			AuthoredUnix: commit.AuthoredUnix,
+			Decorations:  decorations,
+			Merge:        commit.Merge,
 		}
 	}
 	return result, nil

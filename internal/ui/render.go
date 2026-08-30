@@ -3,9 +3,11 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"charm.land/lipgloss/v2"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -206,6 +208,14 @@ func renderNavigator(model Model) string {
 	if scrollbar != nil {
 		contentWidth--
 	}
+	commitRows := make([]commitrow.Row, 0, len(model.NavigatorRows))
+	for _, row := range model.NavigatorRows {
+		if row.Commit != nil {
+			commitRows = append(commitRows, *row.Commit)
+		}
+	}
+	commitColumns := commitrow.Measure(commitRows, contentWidth)
+	now := time.Now()
 	for row := 0; row < visibleRows; row++ {
 		index := model.Top + row
 		if index >= len(model.NavigatorRows) {
@@ -224,6 +234,8 @@ func renderNavigator(model Model) string {
 			contentWidth,
 			index == model.Selected,
 			model.Focus == navigation.FocusNavigator,
+			commitColumns,
+			now,
 		)
 		if scrollbar != nil {
 			line += scrollbar[row]
@@ -239,38 +251,68 @@ func renderNavigator(model Model) string {
 	)
 }
 
-const (
-	closedFolderIcon = ""
-	openFolderIcon   = ""
-	fileIcon         = ""
-)
-
-func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
+func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool, columns commitrow.Columns, now time.Time) string {
+	if item.Commit != nil {
+		return renderCommitRow(*item.Commit, columns, width, selected, focused, now)
+	}
 	if len(item.Prefix) != 0 || len(item.Suffix) != 0 {
 		return renderCompactNavigatorRow(item, width, selected, focused)
 	}
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}
+	marker, accent := treeNavigatorStatus(item.Status)
+	return renderTreeNavigatorRow(item, width, treeRowStyleLayers{
+		statusMarker: marker,
+		statusAccent: accent,
+		ignored:      item.Dimmed,
+		selected:     selected,
+		focused:      focused,
+	})
+}
+
+func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLayers) string {
 	depth := max(0, item.Depth)
 	marker := " "
-	icon := fileIcon
+	icon := treeFileIcon(item.Label)
 	label := SafeSingleLine(item.Label)
 	if item.Directory {
 		marker = "▸"
-		icon = closedFolderIcon
 		if item.Expanded {
 			marker = "▾"
-			icon = openFolderIcon
 		}
+		icon = treeDirectoryIcon(item.Expanded)
 		label += "/"
+	} else if layers.statusMarker != "" {
+		marker = fit(SafeSingleLine(layers.statusMarker), 1)
 	}
-	prefix := " " + strings.Repeat("  ", depth) + dimStyle.Render(marker+" "+icon) + " "
-	row := fit(prefix+label, width)
-	if !selected {
-		return row
+	styles := resolveTreeRowStyles(item, icon, layers)
+	selection := styles.row
+	row := selection.Render(" "+strings.Repeat("  ", depth)) +
+		styles.marker.Inherit(selection).Render(marker) + selection.Render(" ") +
+		styles.icon.Inherit(selection).Render(icon.glyph) + selection.Render(" ") +
+		styles.filename.Inherit(selection).Render(label)
+	row = lipgloss.NewStyle().MaxWidth(width).Render(row)
+	return row + selection.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
+}
+
+func treeNavigatorStatus(status NavigatorStatus) (string, treeStatusAccent) {
+	switch status {
+	case StatusModified:
+		return "M", treeStatusModified
+	case StatusAdded:
+		return "A", treeStatusAdded
+	case StatusDeleted:
+		return "D", treeStatusDeleted
+	case StatusRenamed:
+		return "R", treeStatusRenamed
+	case StatusUntracked:
+		return "?", treeStatusUntracked
+	case StatusIgnored:
+		return "I", treeStatusNone
+	default:
+		return "", treeStatusNone
 	}
-	return selectionStyle(focused).Render(row)
 }
 
 func renderCompactNavigatorRow(item NavigatorRow, width int, selected, focused bool) string {
@@ -312,12 +354,14 @@ func renderReader(model Model) string {
 	if scrollbar != nil {
 		contentWidth--
 	}
+	commitColumns := commitrow.Measure(commitRows, contentWidth)
+	now := time.Now()
 	for row := 0; row < g.ReaderRows.Height; row++ {
 		index := model.ReaderOffset + row
 		if index < total {
 			line := ""
 			if len(commitRows) != 0 {
-				line = renderCommitRow(commitRows[index], contentWidth)
+				line = renderCommitRow(commitRows[index], commitColumns, contentWidth, false, false, now)
 			} else {
 				line = fit(renderLine(content[index]), contentWidth)
 			}
@@ -340,47 +384,6 @@ func renderReader(model Model) string {
 		renderTitle(title, model.Focus == navigation.FocusReader),
 		rows,
 	)
-}
-
-func renderCommitRow(row CommitRow, width int) string {
-	lane := renderSegments(row.Lane)
-	if lane == "" {
-		lane = yellowStyle.Render("○")
-	}
-	prefix := " " + lane + " " + headerStyle.Render(SafeSingleLine(row.ShortOID)) + "  "
-	if lipgloss.Width(prefix) >= width {
-		return fit(prefix, width)
-	}
-	available := width - lipgloss.Width(prefix)
-	subject := SafeSingleLine(row.Subject)
-	subjectWidth := lipgloss.Width(subject)
-	if subjectWidth >= available {
-		return fit(prefix+clip(subject, available), width)
-	}
-
-	value := prefix + subject
-	remaining := available - subjectWidth
-	trail := renderCommitTrail(row)
-	if trail != "" && remaining >= 3 {
-		value += clip("  "+trail, remaining)
-	}
-	return fit(value, width)
-}
-
-func renderCommitTrail(row CommitRow) string {
-	parts := make([]string, 0, len(row.Decorations)+2)
-	for _, decoration := range row.Decorations {
-		if decoration.Text != "" {
-			parts = append(parts, renderToneText(SafeSingleLine(decoration.Text), decoration.Tone))
-		}
-	}
-	if row.Author != "" {
-		parts = append(parts, dimStyle.Render(SafeSingleLine(row.Author)))
-	}
-	if row.Age != "" {
-		parts = append(parts, dimStyle.Render(SafeSingleLine(row.Age)))
-	}
-	return strings.Join(parts, "  ")
 }
 
 func renderSegments(segments []Segment) string {

@@ -2,10 +2,12 @@ package app
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -254,6 +256,38 @@ func TestRefsPresentationCoversLoadingErrorsAndTypedRowMetadata(t *testing.T) {
 	}
 	if view.ReaderEmpty.Tone != ui.ToneError || !strings.Contains(view.ReaderTitle, "topic") || !strings.Contains(view.ReaderTitle, refsOIDb[:7]) {
 		t.Fatalf("preview error/title = %+v / %q", view.ReaderEmpty, view.ReaderTitle)
+	}
+}
+
+func TestRefCommitRowsProjectIntoSharedCommitPresentation(t *testing.T) {
+	t.Parallel()
+	rows := refCommitRows([]repository.RefCommit{{
+		OID:          refsOIDa,
+		ShortOID:     refsOIDa[:7],
+		Subject:      "merge subject",
+		Author:       "Ada",
+		AuthoredUnix: 123,
+		Decorations: []repository.RefDecoration{
+			{Kind: repository.RefDecorationBranch, Label: "main"},
+			{Kind: repository.RefDecorationRemote, Label: "origin/main"},
+			{Kind: repository.RefDecorationTag, Label: "v1"},
+		},
+		Merge: true,
+	}})
+	if len(rows) != 1 {
+		t.Fatalf("shared rows = %#v", rows)
+	}
+	row := rows[0]
+	if row.OID != refsOIDa || row.ShortOID != refsOIDa[:7] || row.Subject != "merge subject" || row.Author != "Ada" || row.AuthoredUnix != 123 || !row.Merge {
+		t.Fatalf("shared row facts = %+v", row)
+	}
+	wantRefs := []commitrow.Ref{
+		{Kind: commitrow.Branch, Name: "main"},
+		{Kind: commitrow.Remote, Name: "origin/main"},
+		{Kind: commitrow.Tag, Name: "v1"},
+	}
+	if !reflect.DeepEqual(row.Refs, wantRefs) || strings.TrimSpace(row.Graph.Text()) != "◎" {
+		t.Fatalf("shared row presentation = graph %q refs %#v", row.Graph.Text(), row.Refs)
 	}
 }
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -31,29 +32,33 @@ type Segment struct {
 	Tone Tone
 }
 
+// NavigatorStatus is semantic repository state. Rendering owns its restrained
+// marker while later icon work can style the same metadata independently.
+type NavigatorStatus uint8
+
+const (
+	StatusNone NavigatorStatus = iota
+	StatusModified
+	StatusAdded
+	StatusDeleted
+	StatusRenamed
+	StatusUntracked
+	StatusIgnored
+)
+
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
 	Identity  string
 	Label     string
 	Prefix    []Segment
 	Suffix    []Segment
+	Commit    *commitrow.Row
 	Tree      bool
 	Depth     int
 	Directory bool
 	Expanded  bool
-}
-
-// CommitRow is the reusable compact history presentation seam shared by Git
-// surfaces. Lane accepts graph cells from the Log component; Refs may supply a
-// single fallback node without implementing graph layout itself.
-type CommitRow struct {
-	Identity    string
-	Lane        []Segment
-	ShortOID    string
-	Subject     string
-	Decorations []Segment
-	Author      string
-	Age         string
+	Status    NavigatorStatus
+	Dimmed    bool
 }
 
 // ChangeSummary is the aggregate worktree status shown in the header.
@@ -82,7 +87,7 @@ type Model struct {
 
 	ReaderTitle      string
 	ReaderLines      []Line
-	ReaderCommitRows []CommitRow
+	ReaderCommitRows []commitrow.Row
 	ReaderEmpty      Line
 	ReaderOffset     int
 }
