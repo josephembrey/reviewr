@@ -104,30 +104,10 @@ func Layout(commits []Commit) []Row {
 }
 
 func nextPipes(previous []pipe, commit string, parents []string) []pipe {
-	maxPos := 0
-	current := make([]pipe, 0, len(previous))
-	for _, item := range previous {
-		maxPos = max(maxPos, item.toPos)
-		if item.kind != terminates {
-			current = append(current, item)
-		}
-	}
-	pos := min(maxPos+1, maxTrackedLane)
-	for _, item := range current {
-		if item.to == commit {
-			pos = item.toPos
-			break
-		}
-	}
-
-	taken := make(map[int]struct{})
-	traversed := make(map[int]struct{})
-	continuingSpots := make(map[int]struct{})
-	for _, item := range current {
-		if item.to != commit {
-			continuingSpots[item.toPos] = struct{}{}
-		}
-	}
+	current, maxPos := livePipes(previous)
+	pos := commitLane(current, commit, maxPos)
+	continuingSpots := continuingLanes(current, commit)
+	var taken, traversed laneSet
 	firstParent := emptyTree
 	if len(parents) > 0 {
 		firstParent = parents[0]
@@ -136,7 +116,50 @@ func nextPipes(previous []pipe, commit string, parents []string) []pipe {
 	next = append(next, pipe{
 		from: commit, to: firstParent, fromPos: pos, toPos: pos, kind: starts, color: Color(pos),
 	})
+	next = routePipesThroughCommit(next, current, commit, pos, &taken, &traversed)
+	if len(parents) > 1 {
+		next = startAdditionalParents(next, parents[1:], commit, pos, &taken, &continuingSpots)
+	}
+	next = routePipesRightOfCommit(next, current, commit, pos, &taken, &traversed)
 
+	sortPipes(next)
+	return next
+}
+
+type laneSet [maxTrackedPipes]bool
+
+func livePipes(previous []pipe) ([]pipe, int) {
+	maxPos := 0
+	current := make([]pipe, 0, len(previous))
+	for _, item := range previous {
+		maxPos = max(maxPos, item.toPos)
+		if item.kind != terminates {
+			current = append(current, item)
+		}
+	}
+	return current, maxPos
+}
+
+func commitLane(pipes []pipe, commit string, maxPos int) int {
+	for _, item := range pipes {
+		if item.to == commit {
+			return item.toPos
+		}
+	}
+	return min(maxPos+1, maxTrackedLane)
+}
+
+func continuingLanes(pipes []pipe, commit string) laneSet {
+	var lanes laneSet
+	for _, item := range pipes {
+		if item.to != commit {
+			lanes[item.toPos] = true
+		}
+	}
+	return lanes
+}
+
+func routePipesThroughCommit(next, current []pipe, commit string, pos int, taken, traversed *laneSet) []pipe {
 	for _, item := range current {
 		if len(next) >= maxTrackedPipes {
 			break
@@ -156,25 +179,27 @@ func nextPipes(previous []pipe, commit string, parents []string) []pipe {
 			traverse(item.fromPos, available, taken, traversed)
 		}
 	}
+	return next
+}
 
-	additionalParents := parents
-	if len(additionalParents) > 0 {
-		additionalParents = additionalParents[1:]
-	}
-	for _, parent := range additionalParents {
+func startAdditionalParents(next []pipe, parents []string, commit string, pos int, taken, continuing *laneSet) []pipe {
+	for _, parent := range parents {
 		if len(next) >= maxTrackedPipes {
 			break
 		}
-		available, ok := nextAvailableNew(taken, continuingSpots)
+		available, ok := nextAvailableNew(taken, continuing)
 		if !ok {
 			break
 		}
 		next = append(next, pipe{
 			from: commit, to: parent, fromPos: pos, toPos: available, kind: starts, color: Color(pos),
 		})
-		taken[available] = struct{}{}
+		taken[available] = true
 	}
+	return next
+}
 
+func routePipesRightOfCommit(next, current []pipe, commit string, pos int, taken, traversed *laneSet) []pipe {
 	for _, item := range current {
 		if len(next) >= maxTrackedPipes {
 			break
@@ -182,52 +207,49 @@ func nextPipes(previous []pipe, commit string, parents []string) []pipe {
 		if item.to == commit || item.toPos <= pos {
 			continue
 		}
-		last := item.toPos
-		for candidate := item.toPos; candidate > pos; candidate-- {
-			if _, exists := taken[candidate]; exists {
-				break
-			}
-			if _, exists := traversed[candidate]; exists {
-				break
-			}
-			last = candidate
-		}
 		item.fromPos = item.toPos
-		item.toPos = last
+		item.toPos = slideLeft(item.toPos, pos, taken, traversed)
 		item.kind = continues
 		next = append(next, item)
-		traverse(item.fromPos, last, taken, traversed)
+		traverse(item.fromPos, item.toPos, taken, traversed)
 	}
-
-	sortPipes(next)
 	return next
 }
 
-func nextAvailableContinuing(traversed map[int]struct{}) int {
+func slideLeft(from, boundary int, taken, traversed *laneSet) int {
+	last := from
+	for candidate := from; candidate > boundary; candidate-- {
+		if taken[candidate] || traversed[candidate] {
+			break
+		}
+		last = candidate
+	}
+	return last
+}
+
+func nextAvailableContinuing(traversed *laneSet) int {
 	for spot := 0; spot <= maxTrackedLane; spot++ {
-		if _, exists := traversed[spot]; !exists {
+		if !traversed[spot] {
 			return spot
 		}
 	}
 	return maxTrackedLane
 }
 
-func nextAvailableNew(taken, continuing map[int]struct{}) (int, bool) {
+func nextAvailableNew(taken, continuing *laneSet) (int, bool) {
 	for spot := 0; spot <= maxTrackedLane; spot++ {
-		_, isTaken := taken[spot]
-		_, isContinuing := continuing[spot]
-		if !isTaken && !isContinuing {
+		if !taken[spot] && !continuing[spot] {
 			return spot, true
 		}
 	}
 	return 0, false
 }
 
-func traverse(from, to int, taken, traversed map[int]struct{}) {
+func traverse(from, to int, taken, traversed *laneSet) {
 	for spot := min(from, to); spot <= max(from, to); spot++ {
-		traversed[spot] = struct{}{}
+		traversed[spot] = true
 	}
-	taken[to] = struct{}{}
+	taken[to] = true
 }
 
 func sortPipes(pipes []pipe) {
@@ -240,156 +262,4 @@ func sortPipes(pipes []pipe) {
 			pipes[current-1], pipes[current] = pipes[current], pipes[current-1]
 		}
 	}
-}
-
-type cellKind uint8
-
-const (
-	connection cellKind = iota
-	commitNode
-	mergeNode
-)
-
-type cell struct {
-	connections uint8
-	kind        cellKind
-	color       Color
-	rightColor  Color
-	rightSet    bool
-}
-
-const (
-	up    uint8 = 0b1000
-	down  uint8 = 0b0100
-	left  uint8 = 0b0010
-	right uint8 = 0b0001
-)
-
-func (c cell) has(direction uint8) bool { return c.connections&direction != 0 }
-
-func (c *cell) setUp(color Color) {
-	c.connections |= up
-	c.color = color
-}
-
-func (c *cell) setDown(color Color) {
-	c.connections |= down
-	c.color = color
-}
-
-func (c *cell) setLeft(color Color) {
-	c.connections |= left
-	if !c.has(up) && !c.has(down) {
-		c.color = color
-	}
-}
-
-func (c *cell) setRight(color Color, override bool) {
-	c.connections |= right
-	if !c.rightSet || override {
-		c.rightColor = color
-		c.rightSet = true
-	}
-}
-
-func (c cell) rendered() Cell {
-	glyph, horizontal := boxDrawingChars(c.connections)
-	switch c.kind {
-	case commitNode:
-		glyph = '○'
-	case mergeNode:
-		glyph = '◎'
-	}
-	horizontalColor := c.color
-	if c.rightSet {
-		horizontalColor = c.rightColor
-	}
-	return Cell{
-		Glyph:             glyph,
-		GlyphColor:        c.color,
-		GlyphColored:      glyph != ' ',
-		Horizontal:        horizontal,
-		HorizontalColor:   horizontalColor,
-		HorizontalColored: horizontal != ' ',
-	}
-}
-
-func renderPipeSet(pipes []pipe, merge bool) Row {
-	maxPos := 0
-	commitPos := 0
-	for _, item := range pipes {
-		if item.kind == starts {
-			commitPos = item.fromPos
-		} else if item.kind == terminates {
-			commitPos = item.toPos
-		}
-		maxPos = max(maxPos, item.right())
-	}
-	cells := make([]cell, min(maxPos+1, maxTrackedPipes))
-	for _, item := range pipes {
-		if item.kind == starts {
-			renderPipe(cells, item, true)
-		}
-	}
-	for _, item := range pipes {
-		if item.kind != starts && !(item.kind == terminates && item.fromPos == commitPos && item.toPos == commitPos) {
-			renderPipe(cells, item, false)
-		}
-	}
-	if commitPos >= len(cells) {
-		commitPos = len(cells) - 1
-	}
-	if merge {
-		cells[commitPos].kind = mergeNode
-	} else {
-		cells[commitPos].kind = commitNode
-	}
-	visible := min(len(cells), maxLanes)
-	row := Row{Cells: make([]Cell, visible)}
-	for index := range row.Cells {
-		row.Cells[index] = cells[index].rendered()
-	}
-	return row
-}
-
-func renderPipe(cells []cell, item pipe, overrideRightColor bool) {
-	if item.left() < 0 || item.right() >= len(cells) {
-		return
-	}
-	if item.left() != item.right() {
-		for index := item.left() + 1; index < item.right(); index++ {
-			cells[index].setLeft(item.color)
-			cells[index].setRight(item.color, overrideRightColor)
-		}
-		cells[item.left()].setRight(item.color, overrideRightColor)
-		cells[item.right()].setLeft(item.color)
-	}
-	if item.kind == starts || item.kind == continues {
-		cells[item.toPos].setDown(item.color)
-	}
-	if item.kind == terminates || item.kind == continues {
-		cells[item.fromPos].setUp(item.color)
-	}
-}
-
-func boxDrawingChars(connections uint8) (rune, rune) {
-	glyphs := [16][2]rune{
-		{' ', ' '},
-		{'╶', '─'},
-		{'─', ' '},
-		{'─', '─'},
-		{'╷', ' '},
-		{'╭', '─'},
-		{'╮', ' '},
-		{'┬', '─'},
-		{'╵', ' '},
-		{'╰', '─'},
-		{'╯', ' '},
-		{'┴', '─'},
-		{'│', ' '},
-		{'│', '─'},
-		{'│', ' '},
-		{'│', '─'},
-	}
-	return glyphs[connections][0], glyphs[connections][1]
 }
