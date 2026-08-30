@@ -63,7 +63,7 @@ func calculateReaderLayout(geometry ReaderGeometry, document ReaderDocument) Rea
 	for index, row := range document.Rows {
 		starts[index] = len(wraps)
 		value := SafeSingleLine(row.Text)
-		if row.Kind == ReaderFold {
+		if row.Kind == ReaderFold || row.Kind == ReaderFoldEnd {
 			// Fold controls are painted across the full content row and clipped
 			// there, so they always occupy exactly one visual row.
 			wraps = append(wraps, readerRange{right: ansi.StringWidth(value)})

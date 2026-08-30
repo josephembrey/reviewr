@@ -167,9 +167,16 @@ func (document ReaderDocument) contextFoldRows(progresses map[string]int, defaul
 		rows = append(rows, fold)
 		rows = append(rows, hidden[:visible]...)
 		rows = append(rows, document.Rows[hiddenEnd:end]...)
+		if visible > 0 && contextFoldSeparatesChanges(document.Rows, start, end) {
+			rows = append(rows, contextFoldEndRow(fold))
+		}
 		start = end
 	}
 	return rows
+}
+
+func contextFoldSeparatesChanges(rows []ReaderRow, start, end int) bool {
+	return start > 0 && end < len(rows) && changedReaderRow(rows[start-1]) && changedReaderRow(rows[end])
 }
 
 func contextFoldBounds(rows []ReaderRow, start, end int) (int, int, bool) {
@@ -241,5 +248,15 @@ func contextFoldRow(hidden []ReaderRow, expanded bool) ReaderRow {
 		Text:         fmt.Sprintf("%d unchanged lines", len(hidden)),
 		Tone:         ToneDefault,
 		FoldExpanded: expanded,
+	}
+}
+
+func contextFoldEndRow(fold ReaderRow) ReaderRow {
+	return ReaderRow{
+		Identity:   fold.Identity + ":end",
+		Kind:       ReaderFoldEnd,
+		Text:       "change resumes",
+		Tone:       ToneDefault,
+		FoldTarget: fold.Identity,
 	}
 }

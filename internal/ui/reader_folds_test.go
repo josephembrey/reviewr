@@ -58,8 +58,18 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 		t.Fatalf("hidden context remains visible: %q", text.String())
 	}
 	expanded := document.WithContextFolds(true)
-	if len(expanded.Rows) != len(document.Rows)+folds {
-		t.Fatalf("expanded rows = %d, want %d source rows plus %d controls", len(expanded.Rows), len(document.Rows), folds)
+	endMarkers := 0
+	for index, row := range expanded.Rows {
+		if row.Kind != ReaderFoldEnd {
+			continue
+		}
+		endMarkers++
+		if row.Text != "change resumes" || row.FoldTarget == "" || index+1 >= len(expanded.Rows) || expanded.Rows[index+1].Identity != "added-2" {
+			t.Fatalf("expanded end marker = %+v next=%+v", row, expanded.Rows[min(index+1, len(expanded.Rows)-1)])
+		}
+	}
+	if endMarkers != 1 || len(expanded.Rows) != len(document.Rows)+folds+endMarkers {
+		t.Fatalf("expanded rows = %d with %d folds and %d end markers", len(expanded.Rows), folds, endMarkers)
 	}
 	restored := make([]ReaderRow, 0, len(document.Rows))
 	for _, row := range expanded.Rows {
@@ -67,6 +77,9 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 			if !row.FoldExpanded {
 				t.Fatalf("expanded control lacks state: %+v", row)
 			}
+			continue
+		}
+		if row.Kind == ReaderFoldEnd {
 			continue
 		}
 		restored = append(restored, row)
@@ -143,13 +156,24 @@ func TestReaderContextGapsExpandIndependentlyAndDefineHunks(t *testing.T) {
 	}
 	expanded := document.WithContextFoldProgresses(map[string]int{identities[1]: 8}, 0, 8)
 	states := make(map[string]bool)
+	endMarkers := 0
 	for _, row := range expanded.Rows {
 		if row.Kind == ReaderFold {
 			states[row.Identity] = row.FoldExpanded
+		} else if row.Kind == ReaderFoldEnd {
+			endMarkers++
+			if row.FoldTarget != identities[1] {
+				t.Fatalf("fold end target = %q, want %q", row.FoldTarget, identities[1])
+			}
 		}
 	}
-	if states[identities[0]] || !states[identities[1]] || states[identities[2]] {
+	if states[identities[0]] || !states[identities[1]] || states[identities[2]] || endMarkers != 1 {
 		t.Fatalf("independent fold states = %#v", states)
+	}
+	for _, target := range expanded.HunkNavigationTargets() {
+		if expanded.Rows[target].Kind == ReaderFoldEnd {
+			t.Fatalf("fold end became hunk navigation target %d", target)
+		}
 	}
 }
 
@@ -186,6 +210,11 @@ func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	expanded := ansi.Strip(renderReaderFoldPayload(row.Text, width, true))
 	if !strings.HasPrefix(expanded, "── ▾ expanded · 12 unchanged lines ") {
 		t.Fatalf("expanded fold payload = %q", expanded)
+	}
+	end := renderReaderFoldEndPayload("change resumes", width)
+	endPlain := ansi.Strip(end)
+	if !strings.HasPrefix(endPlain, "── change resumes ") || lipgloss.Width(endPlain) != width || end != readerFoldEndStyle.Render(endPlain) {
+		t.Fatalf("fold end payload = %q", end)
 	}
 }
 

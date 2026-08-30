@@ -604,8 +604,8 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 				if layout, ok := m.activeReaderLayout(); ok {
 					if source, hit := layout.SourceAt(mouse.X, mouse.Y, readerOffset); hit {
 						row, _ := layout.Row(readerOffset + mouse.Y - layout.Geometry.Rows.Y)
-						if row.Kind == ui.ReaderFold {
-							return Action{Kind: ToggleReaderFold, Identity: row.Identity, Index: source}, true
+						if identity, fold := row.ContextFoldIdentity(); fold {
+							return Action{Kind: ToggleReaderFold, Identity: identity, Index: source}, true
 						}
 						return Action{Kind: SelectReaderLine, Index: source}, true
 					}

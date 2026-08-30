@@ -435,6 +435,67 @@ func TestReaderFoldClickExpandsAndRefoldsPersistentControl(t *testing.T) {
 	}
 }
 
+func TestExpandedFoldEndCollapsesFromKeyboardAndMouse(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 80})
+	model.controls.Reader = workspace.DiffReader
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerMode = workspace.DiffReader
+	model.files.place.Focus = navigation.FocusReader
+	document := foldableDiffDocument()
+	model.files.readerPresentation = &document
+	identities := document.ContextFoldIdentities()
+	if len(identities) < 2 {
+		t.Fatalf("fold identities = %#v, want an inter-hunk gap", identities)
+	}
+	identity := identities[1]
+
+	expand := func() {
+		changed, animating := model.files.setReaderContextFold(identity, true)
+		if !changed {
+			t.Fatal("inter-hunk fold did not expand")
+		}
+		finishReaderContextAnimation(&model, readerContextAnimationEffect(readerContextFiles, model.files.readerContext.generation, animating))
+	}
+	endIndex := func() int {
+		for index, row := range model.files.readerRows() {
+			if row.Kind == ui.ReaderFoldEnd && row.FoldTarget == identity {
+				return index
+			}
+		}
+		return -1
+	}
+
+	expand()
+	marker := endIndex()
+	if marker < 0 {
+		t.Fatal("expanded inter-hunk fold has no end marker")
+	}
+	model.files.place.ReaderCursor = marker
+	pending := model.apply(Action{Kind: CollapseReaderContext})
+	if model.files.readerContext.target(identity) || pending.kind != effectAnimateReaderContext {
+		t.Fatalf("h on fold end = target %v effect %+v", model.files.readerContext.target(identity), pending)
+	}
+	finishReaderContextAnimation(&model, pending)
+	if endIndex() >= 0 {
+		t.Fatal("collapsed fold retained its end marker")
+	}
+
+	expand()
+	marker = endIndex()
+	layout := ui.CalculateReaderLayout(model.geometry.ReaderRows, model.files.readerDocument())
+	visual := layout.VisualOffset(marker, 0) - model.activeReaderVisualOffset()
+	click := tea.MouseClickMsg(tea.Mouse{
+		X: model.geometry.ReaderRows.X, Y: model.geometry.ReaderRows.Y + visual, Button: tea.MouseLeft,
+	})
+	next, command := model.Update(click)
+	model = next.(Model)
+	if model.files.readerContext.target(identity) || command == nil || model.files.place.Focus != navigation.FocusReader {
+		t.Fatalf("fold end click = target %v focus %v command=%v", model.files.readerContext.target(identity), model.files.place.Focus, command != nil)
+	}
+}
+
 func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

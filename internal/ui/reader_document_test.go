@@ -22,6 +22,7 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 		{Kind: ReaderMetadata, Text: "metadataCode"},
 		{Kind: ReaderNotice, Text: "noticeCode"},
 		{Kind: ReaderFold, Text: "foldCode"},
+		{Kind: ReaderFoldEnd, Text: "change resumes", FoldTarget: "fold:1"},
 	}}
 	if got := document.GutterDigits(); got != 5 {
 		t.Fatalf("gutter digits = %d, want 5", got)
@@ -35,11 +36,13 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 		payload := row.Text
 		if row.Kind == ReaderFold {
 			payload = "── ▸ folded"
+		} else if row.Kind == ReaderFoldEnd {
+			payload = "── change resumes"
 		}
 		byteIndex := strings.Index(plain, payload)
 		codeX := lipgloss.Width(plain[:byteIndex])
 		wantX := geometry.Prefix
-		if row.Kind == ReaderFold {
+		if row.Kind == ReaderFold || row.Kind == ReaderFoldEnd {
 			wantX = 0
 		}
 		if codeX != wantX {
@@ -60,6 +63,9 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 	}
 	if plain := ansi.Strip(renderReaderRow(document.Rows[6], geometry, workspace.DiffHighlightSidebar)); !strings.HasPrefix(plain, "── ▸ folded") || lipgloss.Width(plain) != geometry.Content.Width {
 		t.Fatalf("fold did not replace the full gutter row: %q", plain)
+	}
+	if plain := ansi.Strip(renderReaderRow(document.Rows[7], geometry, workspace.DiffHighlightSidebar)); !strings.HasPrefix(plain, "── change resumes") || lipgloss.Width(plain) != geometry.Content.Width {
+		t.Fatalf("fold end did not replace the full gutter row: %q", plain)
 	}
 }
 
@@ -85,6 +91,13 @@ func TestReaderCursorSelectionOwnsTheWholeVisualLine(t *testing.T) {
 	wantFold := selectionStyle(true).Render(ansi.Strip(renderReaderFoldPayload(fold.Text, geometry.Content.Width, false)))
 	if selectedFold != wantFold {
 		t.Fatalf("selected fold = %q, want %q", selectedFold, wantFold)
+	}
+
+	end := ReaderRow{Kind: ReaderFoldEnd, Text: "change resumes", FoldTarget: "fold:1"}
+	selectedEnd := renderReaderRowPartSelected(end, geometry, workspace.DiffHighlightSidebar, false, true, true)
+	wantEnd := selectionStyle(true).Render(ansi.Strip(renderReaderFoldEndPayload(end.Text, geometry.Content.Width)))
+	if selectedEnd != wantEnd {
+		t.Fatalf("selected fold end = %q, want %q", selectedEnd, wantEnd)
 	}
 }
 

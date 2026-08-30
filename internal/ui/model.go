@@ -56,6 +56,7 @@ const (
 	ReaderMetadata
 	ReaderNotice
 	ReaderFold
+	ReaderFoldEnd
 )
 
 // ReaderRow is one logical rich-reader row. Text and Spans contain code or
@@ -74,6 +75,22 @@ type ReaderRow struct {
 	RemovedAfter  uint64
 	// FoldExpanded keeps a fold control visible while its context rows are shown.
 	FoldExpanded bool
+	// FoldTarget links a secondary fold control to the stable leading fold.
+	FoldTarget string
+}
+
+// ContextFoldIdentity returns the independently authored fold controlled by
+// this row. The leading control owns its identity; an expanded end marker
+// points back to that same identity while retaining its own place identity.
+func (row ReaderRow) ContextFoldIdentity() (string, bool) {
+	switch row.Kind {
+	case ReaderFold:
+		return row.Identity, row.Identity != ""
+	case ReaderFoldEnd:
+		return row.FoldTarget, row.FoldTarget != ""
+	default:
+		return "", false
+	}
 }
 
 // DisplayLine is the semantic identity shown in the one-sided gutter.
@@ -132,7 +149,7 @@ func (document ReaderDocument) GutterDigits() int {
 			maximum = max(maximum, row.OldLine)
 		case ReaderContext:
 			maximum = max(maximum, row.OldLine, row.NewLine)
-		case ReaderMetadata, ReaderNotice, ReaderFold:
+		case ReaderMetadata, ReaderNotice, ReaderFold, ReaderFoldEnd:
 			maximum = max(maximum, row.DisplayLine())
 		}
 	}

@@ -145,6 +145,8 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 	var line string
 	if row.Kind == ReaderFold {
 		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
+	} else if row.Kind == ReaderFoldEnd {
+		line = renderReaderFoldEndPayload(row.Text, width)
 	} else {
 		bar, barStyle := readerChangeBar(row, continuation)
 		number := readerLineNumber(row, geometry.Digits, continuation)
@@ -228,6 +230,18 @@ func renderReaderFoldPayload(text string, width int, expanded bool) string {
 		label += strings.Repeat("─", remaining)
 	}
 	return readerFoldStyle.Render(label)
+}
+
+func renderReaderFoldEndPayload(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	label := "── " + SafeSingleLine(text) + " "
+	label = clip(label, width)
+	if remaining := width - lipgloss.Width(label); remaining > 0 {
+		label += strings.Repeat("─", remaining)
+	}
+	return readerFoldEndStyle.Render(label)
 }
 
 func renderReaderPayload(row ReaderRow, background color.Color) string {
