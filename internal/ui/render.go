@@ -239,35 +239,36 @@ func renderNavigator(model Model) string {
 	)
 }
 
-const (
-	closedFolderIcon = ""
-	openFolderIcon   = ""
-	fileIcon         = ""
-)
-
 func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}
+	return renderTreeNavigatorRow(item, width, treeRowStyleLayers{selected: selected, focused: focused})
+}
+
+func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLayers) string {
 	depth := max(0, item.Depth)
 	marker := " "
-	icon := fileIcon
+	icon := treeFileIcon(item.Label)
 	label := SafeSingleLine(item.Label)
 	if item.Directory {
 		marker = "▸"
-		icon = closedFolderIcon
 		if item.Expanded {
 			marker = "▾"
-			icon = openFolderIcon
 		}
+		icon = treeDirectoryIcon(item.Expanded)
 		label += "/"
+	} else if layers.statusMarker != "" {
+		marker = fit(SafeSingleLine(layers.statusMarker), 1)
 	}
-	prefix := " " + strings.Repeat("  ", depth) + dimStyle.Render(marker+" "+icon) + " "
-	row := fit(prefix+label, width)
-	if !selected {
-		return row
-	}
-	return selectionStyle(focused).Render(row)
+	styles := resolveTreeRowStyles(item, icon, layers)
+	selection := styles.row
+	row := selection.Render(" "+strings.Repeat("  ", depth)) +
+		styles.marker.Inherit(selection).Render(marker) + selection.Render(" ") +
+		styles.icon.Inherit(selection).Render(icon.glyph) + selection.Render(" ") +
+		styles.filename.Inherit(selection).Render(label)
+	row = lipgloss.NewStyle().MaxWidth(width).Render(row)
+	return row + selection.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
 }
 
 func renderReader(model Model) string {
