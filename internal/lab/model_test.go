@@ -3,6 +3,7 @@
 package lab
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -76,5 +77,27 @@ func TestLabDiffFoldPagePreviewsThreeInteractiveModels(t *testing.T) {
 	plain = ansi.Strip(model.View(100, 24))
 	if !strings.Contains(plain, "3 collapsed hunks") || strings.Contains(plain, "func value() string") {
 		t.Fatalf("collapsed hunk preview is incoherent:\n%s", plain)
+	}
+}
+
+func TestLabANSIPaletteShowsEveryTerminalSlot(t *testing.T) {
+	t.Parallel()
+	model := New()
+	model = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	frame := model.View(100, 24)
+	width, height := lipgloss.Size(frame)
+	if width != 100 || height != 24 {
+		t.Fatalf("palette lab size = %dx%d, want 100x24", width, height)
+	}
+	plain := ansi.Strip(frame)
+	for index, name := range ansiColorNames {
+		want := fmt.Sprintf("%2d %-14s", index, name)
+		if occurrences := strings.Count(plain, want); occurrences != 2 {
+			t.Fatalf("palette slot %q occurs %d times, want foreground and background:\n%s", want, occurrences, plain)
+		}
+	}
+	if !strings.Contains(frame, "\x1b[90m") || !strings.Contains(frame, "\x1b[100m") {
+		t.Fatalf("palette does not emit bright-black foreground/background slots: %q", frame)
 	}
 }

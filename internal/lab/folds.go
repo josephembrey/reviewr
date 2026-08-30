@@ -121,8 +121,8 @@ func (model Model) viewFolds(width, height int) string {
 	width = max(0, width)
 	height = max(0, height)
 	lines := []string{
-		title.Render("lab / diff folds") + quiet.Render("   [tab: switchers]"),
-		quiet.Render("j/k choose solution  •  h/l collapse/expand  •  enter toggle  •  ctrl+l or esc close"),
+		title.Render("lab / diff folds"),
+		quiet.Render("tab next page  •  j/k choose solution  •  h/l collapse/expand  •  enter toggle  •  ctrl+l or esc close"),
 		renderFoldSelector(model),
 		"",
 	}

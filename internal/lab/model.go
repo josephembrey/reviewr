@@ -31,6 +31,9 @@ func (model Model) Update(msg tea.KeyPressMsg) Model {
 	if model.page == labPageFolds {
 		return model.updateFolds(msg)
 	}
+	if model.page == labPageANSIPalette {
+		return model
+	}
 	switch msg.String() {
 	case "j", "down":
 		model.selected = min(model.selected+1, len(variants)-1)

@@ -30,6 +30,7 @@ const (
 const (
 	labPageSwitchers = iota
 	labPageFolds
+	labPageANSIPalette
 	labPageCount
 )
 
@@ -61,10 +62,14 @@ var variants = []variantSpec{
 
 // View renders a fixed-size development page.
 func (model Model) View(width, height int) string {
-	if model.page == labPageFolds {
+	switch model.page {
+	case labPageFolds:
 		return model.viewFolds(width, height)
+	case labPageANSIPalette:
+		return model.viewANSIPalette(width, height)
+	default:
+		return model.viewSwitchers(width, height)
 	}
-	return model.viewSwitchers(width, height)
 }
 
 func (model Model) viewSwitchers(width, height int) string {
@@ -72,7 +77,7 @@ func (model Model) viewSwitchers(width, height int) string {
 	height = max(0, height)
 	lines := []string{
 		title.Render("lab / switchers"),
-		quiet.Render("j/k choose  •  h/l preview destination  •  1/2/3 destination  •  4/5/6 Files controls"),
+		quiet.Render("tab next page  •  j/k choose  •  h/l preview destination  •  1/2/3 destination  •  4/5/6 Files controls"),
 		"",
 	}
 	for index, spec := range variants {
