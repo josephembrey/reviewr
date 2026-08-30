@@ -675,7 +675,7 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 		return ""
 	}
 	if row.Kind == ReaderFold {
-		return renderReaderFoldPayload(row.Text, width)
+		return renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	}
 	changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 	background := changed && highlight == workspace.DiffHighlightBackground
@@ -717,11 +717,15 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 	return fit(line, width)
 }
 
-func renderReaderFoldPayload(text string, width int) string {
+func renderReaderFoldPayload(text string, width int, expanded bool) string {
 	if width <= 0 {
 		return ""
 	}
-	label := "── ▸ folded · " + SafeSingleLine(text) + " "
+	state := "▸ folded"
+	if expanded {
+		state = "▾ expanded"
+	}
+	label := "── " + state + " · " + SafeSingleLine(text) + " "
 	label = clip(label, width)
 	if remaining := width - lipgloss.Width(label); remaining > 0 {
 		label += strings.Repeat("─", remaining)

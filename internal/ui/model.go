@@ -68,6 +68,8 @@ type ReaderRow struct {
 	Spans    []TextSpan
 	OldLine  uint64
 	NewLine  uint64
+	// FoldExpanded keeps a fold control visible while its context rows are shown.
+	FoldExpanded bool
 }
 
 // DisplayLine is the semantic identity shown in the one-sided gutter.

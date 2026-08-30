@@ -31,15 +31,15 @@ func (document ReaderDocument) ContextFoldable() bool {
 // WithContextFolds derives compact diff presentation without changing the
 // semantic source document. Expanded documents preserve their original rows.
 func (document ReaderDocument) WithContextFolds(expanded bool) ReaderDocument {
-	if expanded || !document.ContextFoldable() {
+	if !document.ContextFoldable() {
 		return document
 	}
 	result := document
-	result.Rows = document.contextFoldRows()
+	result.Rows = document.contextFoldRows(expanded)
 	return result
 }
 
-func (document ReaderDocument) contextFoldRows() []ReaderRow {
+func (document ReaderDocument) contextFoldRows(expanded bool) []ReaderRow {
 	if document.Kind != ReaderDiffDocument || len(document.Rows) == 0 {
 		return document.Rows
 	}
@@ -72,7 +72,10 @@ func (document ReaderDocument) contextFoldRows() []ReaderRow {
 			continue
 		}
 		rows = append(rows, document.Rows[start:hiddenStart]...)
-		rows = append(rows, contextFoldRow(document.Rows[hiddenStart:hiddenEnd]))
+		rows = append(rows, contextFoldRow(document.Rows[hiddenStart:hiddenEnd], expanded))
+		if expanded {
+			rows = append(rows, document.Rows[hiddenStart:hiddenEnd]...)
+		}
 		rows = append(rows, document.Rows[hiddenEnd:end]...)
 		start = end
 	}
@@ -107,12 +110,13 @@ func changedReaderRow(row ReaderRow) bool {
 	return row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 }
 
-func contextFoldRow(hidden []ReaderRow) ReaderRow {
+func contextFoldRow(hidden []ReaderRow, expanded bool) ReaderRow {
 	first, last := hidden[0], hidden[len(hidden)-1]
 	return ReaderRow{
-		Identity: fmt.Sprintf("fold:%d:%d:%d:%d", first.OldLine, first.NewLine, last.OldLine, last.NewLine),
-		Kind:     ReaderFold,
-		Text:     fmt.Sprintf("%d unchanged lines", len(hidden)),
-		Tone:     ToneDefault,
+		Identity:     fmt.Sprintf("fold:%d:%d:%d:%d", first.OldLine, first.NewLine, last.OldLine, last.NewLine),
+		Kind:         ReaderFold,
+		Text:         fmt.Sprintf("%d unchanged lines", len(hidden)),
+		Tone:         ToneDefault,
+		FoldExpanded: expanded,
 	}
 }

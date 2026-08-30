@@ -43,7 +43,7 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 	for _, row := range compact.Rows {
 		if row.Kind == ReaderFold {
 			folds++
-			if row.DisplayLine() != 0 || row.Tone != ToneDefault || !strings.Contains(row.Text, "unchanged lines") {
+			if row.DisplayLine() != 0 || row.Tone != ToneDefault || row.FoldExpanded || !strings.Contains(row.Text, "unchanged lines") {
 				t.Fatalf("fold row = %+v", row)
 			}
 		}
@@ -56,8 +56,22 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 	if visible["context 1"] || visible["context 17"] || visible["context 34"] {
 		t.Fatalf("hidden context remains visible: %q", text.String())
 	}
-	if expanded := document.WithContextFolds(true); !reflect.DeepEqual(expanded.Rows, document.Rows) {
-		t.Fatal("expanded context changed the semantic document")
+	expanded := document.WithContextFolds(true)
+	if len(expanded.Rows) != len(document.Rows)+folds {
+		t.Fatalf("expanded rows = %d, want %d source rows plus %d controls", len(expanded.Rows), len(document.Rows), folds)
+	}
+	restored := make([]ReaderRow, 0, len(document.Rows))
+	for _, row := range expanded.Rows {
+		if row.Kind == ReaderFold {
+			if !row.FoldExpanded {
+				t.Fatalf("expanded control lacks state: %+v", row)
+			}
+			continue
+		}
+		restored = append(restored, row)
+	}
+	if !reflect.DeepEqual(restored, document.Rows) {
+		t.Fatal("expanded controls changed the semantic document rows")
 	}
 }
 
@@ -78,12 +92,34 @@ func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	t.Parallel()
 	const width = 44
 	row := ReaderRow{Kind: ReaderFold, Text: "12 unchanged lines"}
-	rendered := renderReaderFoldPayload(row.Text, width)
+	rendered := renderReaderFoldPayload(row.Text, width, false)
 	plain := ansi.Strip(rendered)
 	if !strings.HasPrefix(plain, "── ▸ folded · 12 unchanged lines ") || !strings.HasSuffix(plain, "─") || lipgloss.Width(plain) != width {
 		t.Fatalf("fold payload = %q, want full-width structural control", plain)
 	}
 	if rendered != readerFoldStyle.Render(plain) {
 		t.Fatalf("fold payload = %q, want normal-weight accent %q", rendered, readerFoldStyle.Render(plain))
+	}
+	expanded := ansi.Strip(renderReaderFoldPayload(row.Text, width, true))
+	if !strings.HasPrefix(expanded, "── ▾ expanded · 12 unchanged lines ") {
+		t.Fatalf("expanded fold payload = %q", expanded)
+	}
+}
+
+func TestReaderLayoutHitFoldUsesPaintedRowsAndExcludesScrollbar(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
+		{Kind: ReaderFold, Text: "12 unchanged lines"},
+		{Kind: ReaderInsertion, Text: "changed", NewLine: 20},
+	}}
+	layout := CalculateReaderLayout(Rect{X: 30, Y: 4, Width: 20, Height: 1}, document)
+	if !layout.HitFold(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 0) {
+		t.Fatal("painted fold row is not clickable")
+	}
+	if layout.HitFold(layout.Geometry.Scrollbar.X, layout.Geometry.Rows.Y, 0) {
+		t.Fatal("fold target claimed the scrollbar lane")
+	}
+	if layout.HitFold(layout.Geometry.Content.X, layout.Geometry.Rows.Y, 1) {
+		t.Fatal("non-fold row was clickable after scrolling")
 	}
 }

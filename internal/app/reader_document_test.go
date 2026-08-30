@@ -236,7 +236,7 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	}
 	model.files.place.ReaderOffset = readerIdentityIndex(compact.Rows, "removed")
 	model.apply(Action{Kind: ExpandReaderContext})
-	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows) ||
+	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows)+2 ||
 		model.files.readerRows()[model.files.place.ReaderOffset].Identity != "removed" {
 		t.Fatalf("expand lost place: expanded=%v offset=%d rows=%+v", model.files.readerContextExpanded, model.files.place.ReaderOffset, model.files.readerRows())
 	}
@@ -254,8 +254,37 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 		entry:        model.files.readerEntry,
 		presentation: document,
 	}, model.geometry.ReaderRows.Height)
-	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows) {
+	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows)+2 {
 		t.Fatalf("same-identity refresh reset authored fold state: expanded=%v rows=%d", model.files.readerContextExpanded, len(model.files.readerRows()))
+	}
+}
+
+func TestReaderFoldClickExpandsAndRefoldsPersistentControl(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
+	model.controls.Reader = workspace.DiffReader
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerMode = workspace.DiffReader
+	model.files.place.Focus = navigation.FocusNavigator
+	document := foldableDiffDocument()
+	model.files.readerPresentation = &document
+
+	click := tea.MouseClickMsg(tea.Mouse{
+		X: model.geometry.ReaderRows.X, Y: model.geometry.ReaderRows.Y, Button: tea.MouseLeft,
+	})
+	for _, test := range []struct {
+		expanded bool
+		label    string
+	}{{expanded: true, label: "expand"}, {expanded: false, label: "refold"}} {
+		next, command := model.Update(click)
+		model = next.(Model)
+		if command != nil || model.files.readerContextExpanded != test.expanded || model.files.place.Focus != navigation.FocusReader {
+			t.Fatalf("%s click = expanded %v focus %v command=%v", test.label, model.files.readerContextExpanded, model.files.place.Focus, command != nil)
+		}
+		if row := model.files.readerRows()[0]; row.Kind != ui.ReaderFold || row.FoldExpanded != test.expanded {
+			t.Fatalf("%s control = %+v", test.label, row)
+		}
 	}
 }
 

@@ -57,7 +57,14 @@ func calculateReaderLayout(geometry ReaderGeometry, document ReaderDocument) Rea
 	total := 0
 	for index, row := range document.Rows {
 		starts[index] = total
-		wraps[index] = readerWrapRanges(SafeSingleLine(row.Text), geometry.Code.Width)
+		value := SafeSingleLine(row.Text)
+		if row.Kind == ReaderFold {
+			// Fold controls are painted across the full content row and clipped
+			// there, so they always occupy exactly one visual row.
+			wraps[index] = []readerRange{{right: ansi.StringWidth(value)}}
+		} else {
+			wraps[index] = readerWrapRanges(value, geometry.Code.Width)
+		}
 		total += len(wraps[index])
 	}
 	starts[len(document.Rows)] = total
@@ -104,6 +111,20 @@ func (layout ReaderLayout) Row(visual int) (ReaderRow, bool) {
 	wrapped := layout.wraps[source][continuation]
 	row := sliceReaderRow(layout.document.Rows[source], wrapped.left, wrapped.right)
 	return row, continuation > 0
+}
+
+// HitFold reports whether a terminal cell lands on a painted fold-control row.
+// visualOffset is the same viewport offset used by renderReader.
+func (layout ReaderLayout) HitFold(x, y, visualOffset int) bool {
+	if !layout.Geometry.Content.Contains(x, y) || layout.Total == 0 {
+		return false
+	}
+	visual := visualOffset + y - layout.Geometry.Rows.Y
+	if visual < 0 || visual >= layout.Total {
+		return false
+	}
+	row, _ := layout.Row(visual)
+	return row.Kind == ReaderFold
 }
 
 // readerWrapRanges prefers whitespace and common code punctuation, then falls

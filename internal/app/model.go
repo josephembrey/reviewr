@@ -807,6 +807,18 @@ func (m *Model) apply(action Action) effect {
 				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 			}
 		}
+	case ToggleReaderContext:
+		if m.gitStashesActive() {
+			m.stashes.place.Focus = navigation.FocusReader
+			if m.stashes.setReaderContextExpanded(!m.stashes.readerContextExpanded) {
+				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+			}
+		} else if m.active == workspace.Files {
+			m.files.place.Focus = navigation.FocusReader
+			if m.files.setReaderContextExpanded(!m.files.readerContextExpanded) {
+				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+			}
+		}
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
 	default:
@@ -823,6 +835,11 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		return routeNotesMessage(msg, m.geometry, note.presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
 	}
 	place := m.activePlace()
+	if layout, ok := m.activeReaderLayout(); ok {
+		if action, handled := routeReaderFoldMessage(msg, layout, m.activeReaderVisualOffset()); handled {
+			return action, true
+		}
+	}
 	return routeMessageWithRows(msg, place.Focus, m.geometry, m.active, m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), m.activeReaderVisualOffset(), m.activeReaderLineCount(), m.activeNavigatorRows())
 }
 

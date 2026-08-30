@@ -38,6 +38,7 @@ const (
 	CollapseNavigatorSelection
 	ExpandReaderContext
 	CollapseReaderContext
+	ToggleReaderContext
 	FocusNavigator
 	FocusReader
 	SwapPanes
@@ -214,6 +215,18 @@ func routeNotesMessage(msg tea.Msg, geometry ui.Geometry, presentation notes.Pre
 
 func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, active workspace.Kind, controls workspace.Controls, dividerDragging, scrollbarDragging bool, top, fileCount, readerOffset, readerLineCount int) (Action, bool) {
 	return routeMessageWithRows(msg, focus, geometry, active, controls, dividerDragging, scrollbarDragging, top, fileCount, readerOffset, readerLineCount, nil)
+}
+
+func routeReaderFoldMessage(msg tea.Msg, layout ui.ReaderLayout, readerOffset int) (Action, bool) {
+	click, ok := msg.(tea.MouseClickMsg)
+	if !ok || click.Mouse().Button != tea.MouseLeft {
+		return Action{}, false
+	}
+	mouse := click.Mouse()
+	if !layout.HitFold(mouse.X, mouse.Y, readerOffset) {
+		return Action{}, false
+	}
+	return Action{Kind: ToggleReaderContext}, true
 }
 
 func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, active workspace.Kind, controls workspace.Controls, dividerDragging, scrollbarDragging bool, top, fileCount, readerOffset, readerLineCount int, rows []ui.NavigatorRow) (Action, bool) {
