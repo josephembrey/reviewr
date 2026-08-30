@@ -143,12 +143,14 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		return ""
 	}
 	var line string
+	var bar string
+	var barStyle lipgloss.Style
 	if row.Kind == ReaderFold {
 		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	} else if row.Kind == ReaderFoldEnd {
 		line = renderReaderFoldEndPayload(row.Text, width)
 	} else {
-		bar, barStyle := readerChangeBar(row, continuation)
+		bar, barStyle = readerChangeBar(row, continuation)
 		number := readerLineNumber(row, geometry.Digits, continuation)
 		changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 		if changed && highlight == workspace.DiffHighlightBackground {
@@ -161,7 +163,23 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 	if !selected {
 		return line
 	}
-	return selectionStyle(focused).Render(ansi.Strip(fit(line, width)))
+	plain := ansi.Strip(fit(line, width))
+	if highlight != workspace.DiffHighlightSidebar || bar == "" || bar == " " || !strings.HasPrefix(plain, bar) {
+		return selectionStyle(focused).Render(plain)
+	}
+	return selectedReaderBarStyle(barStyle, focused).Render(bar) +
+		selectionStyle(focused).Render(strings.TrimPrefix(plain, bar))
+}
+
+// selectedReaderBarStyle swaps the authored colors before applying reverse.
+// The terminal swaps them back while retaining the selection background, so
+// the one-cell diff marker keeps its semantic red/green foreground.
+func selectedReaderBarStyle(style lipgloss.Style, focused bool) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(style.GetBackground()).
+		Background(style.GetForeground()).
+		Bold(focused || style.GetBold()).
+		Reverse(true)
 }
 
 func readerChangeBar(row ReaderRow, continuation bool) (string, lipgloss.Style) {

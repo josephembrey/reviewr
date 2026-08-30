@@ -101,6 +101,44 @@ func TestReaderCursorSelectionOwnsTheWholeVisualLine(t *testing.T) {
 	}
 }
 
+func TestSelectedSidebarDiffBarsKeepTheirSemanticColor(t *testing.T) {
+	t.Parallel()
+	geometry := CalculateReaderGeometry(Rect{Width: 30, Height: 1}, ReaderDocument{
+		Kind: ReaderDiffDocument,
+	}, false)
+	for _, test := range []struct {
+		name string
+		row  ReaderRow
+	}{
+		{name: "addition", row: ReaderRow{Kind: ReaderInsertion, Text: "added", NewLine: 1}},
+		{name: "removal", row: ReaderRow{Kind: ReaderDeletion, Text: "removed", OldLine: 1}},
+		{name: "replacement boundary", row: ReaderRow{Kind: ReaderInsertion, Text: "replaced", NewLine: 1, RemovedBefore: 1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bar, style := readerChangeBar(test.row, false)
+			selectedStyle := selectedReaderBarStyle(style, true)
+			if !selectedStyle.GetReverse() {
+				t.Fatal("selected bar is not part of the reversed selection")
+			}
+			assertSameColor(t, selectedStyle.GetBackground(), style.GetForeground())
+			assertSameColor(t, selectedStyle.GetForeground(), style.GetBackground())
+
+			rendered := renderReaderRowPartSelected(
+				test.row, geometry, workspace.DiffHighlightSidebar, false, true, true,
+			)
+			if !strings.HasPrefix(rendered, selectedStyle.Render(bar)) {
+				t.Fatalf("selected row lost semantic bar: %q", rendered)
+			}
+			if got := lipgloss.Width(rendered); got != geometry.Content.Width {
+				t.Fatalf("selected row width = %d, want %d", got, geometry.Content.Width)
+			}
+			if plain := ansi.Strip(rendered); plain != ansi.Strip(renderReaderRow(test.row, geometry, workspace.DiffHighlightSidebar)) {
+				t.Fatalf("selection changed row content: %q", plain)
+			}
+		})
+	}
+}
+
 func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
