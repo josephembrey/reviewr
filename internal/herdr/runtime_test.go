@@ -147,6 +147,7 @@ func TestRuntimeDoesNothingWithoutPaneTitleCapability(t *testing.T) {
 		{},
 		{hosted: true, paneID: "pane"},
 		{hosted: true, binPath: "/bin/herdr"},
+		{hosted: true, paneID: "pane", binPath: "herdr"},
 	}
 	for _, host := range contexts {
 		runner := &fakeRunner{}

@@ -88,36 +88,50 @@ func (r *Runtime) Start() {
 // Close releases hosted resources on normal shutdown. It never clears a label
 // that existed before reviewr or one another actor changed while reviewr ran.
 func (r *Runtime) Close() {
-	r.mu.Lock()
-	if r.closing {
-		r.mu.Unlock()
+	done, cancel, closing := r.beginClose()
+	if !closing {
 		return
 	}
-	r.closing = true
-	done := r.startDone
-	cancel := r.startCancel
-	r.mu.Unlock()
-
 	if cancel != nil {
 		cancel()
 	}
-	if done != nil {
-		timer := time.NewTimer(r.timeout)
-		select {
-		case <-done:
-			timer.Stop()
-		case <-timer.C:
-			return
-		}
-	}
-
-	r.mu.Lock()
-	owned := r.ownsTitle
-	r.mu.Unlock()
-	if !owned {
+	if !waitForCapability(done, r.timeout) || !r.ownsPaneTitle() {
 		return
 	}
+	r.clearPaneTitle()
+}
 
+func (r *Runtime) beginClose() (chan struct{}, context.CancelFunc, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closing {
+		return nil, nil, false
+	}
+	r.closing = true
+	return r.startDone, r.startCancel, true
+}
+
+func waitForCapability(done <-chan struct{}, timeout time.Duration) bool {
+	if done == nil {
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func (r *Runtime) ownsPaneTitle() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ownsTitle
+}
+
+func (r *Runtime) clearPaneTitle() {
 	ctx, cancelClear := context.WithTimeout(context.Background(), r.timeout)
 	defer cancelClear()
 	label, err := r.currentPaneLabel(ctx)

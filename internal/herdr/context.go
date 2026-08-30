@@ -5,6 +5,8 @@
 // variables or launch Herdr commands independently.
 package herdr
 
+import "path/filepath"
+
 // LookupEnv is the environment lookup shape consumed by Detect.
 type LookupEnv func(string) (string, bool)
 
@@ -60,5 +62,5 @@ func (c Context) SocketPath() string { return c.socketPath }
 func (c Context) BinPath() string { return c.binPath }
 
 func (c Context) canLabelPane() bool {
-	return c.hosted && c.paneID != "" && c.binPath != ""
+	return c.hosted && c.paneID != "" && filepath.IsAbs(c.binPath)
 }
