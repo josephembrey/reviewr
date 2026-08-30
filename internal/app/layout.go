@@ -53,3 +53,60 @@ func (state layoutState) order(geometry ui.Geometry) ui.Geometry {
 	}
 	return geometry
 }
+
+func (m *Model) applyLayoutAction(action Action) {
+	switch action.Kind {
+	case Resize:
+		m.geometry = m.layout.resize(action.Width, action.Height)
+		if !ui.MeetsMinimumSize(action.Width, action.Height) {
+			m.layout.finishDrag()
+			m.scrollbar.finish()
+			m.note.finishPointers()
+		}
+		m.resizeWorkspaceState()
+		m.note.resize(m.geometry)
+	case StartPaneResize:
+		m.scrollbar.finish()
+		m.layout.startDrag()
+	case ResizePanes:
+		if m.layout.dragging {
+			m.geometry = m.layout.dragTo(action.Position, m.geometry.Screen.Width, m.geometry.Screen.Height)
+			m.resizeWorkspaceState()
+		}
+	case FinishPaneResize:
+		m.layout.finishDrag()
+	case SwapPanes:
+		m.scrollbar.finish()
+		m.geometry = m.layout.swap(m.geometry.Screen.Width, m.geometry.Screen.Height)
+		m.resizeWorkspaceState()
+	case StartScrollbarDrag:
+		m.layout.finishDrag()
+		m.scrollbar.start(action.Pane, action.Grab)
+		m.dragScrollbarTo(action.Position)
+	case DragScrollbar:
+		m.dragScrollbarTo(action.Position)
+	case FinishScrollbarDrag:
+		m.scrollbar.finish()
+	}
+}
+
+// resizeWorkspaceState preserves each workspace's semantic place while
+// clamping only the coordinates made invalid by the new shared geometry.
+func (m *Model) resizeWorkspaceState() {
+	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	if len(m.files.restoredReaderRows) == 0 &&
+		(m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil || m.files.readerDocument().Kind != ui.ReaderDocumentNone) {
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+	}
+	if m.history.summary.OID != "" {
+		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
+	}
+	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
+	if len(m.stashes.restoredReaderRows) == 0 &&
+		(m.stashes.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone) {
+		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+	}
+}

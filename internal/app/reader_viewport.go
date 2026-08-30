@@ -96,3 +96,62 @@ func (m *Model) rememberActiveReaderLayout(place *navigation.State, document ui.
 		foldable: document.HasContextFold(),
 	}
 }
+
+func (m *Model) activeReaderLineCount() int {
+	if layout, ok := m.activeReaderLayout(); ok {
+		return layout.Total
+	}
+	if m.gitStashesActive() {
+		return len(m.stashes.readerRows())
+	}
+	if m.gitRefsActive() {
+		return len(m.refs.commits)
+	}
+	if m.active == workspace.Git {
+		return len(commitSummaryLines(m.history.summary))
+	}
+	return len(m.files.readerRows())
+}
+
+func (m *Model) activeReaderLayout() (ui.ReaderLayout, bool) {
+	viewport, ok := m.activeReaderViewport()
+	return viewport.layout, ok
+}
+
+func (m *Model) activeReaderVisualOffset() int {
+	place := m.activePlace()
+	if layout, ok := m.activeReaderLayout(); ok {
+		return layout.VisualOffset(place.ReaderOffset, place.ReaderColumn)
+	}
+	return place.ReaderOffset
+}
+
+func (m *Model) setActiveReaderVisualOffset(offset int) {
+	place := m.activePlace()
+	if layout, ok := m.activeReaderLayout(); ok {
+		maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+		source, column := layout.SourceOffset(min(max(offset, 0), maximum))
+		place.ReaderOffset = source
+		place.ReaderColumn = column
+		return
+	}
+	place.ReaderOffset = min(max(offset, 0), max(0, m.activeReaderLineCount()-m.geometry.ReaderRows.Height))
+	place.ReaderColumn = 0
+}
+
+func (m *Model) scrollActiveReader(delta int) {
+	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
+}
+
+func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
+	if document.Kind == ui.ReaderDocumentNone {
+		place.ClampReader(0, m.geometry.ReaderRows.Height)
+		return
+	}
+	layout := ui.CalculateReaderLayout(m.geometry.ReaderRows, document)
+	maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+	source, column := layout.SourceOffset(min(layout.VisualOffset(place.ReaderOffset, place.ReaderColumn), maximum))
+	place.ReaderOffset = source
+	place.ReaderColumn = column
+	m.rememberActiveReaderLayout(place, document, layout)
+}

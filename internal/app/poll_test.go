@@ -75,6 +75,31 @@ func TestRepositoryPollResultsYieldToNewerUserActivity(t *testing.T) {
 	}
 }
 
+func TestEveryBackgroundRepositoryResultUsesTheSharedActivityGate(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.poll.activity = 2
+	results := []tea.Msg{
+		snapshotLoadedMsg{background: true, activity: 1},
+		reviewDocumentLoadedMsg{background: true, activity: 1},
+		reviewFileLoadedMsg{background: true, activity: 1},
+		fileLoadedMsg{background: true, activity: 1},
+		diffLoadedMsg{background: true, activity: 1},
+		commitsLoadedMsg{background: true, activity: 1},
+		commitLoadedMsg{background: true, activity: 1},
+		refSourcesLoadedMsg{background: true, activity: 1},
+		refCommitsLoadedMsg{background: true, activity: 1},
+		stashesLoadedMsg{background: true, activity: 1},
+		stashFilesLoadedMsg{background: true, activity: 1},
+		stashFileLoadedMsg{background: true, activity: 1},
+	}
+	for _, result := range results {
+		if model.acceptsBackgroundResult(result) {
+			t.Fatalf("stale %T bypassed the shared activity gate", result)
+		}
+	}
+}
+
 func TestRoutedInputAdvancesRepositoryActivity(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
