@@ -117,6 +117,30 @@ func TestCollapseAllKeepsNestedDirectoriesCollapsed(t *testing.T) {
 	}
 }
 
+func TestFoldStateRestoresAuthoredFoldersAndDefaultsNewFoldersByScope(t *testing.T) {
+	t.Parallel()
+	tree := New([]string{"src/a.go", "src/b.go", "test/a.go", "test/b.go"})
+	if !tree.Collapse(DirectoryIdentity("src")) {
+		t.Fatal("fixture src did not collapse")
+	}
+	state := tree.Folds()
+
+	tree.Rebuild([]string{"src/c.go", "src/d.go", "new/a.go", "new/b.go"})
+	tree.RestoreFolds(state, true)
+	src, _ := tree.Row(DirectoryIdentity("src"))
+	newDirectory, _ := tree.Row(DirectoryIdentity("new"))
+	if src.Expanded || newDirectory.Expanded {
+		t.Fatalf("collapsed-default restore = src %+v new %+v", src, newDirectory)
+	}
+
+	tree.RestoreFolds(state, false)
+	src, _ = tree.Row(DirectoryIdentity("src"))
+	newDirectory, _ = tree.Row(DirectoryIdentity("new"))
+	if src.Expanded || !newDirectory.Expanded {
+		t.Fatalf("expanded-default restore = src %+v new %+v", src, newDirectory)
+	}
+}
+
 func TestFirstVisibleFileSkipsDirectories(t *testing.T) {
 	t.Parallel()
 	tree := New([]string{"src/a.go", "src/b.go", "root.go"})

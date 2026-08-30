@@ -39,6 +39,13 @@ type Tree struct {
 	files       []string
 }
 
+// FoldState is a scope-local snapshot of known and collapsed directories.
+// Its internals stay private so only Tree can apply it to a new hierarchy.
+type FoldState struct {
+	known     map[string]struct{}
+	collapsed map[string]struct{}
+}
+
 type directory struct {
 	dirs  map[string]*directory
 	files map[string]string
@@ -86,6 +93,28 @@ func (t Tree) Files() []string { return append([]string(nil), t.files...) }
 
 // FileCount reports complete repository file count without allocating a copy.
 func (t Tree) FileCount() int { return len(t.files) }
+
+// Folds captures directory state independently of the current visible rows.
+func (t Tree) Folds() FoldState {
+	return FoldState{
+		known:     cloneSet(t.directories),
+		collapsed: cloneSet(t.collapsed),
+	}
+}
+
+// RestoreFolds applies authored state to surviving directories. Directories
+// absent from the saved hierarchy follow collapseNew.
+func (t *Tree) RestoreFolds(state FoldState, collapseNew bool) {
+	t.collapsed = make(map[string]struct{})
+	for path := range t.directories {
+		_, known := state.known[path]
+		_, collapsed := state.collapsed[path]
+		if collapsed || (collapseNew && !known) {
+			t.collapsed[path] = struct{}{}
+		}
+	}
+	t.derive()
+}
 
 // Row resolves either a visible or hidden row identity.
 func (t Tree) Row(identity string) (Row, bool) {
@@ -273,6 +302,14 @@ func sortedKeys[T any](values map[string]T) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func cloneSet(source map[string]struct{}) map[string]struct{} {
+	clone := make(map[string]struct{}, len(source))
+	for value := range source {
+		clone[value] = struct{}{}
+	}
+	return clone
 }
 
 func join(parent, child string) string {

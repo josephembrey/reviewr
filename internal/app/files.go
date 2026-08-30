@@ -12,10 +12,13 @@ import (
 )
 
 type filesState struct {
-	place    navigation.State
-	tree     filetree.Tree
-	snapshot repository.Snapshot
-	entries  []repository.Entry
+	place          navigation.State
+	tree           filetree.Tree
+	folds          map[workspace.FileSet]filetree.FoldState
+	treeScope      workspace.FileSet
+	treeScopeReady bool
+	snapshot       repository.Snapshot
+	entries        []repository.Entry
 
 	readerEntry           repository.Entry
 	readerMode            workspace.ReaderMode
@@ -57,6 +60,7 @@ func newFilesState() filesState {
 	return filesState{
 		place:            navigation.State{Focus: navigation.FocusNavigator},
 		tree:             filetree.New(nil),
+		folds:            make(map[workspace.FileSet]filetree.FoldState),
 		listGeneration:   1,
 		reviewGeneration: 1,
 		listLoading:      true,
@@ -169,12 +173,16 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	oldRows := state.tree.Rows()
 	oldEntries := append([]repository.Entry(nil), state.entries...)
 	oldReader := state.readerEntry
+	if state.treeScopeReady {
+		state.folds[state.treeScope] = state.tree.Folds()
+	}
 
 	entries := entriesForScope(state.snapshot, scope)
 	state.tree.Rebuild(entryPaths(entries))
-	if firstLoad {
-		state.tree.CollapseAll()
-	}
+	state.tree.RestoreFolds(state.folds[scope], scope == workspace.AllFiles)
+	state.treeScope = scope
+	state.treeScopeReady = true
+	state.folds[scope] = state.tree.Folds()
 	state.reconcileCursor(oldRows)
 	state.entries = orderEntries(entries, state.tree.Files())
 	if firstLoad {

@@ -41,7 +41,7 @@ func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 	}
 }
 
-func TestFileTreeStartsFullyCollapsed(t *testing.T) {
+func TestFileTreeDefaultsMatchExplorerAndSourceControlScopes(t *testing.T) {
 	t.Parallel()
 	state := newFilesState()
 	state, pending := state.landSnapshot(snapshotLoadedMsg{
@@ -75,6 +75,23 @@ func TestFileTreeStartsFullyCollapsed(t *testing.T) {
 	row, _ := state.tree.Row(filetree.DirectoryIdentity("src/ui"))
 	if row.Expanded {
 		t.Fatalf("nested directory expanded with its parent: %+v", row)
+	}
+
+	changed := newFilesState()
+	changed, _ = changed.landSnapshot(snapshotLoadedMsg{
+		generation: changed.listGeneration,
+		snapshot: snapshotOf(
+			repository.Entry{Path: "src/a.go", State: repository.FileModified},
+			repository.Entry{Path: "src/b.go", State: repository.FileModified},
+			repository.Entry{Path: "src/ui/render.go", State: repository.FileModified},
+			repository.Entry{Path: "src/ui/theme.go", State: repository.FileModified},
+		),
+	}, workspace.ChangedFiles, workspace.DiffReader, 10)
+	for _, path := range []string{"src", "src/ui"} {
+		row, ok := changed.tree.Row(filetree.DirectoryIdentity(path))
+		if !ok || !row.Expanded {
+			t.Fatalf("initial Changed directory %q = %#v, %v; want expanded", path, row, ok)
+		}
 	}
 }
 
@@ -162,7 +179,7 @@ func TestFileRefreshPreservesHiddenOpenFileAndCollapsedDirectory(t *testing.T) {
 	}
 }
 
-func TestScopeSwitchDerivesOneTreeAndPreservesRoleReaderAndFold(t *testing.T) {
+func TestScopeSwitchUsesIndependentFoldsAndPreservesRoleReader(t *testing.T) {
 	t.Parallel()
 	state := loadedFilesState(t,
 		repository.Entry{Path: "src/a.go", State: repository.FileUnchanged},
@@ -191,8 +208,12 @@ func TestScopeSwitchDerivesOneTreeAndPreservesRoleReaderAndFold(t *testing.T) {
 	if pending.entry.Path == "" || pending.entry.Path == "z.go" || state.readerEntry.Path != pending.entry.Path {
 		t.Fatalf("reader fallback = %+v / %+v", pending, state.readerEntry)
 	}
-	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
-		t.Fatalf("surviving src fold = %#v, %v", row, ok)
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || !row.Expanded {
+		t.Fatalf("first Changed projection did not default src open: %#v, %v", row, ok)
+	}
+	state.selectIdentity(filetree.DirectoryIdentity("src"))
+	if !state.collapseSelected(10) {
+		t.Fatal("authored Changed fold did not collapse src")
 	}
 	for _, entry := range state.entries {
 		if entry.State == repository.FileIgnored || entry.State == repository.FileUnchanged {
@@ -211,7 +232,11 @@ func TestScopeSwitchDerivesOneTreeAndPreservesRoleReaderAndFold(t *testing.T) {
 		t.Fatalf("surviving reader place changed: %+v", state)
 	}
 	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
-		t.Fatalf("src fold lost returning to All: %#v, %v", row, ok)
+		t.Fatalf("All fold state lost after visiting Changed: %#v, %v", row, ok)
+	}
+	_ = state.switchScope(workspace.ChangedFiles, workspace.FileReader, 10)
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
+		t.Fatalf("authored Changed fold state was not restored: %#v, %v", row, ok)
 	}
 }
 

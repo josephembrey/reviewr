@@ -315,7 +315,7 @@ func TestDirectoryRollupUsesHiddenChangedDescendantsAndUnchangedHasNoBadge(t *te
 	}
 }
 
-func TestInitialNestedCollapseCoexistsWithReviewBadgesAndRollups(t *testing.T) {
+func TestInitialChangedExpansionCoexistsWithReviewBadgesAndRollups(t *testing.T) {
 	reviewed := testComparison("src/reviewed.go", "head", "reviewed-old", "reviewed-new")
 	nestedGap := testComparison("src/nested/gap.go", "head", "gap-old", "gap-new")
 	nestedGapTwo := testComparison("src/nested/other.go", "head", "other-old", "other-new")
@@ -344,26 +344,34 @@ func TestInitialNestedCollapseCoexistsWithReviewBadgesAndRollups(t *testing.T) {
 
 	for _, path := range []string{"src", "src/nested"} {
 		row, ok := state.tree.Row(filetree.DirectoryIdentity(path))
-		if !ok || row.Expanded {
-			t.Fatalf("initial directory %q = %+v, %v; want collapsed", path, row, ok)
+		if !ok || !row.Expanded {
+			t.Fatalf("initial directory %q = %+v, %v; want expanded", path, row, ok)
 		}
 	}
 	view := state.viewModel(ui.Calculate(80, 24))
-	if got, want := len(view.NavigatorRows), 2; got != want {
+	if got, want := len(view.NavigatorRows), 6; got != want {
 		t.Fatalf("initial visible rows = %d, want %d: %+v", got, want, view.NavigatorRows)
 	}
 	for _, row := range view.NavigatorRows {
 		switch row.Identity {
 		case filetree.DirectoryIdentity("src"):
 			if row.Progress != "1/3" || row.Review != nil {
-				t.Fatalf("collapsed directory review presentation = %+v", row)
+				t.Fatalf("source directory review presentation = %+v", row)
 			}
-		case filetree.FileIdentity("root.go"):
+		case filetree.DirectoryIdentity("src/nested"):
+			if row.Progress != "0/2" || row.Review != nil {
+				t.Fatalf("nested directory review presentation = %+v", row)
+			}
+		case filetree.FileIdentity("src/reviewed.go"):
+			if row.Review == nil || *row.Review != reviewdomain.Reviewed || row.Progress != "" {
+				t.Fatalf("reviewed file presentation = %+v", row)
+			}
+		case filetree.FileIdentity("root.go"), filetree.FileIdentity("src/nested/gap.go"), filetree.FileIdentity("src/nested/other.go"):
 			if row.Review == nil || *row.Review != reviewdomain.Unreviewed || row.Progress != "" {
 				t.Fatalf("visible changed-file review presentation = %+v", row)
 			}
 		default:
-			t.Fatalf("collapsed descendant leaked into initial rows: %+v", row)
+			t.Fatalf("unexpected Changed row: %+v", row)
 		}
 	}
 }
