@@ -43,10 +43,10 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	if command := key('1'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git switch = active %v command=%v", model.active, command != nil)
 	}
-	if command := key('2'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
+	if command := key('4'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
 		t.Fatalf("Refs switch = controls %+v refs %+v command=%v", model.controls, model.refs, command != nil)
 	}
-	command := key('2')
+	command := key('4')
 	if command == nil || model.controls.Git != workspace.GitStashes || !model.stashes.listLoading {
 		t.Fatalf("Stashes switch = controls %+v state %+v command=%v", model.controls, model.stashes, command != nil)
 	}
@@ -90,11 +90,11 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	model.files.place.ReaderOffset = 7
 	model.history.place.ReaderOffset = 3
 	model.stashes.place.ReaderOffset = 2
-	if command := key('2'); command != nil || model.controls.Git != workspace.GitLog || model.activePlace().ReaderOffset != 3 {
+	if command := key('4'); command != nil || model.controls.Git != workspace.GitLog || model.activePlace().ReaderOffset != 3 {
 		t.Fatalf("Log did not restore independent place: controls %+v place %+v", model.controls, model.activePlace())
 	}
-	key('2')
-	if command := key('2'); command != nil || model.controls.Git != workspace.GitStashes || model.activePlace().ReaderOffset != 2 || model.stashes.reader.Change.Path != "other.go" {
+	key('4')
+	if command := key('4'); command != nil || model.controls.Git != workspace.GitStashes || model.activePlace().ReaderOffset != 2 || model.stashes.reader.Change.Path != "other.go" {
 		t.Fatalf("Stashes did not restore independent place: controls %+v stash %+v", model.controls, model.stashes)
 	}
 	model.apply(Action{Kind: ShowFiles})
@@ -234,7 +234,7 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	state.readerFileID = state.files[1].Identity()
 	state.reader = repository.ChangeDocument{
 		Change: state.files[1],
-		Patch:  repository.File{Path: "renamed.go", Kind: repository.FileReady, Content: "diff --git a/before.go b/renamed.go\n-old\n+new"},
+		Patch:  repository.File{Path: "renamed.go", Kind: repository.FileReady, Content: "diff --git a/before.go b/renamed.go\n@@ -1 +1 @@\n-old\n+new"},
 	}
 
 	geometry := ui.Calculate(120, 14)
@@ -245,7 +245,7 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	frame := ui.Render(model)
 	plain := ansi.Strip(frame)
 	for _, want := range []string{
-		"2 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "-old", "+new", "f/F move files",
+		"4 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "old", "new", "f/F move files",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stash frame misses %q:\n%s", want, plain)
@@ -257,11 +257,11 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 		t.Fatalf("stash selector/stats lack semantic colors: %q", frame)
 	}
 	rowY := geometry.NavigatorRows.Y
-	hit := geometry.HitTest(geometry.NavigatorRows.X, rowY, workspace.Git, model.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerLines()))
+	hit := geometry.HitTest(geometry.NavigatorRows.X, rowY, workspace.Git, model.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerRows()))
 	if hit.Kind != ui.HitNavigatorRow || hit.Index != 0 {
 		t.Fatalf("stash mouse row hit = %+v", hit)
 	}
-	blank := geometry.HitTest(geometry.NavigatorRows.X, rowY+1, workspace.Git, model.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerLines()))
+	blank := geometry.HitTest(geometry.NavigatorRows.X, rowY+1, workspace.Git, model.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerRows()))
 	if blank.Kind != ui.HitNavigator {
 		t.Fatalf("blank stash row hit = %+v", blank)
 	}
@@ -309,14 +309,14 @@ func TestStashViewUsesSharedNavigatorAndReaderScrollbars(t *testing.T) {
 	if !ok {
 		t.Fatal("scrollable stash rows produced no navigator scrollbar")
 	}
-	reader, ok := ui.CalculateScrollbar(geometry.ReaderRows, len(state.readerLines()), state.place.ReaderOffset)
+	reader, ok := ui.CalculateScrollbar(geometry.ReaderRows, len(state.readerRows()), state.place.ReaderOffset)
 	if !ok {
 		t.Fatal("scrollable stash diff produced no reader scrollbar")
 	}
-	if hit := geometry.HitTest(navigator.Thumb.X, navigator.Thumb.Y, workspace.Git, presentation.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerLines())); hit.Kind != ui.HitNavigatorScrollbar {
+	if hit := geometry.HitTest(navigator.Thumb.X, navigator.Thumb.Y, workspace.Git, presentation.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerRows())); hit.Kind != ui.HitNavigatorScrollbar {
 		t.Fatalf("stash navigator scrollbar hit = %+v", hit)
 	}
-	if hit := geometry.HitTest(reader.Thumb.X, reader.Thumb.Y, workspace.Git, presentation.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerLines())); hit.Kind != ui.HitReaderScrollbar {
+	if hit := geometry.HitTest(reader.Thumb.X, reader.Thumb.Y, workspace.Git, presentation.Controls, state.place.Top, len(state.place.Items), state.place.ReaderOffset, len(state.readerRows())); hit.Kind != ui.HitReaderScrollbar {
 		t.Fatalf("stash reader scrollbar hit = %+v", hit)
 	}
 }

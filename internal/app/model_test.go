@@ -474,6 +474,8 @@ func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 		Content: strings.Repeat("line\n", 100),
 	}
 	model.files.place.Focus = navigation.FocusReader
+	model.files.readerEntry = repository.Entry{Path: "long.txt"}
+	model.files.readerLoading = false
 
 	update := func(msg tea.Msg) {
 		next, command := model.Update(msg)
@@ -521,24 +523,24 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		return command
 	}
 
-	if command := press('2'); command != nil || model.controls.Files != workspace.ChangedFiles {
-		t.Fatalf("Files 2 = controls %+v command=%v", model.controls, command != nil)
+	if command := press('4'); command != nil || model.controls.Files != workspace.ChangedFiles {
+		t.Fatalf("Files 4 = controls %+v command=%v", model.controls, command != nil)
 	}
-	press('3')
-	press('4')
+	press('5')
+	press('6')
 	if model.controls.Reader != workspace.DiffReader || model.controls.Comparison != workspace.Branch {
 		t.Fatalf("Files controls = %+v", model.controls)
 	}
-	press('2')
+	press('4')
 	if model.controls.Files != workspace.AllFiles || model.controls.Reader != workspace.FileReader {
 		t.Fatalf("Changed -> All did not reset reader to File: %+v", model.controls)
 	}
 
 	pressEscape()
 	beforeScratch := model.controls
-	press('2')
-	press('3')
 	press('4')
+	press('5')
+	press('6')
 	if model.controls != beforeScratch {
 		t.Fatalf("Scratch keys changed hidden controls: before %+v after %+v", beforeScratch, model.controls)
 	}
@@ -547,24 +549,24 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 	if command := press('1'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git activation = active %v command=%v", model.active, command != nil)
 	}
-	press('2')
+	press('4')
 	if model.controls.Git != workspace.GitRefs {
-		t.Fatalf("Git 2 = %+v", model.controls)
+		t.Fatalf("Git 4 = %+v", model.controls)
 	}
-	press('3')
+	press('5')
 	if model.controls.Traversal != workspace.GitGraph {
 		t.Fatalf("Git Refs exposed a tertiary toggle: %+v", model.controls)
 	}
-	press('2')
-	press('2')
-	press('3')
+	press('4')
+	press('4')
+	press('5')
 	if model.controls.Git != workspace.GitLog || model.controls.Traversal != workspace.GitFirstParent {
 		t.Fatalf("Git Log controls = %+v", model.controls)
 	}
 	comparison := model.controls.Comparison
-	press('4')
+	press('6')
 	if model.controls.Comparison != comparison {
-		t.Fatalf("Git 4 changed hidden Files comparison: %+v", model.controls)
+		t.Fatalf("Git 6 changed hidden Files comparison: %+v", model.controls)
 	}
 }
 
@@ -584,7 +586,7 @@ func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {
 		t.Fatalf("initial snapshot count/tree = %d/%d", source.snapshots, model.files.tree.FileCount())
 	}
 
-	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '4', Text: "4"}))
 	model = next.(Model)
 	if source.snapshots != 1 || model.controls.Files != workspace.ChangedFiles || model.files.tree.FileCount() != 1 {
 		t.Fatalf("keyboard scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())

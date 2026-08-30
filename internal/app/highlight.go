@@ -19,25 +19,27 @@ const (
 
 type diffCodeRow struct {
 	index   int
-	marker  string
 	payload string
 	kind    diffCodeKind
 }
 
-func highlightedSourceLines(path, content string) []ui.Line {
-	return highlightedSafeLines(path, ui.SafeContentLines(content))
+func highlightedSourceRows(path, content string) []ui.ReaderRow {
+	return highlightedSafeRows(path, ui.SafeContentLines(content))
 }
 
-func highlightedSafeLines(path string, safeLines []string) []ui.Line {
+func highlightedSafeRows(path string, safeLines []string) []ui.ReaderRow {
 	highlighted := sourceHighlighter.Lines(path, safeLines)
-	lines := make([]ui.Line, len(safeLines))
+	rows := make([]ui.ReaderRow, len(safeLines))
 	for index, text := range safeLines {
-		lines[index] = ui.Line{Text: text}
+		rows[index] = ui.ReaderRow{
+			Identity: "file:" + text,
+			Kind:     ui.ReaderFile, Text: text, NewLine: uint64(index + 1),
+		}
 		if highlighted != nil {
-			lines[index].Spans = presentationSpans(highlighted[index])
+			rows[index].Spans = presentationSpans(highlighted[index])
 		}
 	}
-	return lines
+	return rows
 }
 
 func presentationSpans(spans []highlight.Span) []ui.TextSpan {
@@ -56,13 +58,13 @@ func presentationSpans(spans []highlight.Span) []ui.TextSpan {
 	return result
 }
 
-func decorateDiffGroup(path string, lines []ui.Line, rows []diffCodeRow) {
-	if len(rows) == 0 {
+func decorateDiffGroup(path string, rows []ui.ReaderRow, group []diffCodeRow) {
+	if len(group) == 0 {
 		return
 	}
-	oldText, newText := make([]string, 0, len(rows)), make([]string, 0, len(rows))
-	oldRows, newRows := make([]diffCodeRow, 0, len(rows)), make([]diffCodeRow, 0, len(rows))
-	for _, row := range rows {
+	oldText, newText := make([]string, 0, len(group)), make([]string, 0, len(group))
+	oldRows, newRows := make([]diffCodeRow, 0, len(group)), make([]diffCodeRow, 0, len(group))
+	for _, row := range group {
 		if row.kind != diffAdded {
 			oldText = append(oldText, row.payload)
 			oldRows = append(oldRows, row)
@@ -72,25 +74,18 @@ func decorateDiffGroup(path string, lines []ui.Line, rows []diffCodeRow) {
 			newRows = append(newRows, row)
 		}
 	}
-	oldLines := highlightedSafeLines(path, oldText)
-	newLines := highlightedSafeLines(path, newText)
+	oldHighlighted := highlightedSafeRows(path, oldText)
+	newHighlighted := highlightedSafeRows(path, newText)
 	for index, row := range oldRows {
 		if row.kind == diffRemoved {
-			decorateDiffLine(&lines[row.index], row.marker, oldLines[index])
+			decorateDiffRow(&rows[row.index], oldHighlighted[index])
 		}
 	}
 	for index, row := range newRows {
-		decorateDiffLine(&lines[row.index], row.marker, newLines[index])
+		decorateDiffRow(&rows[row.index], newHighlighted[index])
 	}
 }
 
-func decorateDiffLine(line *ui.Line, marker string, payload ui.Line) {
-	spans := []ui.TextSpan{{Text: marker, Tone: line.Tone}}
-	if len(payload.Spans) != 0 {
-		spans = append(spans, payload.Spans...)
-	} else if payload.Text != "" {
-		spans = append(spans, ui.TextSpan{Text: payload.Text})
-	}
-	line.Spans = spans
-	line.Tone = ui.ToneDefault
+func decorateDiffRow(row *ui.ReaderRow, payload ui.ReaderRow) {
+	row.Spans = payload.Spans
 }

@@ -617,8 +617,8 @@ func TestStaleReaderAndVerificationCannotPaintOrMarkCurrent(t *testing.T) {
 	fileState.requestedBounds = &bounds
 	fileState = fileState.landReviewFile(reviewFileLoadedMsg{generation: 7, entry: fileState.readerEntry, comparison: one, content: content(two.New, "two")}, 10)
 	fileState.place.Focus = navigation.FocusReader
-	if pending := fileState.requestReviewToggle(navigation.FocusReader, -1); pending.kind != effectNone || !strings.Contains(fileState.readerLines()[0].Text, "changed") {
-		t.Fatalf("stale File reader was reviewable or painted current: pending=%+v lines=%#v", pending, fileState.readerLines())
+	if pending := fileState.requestReviewToggle(navigation.FocusReader, -1); pending.kind != effectNone || !strings.Contains(fileState.readerRows()[0].Text, "changed") {
+		t.Fatalf("stale File reader was reviewable or painted current: pending=%+v rows=%#v", pending, fileState.readerRows())
 	}
 	fileState.contentGeneration = 8
 	fileState.requestedComparison = &one

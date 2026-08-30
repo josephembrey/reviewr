@@ -25,7 +25,7 @@ type stashState struct {
 	fileSelected       int
 	filesOID           string
 	reader             repository.ChangeDocument
-	readerPresentation []ui.Line
+	readerPresentation *ui.ReaderDocument
 	readerOID          string
 	readerFileID       string
 	readerPlaces       map[string]stashReaderPlace
@@ -145,16 +145,17 @@ func (state stashState) landReader(msg stashFileLoadedMsg, visibleRows int) stas
 		msg.oid != state.readerOID || msg.fileIdentity != state.readerFileID {
 		return state
 	}
-	oldLines := readerLineIdentities(state.readerLines())
+	oldLines := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
 	state.reader = msg.document
 	state.readerLoading = false
-	state.readerPresentation = msg.lines
-	if state.readerPresentation == nil {
-		state.readerPresentation = state.deriveReaderLines()
+	presentation := msg.presentation
+	if presentation.Kind == ui.ReaderDocumentNone {
+		presentation = state.deriveReaderDocument()
 	}
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.readerPresentation = &presentation
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	state.saveReaderPlace()
 	return state
 }
@@ -238,7 +239,7 @@ func (state *stashState) requestSelectedFile(visibleRows int) effect {
 	}
 	state.readerOID = stash.OID
 	state.readerFileID = fileIdentity
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	return effect{
 		kind: effectLoadStashFile, generation: state.readerGeneration, identity: stash.OID,
 		stashSource: stash.Source, changedFile: change,
@@ -312,18 +313,22 @@ func (state stashState) selectedFileIdentity() string {
 	return state.files[state.fileSelected].Identity()
 }
 
-func (state stashState) readerLines() []ui.Line {
+func (state stashState) readerDocument() ui.ReaderDocument {
 	if state.readerPresentation != nil {
-		return state.readerPresentation
+		return *state.readerPresentation
 	}
-	return state.deriveReaderLines()
+	return state.deriveReaderDocument()
 }
 
-func (state stashState) deriveReaderLines() []ui.Line {
+func (state stashState) readerRows() []ui.ReaderRow {
+	return state.readerDocument().Rows
+}
+
+func (state stashState) deriveReaderDocument() ui.ReaderDocument {
 	if state.readerFileID == "" || state.reader.Change.Path == "" {
-		return nil
+		return ui.ReaderDocument{}
 	}
-	return (readerDocument{Change: &state.reader, Mode: workspace.DiffReader}).lines()
+	return (readerDocument{Change: &state.reader, Mode: workspace.DiffReader}).build()
 }
 
 func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model {
@@ -397,7 +402,7 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 	return ui.Model{
 		Geometry: geometry, NavigatorTitle: title, NavigatorRows: rows,
 		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
-		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderLines: state.readerLines(),
+		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: state.readerDocument(),
 		ReaderEmpty: readerEmpty, ReaderOffset: state.place.ReaderOffset,
 	}
 }

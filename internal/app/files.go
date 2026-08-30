@@ -24,7 +24,7 @@ type filesState struct {
 	readerMode            workspace.ReaderMode
 	reader                repository.File
 	diff                  repository.Diff
-	readerPresentation    []ui.Line
+	readerPresentation    *ui.ReaderDocument
 	reviewSnapshot        review.Snapshot
 	ledger                review.Ledger
 	store                 *review.Store
@@ -119,7 +119,7 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
-	oldLines := readerLineIdentities(state.readerLines())
+	oldLines := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
 	state.reader = msg.file
 	state.diff = repository.Diff{}
@@ -128,12 +128,13 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
-	state.readerPresentation = msg.lines
-	if state.readerPresentation == nil {
-		state.readerPresentation = state.deriveReaderLines()
+	presentation := msg.presentation
+	if presentation.Kind == ui.ReaderDocumentNone {
+		presentation = state.deriveReaderDocument()
 	}
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.readerPresentation = &presentation
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	return state
 }
 
@@ -141,7 +142,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}
-	oldLines := readerLineIdentities(state.readerLines())
+	oldLines := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
 	state.diff = msg.diff
 	state.reader = repository.File{}
@@ -150,12 +151,13 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
-	state.readerPresentation = msg.lines
-	if state.readerPresentation == nil {
-		state.readerPresentation = state.deriveReaderLines()
+	presentation := msg.presentation
+	if presentation.Kind == ui.ReaderDocumentNone {
+		presentation = state.deriveReaderDocument()
 	}
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.readerPresentation = &presentation
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	return state
 }
 
@@ -270,12 +272,16 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 	return effect{kind: kind, generation: state.contentGeneration, entry: entry}
 }
 
-func readerLineIdentities(lines []ui.Line) []string {
-	identities := make([]string, len(lines))
-	occurrences := make(map[string]int, len(lines))
-	for index, line := range lines {
-		occurrences[line.Text]++
-		identities[index] = fmt.Sprintf("%s\x00%d", line.Text, occurrences[line.Text])
+func readerRowIdentities(rows []ui.ReaderRow) []string {
+	identities := make([]string, len(rows))
+	occurrences := make(map[string]int, len(rows))
+	for index, row := range rows {
+		identity := row.Identity
+		if identity == "" {
+			identity = fmt.Sprintf("%d:%d:%d:%s", row.Kind, row.OldLine, row.NewLine, row.Text)
+		}
+		occurrences[identity]++
+		identities[index] = fmt.Sprintf("%s\x00%d", identity, occurrences[identity])
 	}
 	return identities
 }
@@ -489,36 +495,43 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		Top:            state.place.Top,
 		Focus:          state.place.Focus,
 		ReaderTitle:    readerTitle,
-		ReaderLines:    state.readerLines(),
+		ReaderDocument: state.readerDocument(),
 		ReaderEmpty:    readerEmpty,
 		ReaderOffset:   state.place.ReaderOffset,
 		FooterWarning:  firstWarning(state.reviewWarning, state.comparisonWarning),
 	}
 }
 
-func (state filesState) readerLines() []ui.Line {
+func (state filesState) readerDocument() ui.ReaderDocument {
 	if state.readerPresentation != nil {
-		return state.readerPresentation
+		return *state.readerPresentation
 	}
-	return state.deriveReaderLines()
+	if state.readerEntry.Path == "" || state.readerLoading {
+		return ui.ReaderDocument{}
+	}
+	return state.deriveReaderDocument()
 }
 
-func (state filesState) deriveReaderLines() []ui.Line {
+func (state filesState) readerRows() []ui.ReaderRow {
+	return state.readerDocument().Rows
+}
+
+func (state filesState) deriveReaderDocument() ui.ReaderDocument {
 	if state.readerMode == workspace.DiffReader {
 		if state.displayedBounds != nil {
-			return reviewReaderLines(state.readerEntry.Path, state.reviewDocument)
+			return reviewReaderDocument(state.readerEntry.Path, state.reviewDocument)
 		}
-		return (readerDocument{Diff: state.diff, Mode: state.readerMode}).lines()
+		return (readerDocument{Diff: state.diff, Mode: state.readerMode}).build()
 	}
 	if state.displayedComparison != nil {
 		if state.reviewFile.Endpoint != state.displayedComparison.New {
-			return []ui.Line{{Text: "File changed; refresh before marking reviewed.", Tone: ui.ToneError}}
+			return ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: noticeRows("File changed; refresh before marking reviewed.", ui.ToneError)}
 		}
-		return reviewFileReaderLines(state.reviewFile, state.readerEntry)
+		return reviewFileReaderDocument(state.reviewFile, state.readerEntry)
 	}
 	return (readerDocument{
 		File: state.reader, Entry: state.readerEntry, Diff: state.diff, Mode: state.readerMode,
-	}).lines()
+	}).build()
 }
 
 func entriesForScope(snapshot repository.Snapshot, scope workspace.FileSet) []repository.Entry {

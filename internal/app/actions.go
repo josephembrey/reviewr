@@ -24,6 +24,7 @@ const (
 	ToggleSecondary
 	ToggleTertiary
 	ToggleComparison
+	ToggleDiffHighlight
 	ToggleReview
 	ToggleReviewBounds
 	NextReviewGap
@@ -231,12 +232,16 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			return Action{Kind: ToggleWorkspace}, true
 		case "esc":
 			return Action{Kind: ToggleScratch}, true
-		case "2":
+		case workspace.SecondaryControlKey:
 			return Action{Kind: ToggleSecondary}, true
-		case "3":
+		case workspace.TertiaryControlKey:
 			return Action{Kind: ToggleTertiary}, true
-		case "4":
+		case workspace.ComparisonControlKey:
 			return Action{Kind: ToggleComparison}, true
+		case workspace.DiffHighlightKey:
+			if controls.RichDiff {
+				return Action{Kind: ToggleDiffHighlight}, true
+			}
 		case "x":
 			if active == workspace.Files {
 				return Action{Kind: ToggleReview, Index: -1}, true
@@ -303,6 +308,8 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			return Action{Kind: ToggleTertiary}, true
 		case ui.HitComparisonControl:
 			return Action{Kind: ToggleComparison}, true
+		case ui.HitDiffHighlightControl:
+			return Action{Kind: ToggleDiffHighlight}, true
 		case ui.HitDivider:
 			return Action{Kind: StartPaneResize}, true
 		case ui.HitNavigatorScrollbar:
@@ -320,7 +327,7 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 		mouse := msg.Mouse()
 		hit := geometry.HitTest(mouse.X, mouse.Y, active, controls, top, fileCount, readerOffset, readerLineCount)
 		if hit.Kind == ui.HitNone || hit.Kind == ui.HitFilesWorkspace || hit.Kind == ui.HitGitWorkspace || hit.Kind == ui.HitScratchWorkspace || hit.Kind == ui.HitDivider ||
-			hit.Kind == ui.HitSecondaryControl || hit.Kind == ui.HitTertiaryControl || hit.Kind == ui.HitComparisonControl {
+			hit.Kind == ui.HitSecondaryControl || hit.Kind == ui.HitTertiaryControl || hit.Kind == ui.HitComparisonControl || hit.Kind == ui.HitDiffHighlightControl {
 			return Action{}, false
 		}
 		direction := 0

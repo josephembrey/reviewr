@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/josephembrey/reviewr/internal/repository"
@@ -9,8 +11,8 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-// readerDocument is the narrow shared presentation boundary for raw Files
-// content and immutable commit-like changes.
+// readerDocument is the narrow source boundary for Files, Stashes, and review
+// comparisons. build returns the one structured app-to-UI representation.
 type readerDocument struct {
 	File   repository.File
 	Entry  repository.Entry
@@ -19,137 +21,235 @@ type readerDocument struct {
 	Mode   workspace.ReaderMode
 }
 
-func (document readerDocument) lines() []ui.Line {
+func (document readerDocument) build() ui.ReaderDocument {
 	if document.Change != nil {
 		if document.Mode == workspace.FileReader {
-			return changedFileLines(*document.Change)
+			return changedFileDocument(*document.Change)
 		}
-		return changeDiffLines(*document.Change)
+		return changeDiffDocument(*document.Change)
 	}
 	if document.Mode == workspace.DiffReader {
-		return diffReaderLines(document.Diff)
+		return diffReaderDocument(document.Diff)
 	}
-	return fileReaderLines(document.File, document.Entry)
+	return fileReaderDocument(document.File, document.Entry)
 }
 
-func fileReaderLines(file repository.File, entry repository.Entry) []ui.Line {
+func fileReaderDocument(file repository.File, entry repository.Entry) ui.ReaderDocument {
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
 	switch file.Kind {
 	case repository.FileReady:
 		if file.Symlink {
-			return []ui.Line{{Text: "symlink → " + file.Content}}
+			document.Rows = noticeRows("symlink → "+file.Content, ui.ToneDefault)
+			return document
 		}
 		path := file.Path
 		if path == "" {
 			path = entry.Path
 		}
-		return highlightedSourceLines(path, file.Content)
+		document.Rows = highlightedSourceRows(path, file.Content)
 	case repository.FileMissing:
 		if entry.State == repository.FileDeleted {
-			return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
+			document.Rows = noticeRows("File was deleted from the worktree.", ui.ToneError)
+		} else {
+			document.Rows = noticeRows("File is missing from the worktree.", ui.ToneError)
 		}
-		return []ui.Line{{Text: "File is missing from the worktree.", Tone: ui.ToneError}}
 	case repository.FileUnreadable:
 		detail := ""
 		if file.Err != nil {
 			detail = ": " + file.Err.Error()
 		}
-		return []ui.Line{{Text: "File is unreadable" + detail, Tone: ui.ToneError}}
+		document.Rows = noticeRows("File is unreadable"+detail, ui.ToneError)
 	case repository.FileBinary:
-		return []ui.Line{{Text: fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", file.Size), Tone: ui.ToneError}}
+		document.Rows = noticeRows(fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", file.Size), ui.ToneError)
 	case repository.FileTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("File is too large (%d bytes; limit %d bytes).", file.Size, repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
-	default:
-		return nil
+		document.Rows = noticeRows(fmt.Sprintf("File is too large (%d bytes; limit %d bytes).", file.Size, repository.DefaultMaxFileBytes), ui.ToneError)
 	}
+	return document
 }
 
-func changedFileLines(document repository.ChangeDocument) []ui.Line {
+func changedFileDocument(document repository.ChangeDocument) ui.ReaderDocument {
 	if document.Change.Kind == repository.ChangeDeleted {
-		return []ui.Line{{Text: "Deleted file; no stored result content.", Tone: ui.ToneQuiet}}
+		return ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: noticeRows("Deleted file; no stored result content.", ui.ToneQuiet)}
 	}
-	return fileReaderLines(document.New, repository.Entry{})
+	return fileReaderDocument(document.New, repository.Entry{})
 }
 
-func changeDiffLines(document repository.ChangeDocument) []ui.Line {
+func changeDiffDocument(document repository.ChangeDocument) ui.ReaderDocument {
+	result := ui.ReaderDocument{Kind: ui.ReaderDiffDocument}
 	if document.Change.Binary || document.Old.Kind == repository.FileBinary || document.New.Kind == repository.FileBinary {
-		return []ui.Line{{Text: "Binary file changed; plain diff disabled.", Tone: ui.ToneQuiet}}
+		result.Rows = noticeRows("Binary file changed; plain diff disabled.", ui.ToneQuiet)
+		return result
 	}
-	lines := changeNotice(document.Change)
+	rows := changeNoticeRows(document.Change)
 	switch document.Patch.Kind {
 	case repository.FileTooLarge:
-		return append(lines, ui.Line{
-			Text: fmt.Sprintf("Stash diff is too large (%d bytes; limit %d bytes).", document.Patch.Size, repository.DefaultMaxFileBytes),
-			Tone: ui.ToneError,
-		})
+		result.Rows = append(rows, noticeRows(
+			fmt.Sprintf("Stash diff is too large (%d bytes; limit %d bytes).", document.Patch.Size, repository.DefaultMaxFileBytes),
+			ui.ToneError,
+		)...)
+		return result
 	case repository.FileMissing, repository.FileUnreadable:
 		detail := ""
 		if document.Patch.Err != nil {
 			detail = ": " + document.Patch.Err.Error()
 		}
-		return append(lines, ui.Line{Text: "Stash diff is unavailable" + detail, Tone: ui.ToneError})
+		result.Rows = append(rows, noticeRows("Stash diff is unavailable"+detail, ui.ToneError)...)
+		return result
 	}
 	if document.Old.Kind == repository.FileTooLarge || document.New.Kind == repository.FileTooLarge {
-		lines = append(lines, ui.Line{Text: "Stored file content exceeds the plain-reader limit; showing its bounded diff.", Tone: ui.ToneQuiet}, ui.Line{})
+		rows = append(rows,
+			ui.ReaderRow{Kind: ui.ReaderNotice, Text: "Stored file content exceeds the plain-reader limit; showing its bounded diff.", Tone: ui.ToneQuiet},
+			ui.ReaderRow{Kind: ui.ReaderMetadata},
+		)
 	}
-	return append(lines, unifiedDiffLines(document.Change.Path, document.Patch.Content)...)
+	parsed := unifiedDiffDocument(document.Change.Path, document.Patch.Content)
+	result.Rows = append(rows, parsed.Rows...)
+	return result
 }
 
-func diffReaderLines(diff repository.Diff) []ui.Line {
+func diffReaderDocument(diff repository.Diff) ui.ReaderDocument {
+	document := ui.ReaderDocument{Kind: ui.ReaderDiffDocument}
 	switch diff.Kind {
 	case repository.DiffReady:
 		if diff.Content == "" {
-			return []ui.Line{{Text: "No uncommitted diff for this file.", Tone: ui.ToneQuiet}}
+			document.Rows = noticeRows("No uncommitted diff for this file.", ui.ToneQuiet)
+			return document
 		}
-		return unifiedDiffLines(diff.Entry.Path, diff.Content)
+		return unifiedDiffDocument(diff.Entry.Path, diff.Content)
 	case repository.DiffTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("Diff is too large (limit %d bytes).", repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
+		document.Rows = noticeRows(fmt.Sprintf("Diff is too large (limit %d bytes).", repository.DefaultMaxFileBytes), ui.ToneError)
 	case repository.DiffUnavailable:
 		detail := ""
 		if diff.Err != nil {
 			detail = ": " + diff.Err.Error()
 		}
-		return []ui.Line{{Text: "Diff is unavailable" + detail, Tone: ui.ToneError}}
-	default:
-		return nil
+		document.Rows = noticeRows("Diff is unavailable"+detail, ui.ToneError)
 	}
+	return document
 }
 
-func unifiedDiffLines(path, content string) []ui.Line {
+var unifiedHunkHeader = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@(?:.*)?$`)
+
+type hunkPosition struct {
+	oldLine      uint64
+	newLine      uint64
+	oldRemaining uint64
+	newRemaining uint64
+	active       bool
+}
+
+func parseHunkHeader(line string) (hunkPosition, bool) {
+	match := unifiedHunkHeader.FindStringSubmatch(line)
+	if match == nil {
+		return hunkPosition{}, false
+	}
+	parse := func(value string, omitted uint64) (uint64, bool) {
+		if value == "" {
+			return omitted, true
+		}
+		parsed, err := strconv.ParseUint(value, 10, 64)
+		return parsed, err == nil
+	}
+	oldLine, oldOK := parse(match[1], 0)
+	oldCount, oldCountOK := parse(match[2], 1)
+	newLine, newOK := parse(match[3], 0)
+	newCount, newCountOK := parse(match[4], 1)
+	if !oldOK || !oldCountOK || !newOK || !newCountOK {
+		return hunkPosition{}, false
+	}
+	return hunkPosition{
+		oldLine: oldLine, newLine: newLine,
+		oldRemaining: oldCount, newRemaining: newCount, active: oldCount > 0 || newCount > 0,
+	}, true
+}
+
+func unifiedDiffDocument(path, content string) ui.ReaderDocument {
 	rawLines := ui.SafeContentLines(content)
-	lines := make([]ui.Line, len(rawLines))
+	document := ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: make([]ui.ReaderRow, 0, len(rawLines))}
 	group := make([]diffCodeRow, 0, len(rawLines))
 	flush := func() {
-		decorateDiffGroup(path, lines, group)
+		decorateDiffGroup(path, document.Rows, group)
 		group = group[:0]
 	}
-	for index, text := range rawLines {
-		lines[index].Text = text
-		switch {
-		case strings.HasPrefix(text, "@@"):
+	position := hunkPosition{}
+	for _, text := range rawLines {
+		if header, ok := parseHunkHeader(text); ok {
 			flush()
-			lines[index].Tone = ui.ToneAccent
-		case strings.HasPrefix(text, "+") && !strings.HasPrefix(text, "+++"):
-			lines[index].Tone = ui.ToneAdded
-			group = append(group, diffCodeRow{index: index, marker: "+", payload: text[1:], kind: diffAdded})
-		case strings.HasPrefix(text, "-") && !strings.HasPrefix(text, "---"):
-			lines[index].Tone = ui.ToneRemoved
-			group = append(group, diffCodeRow{index: index, marker: "-", payload: text[1:], kind: diffRemoved})
-		case strings.HasPrefix(text, " "):
-			group = append(group, diffCodeRow{index: index, marker: " ", payload: text[1:], kind: diffContext})
-		case strings.HasPrefix(text, "\\ No newline at end of file"):
-			lines[index].Tone = ui.ToneQuiet
-		default:
-			flush()
-			if text != "" {
-				lines[index].Tone = ui.ToneQuiet
+			position = header
+			document.Rows = append(document.Rows, ui.ReaderRow{Kind: ui.ReaderMetadata, Text: text, Tone: ui.ToneAccent})
+			continue
+		}
+		if position.active && text != "" {
+			marker, payload := text[0], text[1:]
+			row := ui.ReaderRow{Text: payload}
+			kind := diffContext
+			valid := false
+			switch marker {
+			case ' ':
+				if position.oldRemaining > 0 && position.newRemaining > 0 {
+					row.Kind = ui.ReaderContext
+					row.OldLine, row.NewLine = position.oldLine, position.newLine
+					position.oldLine, position.newLine = incrementLine(position.oldLine), incrementLine(position.newLine)
+					position.oldRemaining--
+					position.newRemaining--
+					valid = true
+				}
+			case '-':
+				if position.oldRemaining > 0 {
+					row.Kind, kind = ui.ReaderDeletion, diffRemoved
+					row.OldLine = position.oldLine
+					position.oldLine = incrementLine(position.oldLine)
+					position.oldRemaining--
+					valid = true
+				}
+			case '+':
+				if position.newRemaining > 0 {
+					row.Kind, kind = ui.ReaderInsertion, diffAdded
+					row.NewLine = position.newLine
+					position.newLine = incrementLine(position.newLine)
+					position.newRemaining--
+					valid = true
+				}
+			}
+			if valid {
+				index := len(document.Rows)
+				row.Identity = diffRowIdentity(row)
+				document.Rows = append(document.Rows, row)
+				group = append(group, diffCodeRow{index: index, payload: payload, kind: kind})
+				if position.oldRemaining == 0 && position.newRemaining == 0 {
+					flush()
+					position.active = false
+				}
+				continue
 			}
 		}
+		flush()
+		position.active = false
+		kind, tone := ui.ReaderMetadata, ui.ToneQuiet
+		if strings.HasPrefix(text, `\ No newline at end of file`) {
+			kind = ui.ReaderNotice
+		}
+		if text == "" {
+			tone = ui.ToneDefault
+		}
+		document.Rows = append(document.Rows, ui.ReaderRow{Kind: kind, Text: text, Tone: tone})
 	}
 	flush()
-	return lines
+	return document
 }
 
-func changeNotice(change repository.ChangedFile) []ui.Line {
+func incrementLine(line uint64) uint64 {
+	if line == ^uint64(0) {
+		return line
+	}
+	return line + 1
+}
+
+func diffRowIdentity(row ui.ReaderRow) string {
+	return fmt.Sprintf("%d:%d:%d:%s", row.Kind, row.OldLine, row.NewLine, row.Text)
+}
+
+func changeNoticeRows(change repository.ChangedFile) []ui.ReaderRow {
 	var notice string
 	switch change.Kind {
 	case repository.ChangeDeleted:
@@ -164,5 +264,17 @@ func changeNotice(change repository.ChangedFile) []ui.Line {
 	if notice == "" {
 		return nil
 	}
-	return []ui.Line{{Text: notice, Tone: ui.ToneQuiet}, {}}
+	return []ui.ReaderRow{
+		{Kind: ui.ReaderNotice, Text: ui.SafeSingleLine(notice), Tone: ui.ToneQuiet},
+		{Kind: ui.ReaderMetadata},
+	}
+}
+
+func noticeRows(text string, tone ui.Tone) []ui.ReaderRow {
+	lines := ui.SafeContentLines(text)
+	rows := make([]ui.ReaderRow, len(lines))
+	for index, line := range lines {
+		rows[index] = ui.ReaderRow{Kind: ui.ReaderNotice, Text: line, Tone: tone}
+	}
+	return rows
 }

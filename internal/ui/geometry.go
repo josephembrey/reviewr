@@ -153,6 +153,7 @@ const (
 	HitSecondaryControl
 	HitTertiaryControl
 	HitComparisonControl
+	HitDiffHighlightControl
 	HitDivider
 	HitNavigatorScrollbar
 	HitReaderScrollbar

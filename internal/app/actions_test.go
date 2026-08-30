@@ -32,12 +32,24 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "z swaps panes", key: tea.Key{Code: 'z', Text: "z"}, want: Action{Kind: SwapPanes}},
 		{name: "one toggles primary workspace", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleWorkspace}},
 		{name: "escape toggles scratch", key: tea.Key{Code: tea.KeyEscape}, want: Action{Kind: ToggleScratch}},
-		{name: "two toggles secondary", key: tea.Key{Code: '2', Text: "2"}, want: Action{Kind: ToggleSecondary}},
-		{name: "three toggles tertiary", key: tea.Key{Code: '3', Text: "3"}, want: Action{Kind: ToggleTertiary}},
-		{name: "four cycles comparison", key: tea.Key{Code: '4', Text: "4"}, want: Action{Kind: ToggleComparison}},
+		{name: "four toggles secondary", key: tea.Key{Code: '4', Text: "4"}, want: Action{Kind: ToggleSecondary}},
+		{name: "five toggles tertiary", key: tea.Key{Code: '5', Text: "5"}, want: Action{Kind: ToggleTertiary}},
+		{name: "six cycles comparison", key: tea.Key{Code: '6', Text: "6"}, want: Action{Kind: ToggleComparison}},
 		{name: "r reloads", key: tea.Key{Code: 'r', Text: "r"}, want: Action{Kind: Reload}},
 		{name: "q quits", key: tea.Key{Code: 'q', Text: "q"}, want: Action{Kind: Quit}},
 		{name: "ctrl-c quits", key: tea.Key{Code: 'c', Mod: tea.ModCtrl}, want: Action{Kind: Quit}},
+	}
+	if got, ok := routeMessage(
+		tea.KeyPressMsg(tea.Key{Code: '7', Text: "7"}), navigation.FocusReader, ui.Geometry{}, workspace.Files,
+		workspace.Controls{RichDiff: true}, false, false, 0, 0, 0, 1,
+	); !ok || got.Kind != ToggleDiffHighlight {
+		t.Fatalf("eligible 7 routed as (%+v, %v)", got, ok)
+	}
+	if got, ok := routeMessage(
+		tea.KeyPressMsg(tea.Key{Code: '7', Text: "7"}), navigation.FocusReader, ui.Geometry{}, workspace.Files,
+		workspace.Controls{}, false, false, 0, 0, 0, 1,
+	); ok {
+		t.Fatalf("ineligible 7 routed as (%+v, true)", got)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -216,5 +228,32 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 				t.Fatalf("routeMessage() = (%+v, %v), want (%+v, %v)", got, ok, test.want, test.ok)
 			}
 		})
+	}
+}
+
+func TestDiffHighlightMouseTargetRoutesOnlyWhenPainted(t *testing.T) {
+	t.Parallel()
+	geometry := ui.Calculate(120, 12)
+	controls := workspace.Controls{Reader: workspace.DiffReader, RichDiff: true}
+	targetX := -1
+	for x := 0; x < geometry.Header.Width; x++ {
+		if geometry.HitTest(x, geometry.Header.Y, workspace.Files, controls, 0, 0, 0, 1).Kind == ui.HitDiffHighlightControl {
+			targetX = x
+			break
+		}
+	}
+	if targetX < 0 {
+		t.Fatal("eligible rich diff painted no mouse target")
+	}
+	action, ok := routeMessage(
+		tea.MouseClickMsg(tea.Mouse{X: targetX, Y: geometry.Header.Y, Button: tea.MouseLeft}),
+		navigation.FocusReader, geometry, workspace.Files, controls, false, false, 0, 0, 0, 1,
+	)
+	if !ok || action.Kind != ToggleDiffHighlight {
+		t.Fatalf("eligible highlight click = (%+v, %v)", action, ok)
+	}
+	controls.RichDiff = false
+	if hit := geometry.HitTest(targetX, geometry.Header.Y, workspace.Files, controls, 0, 0, 0, 1); hit.Kind == ui.HitDiffHighlightControl {
+		t.Fatalf("ineligible reader retained target: %+v", hit)
 	}
 }

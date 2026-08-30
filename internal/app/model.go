@@ -138,24 +138,24 @@ type reviewStateLoadedMsg struct {
 }
 
 type reviewDocumentLoadedMsg struct {
-	generation uint64
-	entry      repository.Entry
-	comparison review.FileComparison
-	bounds     review.Bounds
-	document   review.Document
-	lines      []ui.Line
-	background bool
-	activity   uint64
+	generation   uint64
+	entry        repository.Entry
+	comparison   review.FileComparison
+	bounds       review.Bounds
+	document     review.Document
+	presentation ui.ReaderDocument
+	background   bool
+	activity     uint64
 }
 
 type reviewFileLoadedMsg struct {
-	generation uint64
-	entry      repository.Entry
-	comparison review.FileComparison
-	content    review.Content
-	lines      []ui.Line
-	background bool
-	activity   uint64
+	generation   uint64
+	entry        repository.Entry
+	comparison   review.FileComparison
+	content      review.Content
+	presentation ui.ReaderDocument
+	background   bool
+	activity     uint64
 }
 
 type reviewVerifiedMsg struct {
@@ -173,21 +173,21 @@ type reviewPersistedMsg struct {
 }
 
 type fileLoadedMsg struct {
-	generation uint64
-	entry      repository.Entry
-	file       repository.File
-	lines      []ui.Line
-	background bool
-	activity   uint64
+	generation   uint64
+	entry        repository.Entry
+	file         repository.File
+	presentation ui.ReaderDocument
+	background   bool
+	activity     uint64
 }
 
 type diffLoadedMsg struct {
-	generation uint64
-	entry      repository.Entry
-	diff       repository.Diff
-	lines      []ui.Line
-	background bool
-	activity   uint64
+	generation   uint64
+	entry        repository.Entry
+	diff         repository.Diff
+	presentation ui.ReaderDocument
+	background   bool
+	activity     uint64
 }
 
 type commitsLoadedMsg struct {
@@ -271,7 +271,7 @@ type stashFileLoadedMsg struct {
 	oid          string
 	fileIdentity string
 	document     repository.ChangeDocument
-	lines        []ui.Line
+	presentation ui.ReaderDocument
 	background   bool
 	activity     uint64
 }
@@ -357,7 +357,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.WindowSizeMsg:
 			place := m.activePlace()
-			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 			if !ok || (action.Kind != Resize && action.Kind != Quit && action.Kind != FinishPaneResize && action.Kind != FinishScrollbarDrag) {
 				return m, nil
 			}
@@ -492,7 +492,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		action, ok = routeScratchMessage(msg, m.geometry, note.editor.Presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
 	} else {
 		place := m.activePlace()
-		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 	}
 	if !ok {
 		return m, nil
@@ -538,7 +538,7 @@ func (m Model) View() tea.View {
 	presentation.Workspace = m.destination()
 	presentation.PrimaryWorkspace = m.active
 	presentation.DividerDragging = m.layout.dragging
-	presentation.Controls = m.controls
+	presentation.Controls = m.presentationControls()
 	if presentation.Workspace == workspace.Files {
 		summary := m.files.snapshot.Summary()
 		presentation.Changes = ui.ChangeSummary{
@@ -638,6 +638,10 @@ func (m *Model) apply(action Action) effect {
 		if m.destination() == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
 			return m.files.requestComparison(m.controls.Comparison.Label())
+		}
+	case ToggleDiffHighlight:
+		if m.diffHighlightEligible() {
+			m.controls.DiffHighlight = m.controls.DiffHighlight.Toggle()
 		}
 	case ToggleReview:
 		if m.destination() == workspace.Files {
@@ -872,7 +876,7 @@ func (m *Model) finishScratchExit(exit scratchExit) effect {
 
 func (m Model) activeReaderLineCount() int {
 	if m.gitStashesActive() {
-		return len(m.stashes.readerLines())
+		return len(m.stashes.readerRows())
 	}
 	if m.gitRefsActive() {
 		return len(m.refs.commits)
@@ -880,7 +884,7 @@ func (m Model) activeReaderLineCount() int {
 	if m.active == workspace.Git {
 		return len(commitSummaryLines(m.history.summary))
 	}
-	return len(m.files.readerLines())
+	return len(m.files.readerRows())
 }
 
 func (m Model) activeNavigatorRows() []ui.NavigatorRow {
@@ -901,14 +905,14 @@ func (m *Model) resizeWorkspaceState() {
 	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil {
-		m.files.place.ClampReader(len(m.files.readerLines()), m.geometry.ReaderRows.Height)
+		m.files.place.ClampReader(len(m.files.readerRows()), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
 	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
 	if m.stashes.readerFileID != "" {
-		m.stashes.place.ClampReader(len(m.stashes.readerLines()), m.geometry.ReaderRows.Height)
+		m.stashes.place.ClampReader(len(m.stashes.readerRows()), m.geometry.ReaderRows.Height)
 	}
 }
 
@@ -918,6 +922,27 @@ func (m Model) gitRefsActive() bool {
 
 func (m Model) gitStashesActive() bool {
 	return m.active == workspace.Git && m.controls.Git == workspace.GitStashes
+}
+
+// diffHighlightEligible is the one visibility predicate used to derive input,
+// header, mouse, and footer behavior from the rich document actually visible.
+func (m Model) diffHighlightEligible() bool {
+	if m.scratch {
+		return false
+	}
+	if m.gitStashesActive() {
+		return m.stashes.readerDocument().DiffEligible()
+	}
+	if m.active == workspace.Files && m.controls.Reader == workspace.DiffReader {
+		return m.files.readerDocument().DiffEligible()
+	}
+	return false
+}
+
+func (m Model) presentationControls() workspace.Controls {
+	controls := m.controls
+	controls.RichDiff = m.diffHighlightEligible()
+	return controls
 }
 
 func (m Model) command(pending effect) tea.Cmd {
@@ -988,7 +1013,7 @@ func (m Model) command(pending effect) tea.Cmd {
 			document := review.BuildDocument(bounds, oldContent, newContent)
 			return reviewDocumentLoadedMsg{
 				generation: generation, entry: entry, comparison: comparison, bounds: bounds,
-				document: document, lines: reviewReaderLines(entry.Path, document), background: background, activity: activity,
+				document: document, presentation: reviewReaderDocument(entry.Path, document), background: background, activity: activity,
 			}
 		}
 	case effectLoadReviewFile:
@@ -1002,7 +1027,7 @@ func (m Model) command(pending effect) tea.Cmd {
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
 			return reviewFileLoadedMsg{
 				generation: generation, entry: entry, comparison: comparison, content: content,
-				lines: reviewFileReaderLines(content, entry), background: background, activity: activity,
+				presentation: reviewFileReaderDocument(content, entry), background: background, activity: activity,
 			}
 		}
 	case effectVerifyReview:
@@ -1033,7 +1058,7 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			file := source.ReadFile(entry)
 			return fileLoadedMsg{
-				generation: generation, entry: entry, file: file, lines: fileReaderLines(file, entry),
+				generation: generation, entry: entry, file: file, presentation: fileReaderDocument(file, entry),
 				background: background, activity: activity,
 			}
 		}
@@ -1045,7 +1070,7 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			diff := source.ReadDiff(entry)
 			return diffLoadedMsg{
-				generation: generation, entry: entry, diff: diff, lines: diffReaderLines(diff),
+				generation: generation, entry: entry, diff: diff, presentation: diffReaderDocument(diff),
 				background: background, activity: activity,
 			}
 		}
@@ -1168,7 +1193,7 @@ func (m Model) command(pending effect) tea.Cmd {
 			document := source.ReadStashFile(stashSource, file)
 			return stashFileLoadedMsg{
 				generation: generation, oid: oid, fileIdentity: file.Identity(),
-				document: document, lines: changeDiffLines(document),
+				document: document, presentation: changeDiffDocument(document),
 				background: background, activity: activity,
 			}
 		}

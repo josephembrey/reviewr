@@ -12,23 +12,28 @@ type headerControl struct {
 }
 
 func layoutHeaderControls(geometry Geometry, active workspace.Kind, controls workspace.Controls) []headerControl {
-	definitions := make([]headerControl, 0, 3)
+	definitions := make([]headerControl, 0, 4)
 	switch active {
 	case workspace.Files:
 		definitions = append(definitions,
-			headerControl{hit: HitSecondaryControl, key: "2", value: controls.Files.Label()},
-			headerControl{hit: HitTertiaryControl, key: "3", value: controls.Reader.Label()},
-			headerControl{hit: HitComparisonControl, key: "4", value: controls.Comparison.Label()},
+			headerControl{hit: HitSecondaryControl, key: workspace.SecondaryControlKey, value: controls.Files.Label()},
+			headerControl{hit: HitTertiaryControl, key: workspace.TertiaryControlKey, value: controls.Reader.Label()},
+			headerControl{hit: HitComparisonControl, key: workspace.ComparisonControlKey, value: controls.Comparison.Label()},
 		)
 	case workspace.Git:
 		definitions = append(definitions,
-			headerControl{hit: HitSecondaryControl, key: "2", value: controls.Git.Label()},
+			headerControl{hit: HitSecondaryControl, key: workspace.SecondaryControlKey, value: controls.Git.Label()},
 		)
 		if controls.Git == workspace.GitLog {
 			definitions = append(definitions,
-				headerControl{hit: HitTertiaryControl, key: "3", value: controls.Traversal.Label()},
+				headerControl{hit: HitTertiaryControl, key: workspace.TertiaryControlKey, value: controls.Traversal.Label()},
 			)
 		}
+	}
+	if controls.RichDiff {
+		definitions = append(definitions, headerControl{
+			hit: HitDiffHighlightControl, key: workspace.DiffHighlightKey, value: controls.DiffHighlight.Label(),
+		})
 	}
 
 	wide := geometry.Header.Width >= wideHeaderControls

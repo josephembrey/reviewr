@@ -1,5 +1,14 @@
 package workspace
 
+// Header action keys are centralized for the pending 1/2/3 destination-key
+// merge. Changing that grammar should not touch semantic actions or layout.
+const (
+	SecondaryControlKey  = "4"
+	TertiaryControlKey   = "5"
+	ComparisonControlKey = "6"
+	DiffHighlightKey     = "7"
+)
+
 // FileSet selects the Files navigator universe.
 type FileSet uint8
 
@@ -42,6 +51,30 @@ func (mode ReaderMode) Toggle() ReaderMode {
 		return FileReader
 	}
 	return DiffReader
+}
+
+// DiffHighlight selects the render-only treatment for changed reader rows.
+// It is global session state; RichDiff below is derived from the document on
+// screen and is never persisted as place state.
+type DiffHighlight uint8
+
+const (
+	DiffHighlightSidebar DiffHighlight = iota
+	DiffHighlightBackground
+)
+
+func (highlight DiffHighlight) Label() string {
+	if highlight == DiffHighlightBackground {
+		return "background"
+	}
+	return "sidebar"
+}
+
+func (highlight DiffHighlight) Toggle() DiffHighlight {
+	if highlight == DiffHighlightBackground {
+		return DiffHighlightSidebar
+	}
+	return DiffHighlightBackground
 }
 
 // Comparison selects the Files changeset basis.
@@ -128,12 +161,18 @@ func (traversal GitTraversal) Toggle() GitTraversal {
 	return GitFirstParent
 }
 
-// Controls is the browser-local header state. The Go foundation exposes these
-// switches before their full legacy data sources are ported.
+// Controls collects root-owned view controls. Files/Git axes are browser-local;
+// DiffHighlight is one global session preference, and RichDiff is derived
+// presentation context rather than stored place state.
 type Controls struct {
-	Files      FileSet
-	Reader     ReaderMode
-	Comparison Comparison
-	Git        GitView
-	Traversal  GitTraversal
+	Files         FileSet
+	Reader        ReaderMode
+	Comparison    Comparison
+	Git           GitView
+	Traversal     GitTraversal
+	DiffHighlight DiffHighlight
+	// RichDiff is presentation context derived from the visible structured
+	// reader document. It keeps input, header, mouse, and footer eligibility
+	// on one predicate without becoming browser or path state.
+	RichDiff bool
 }

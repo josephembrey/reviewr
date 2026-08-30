@@ -45,6 +45,101 @@ type TextSpan struct {
 	Style TextStyle
 }
 
+// ReaderRowKind owns reader presentation independently from source text.
+// ReaderFold is an explicit seam for later folding without another row-model
+// rewrite; this slice does not add fold behavior.
+type ReaderRowKind uint8
+
+const (
+	ReaderFile ReaderRowKind = iota
+	ReaderContext
+	ReaderInsertion
+	ReaderDeletion
+	ReaderMetadata
+	ReaderNotice
+	ReaderFold
+)
+
+// ReaderRow is one logical rich-reader row. Text and Spans contain code or
+// prose payload only: diff marker characters belong to Kind, never content.
+type ReaderRow struct {
+	Identity string
+	Kind     ReaderRowKind
+	Text     string
+	Tone     Tone
+	Spans    []TextSpan
+	OldLine  uint64
+	NewLine  uint64
+}
+
+// DisplayLine is the semantic identity shown in the one-sided gutter.
+func (row ReaderRow) DisplayLine() uint64 {
+	switch row.Kind {
+	case ReaderDeletion:
+		return row.OldLine
+	case ReaderFile, ReaderContext, ReaderInsertion:
+		return row.NewLine
+	default:
+		if row.NewLine > 0 {
+			return row.NewLine
+		}
+		return row.OldLine
+	}
+}
+
+// ReaderDocumentKind distinguishes complete files from actual diff readers.
+type ReaderDocumentKind uint8
+
+const (
+	ReaderDocumentNone ReaderDocumentKind = iota
+	ReaderFileDocument
+	ReaderDiffDocument
+)
+
+// ReaderDocument is the app-to-UI seam for every rich file and diff source.
+type ReaderDocument struct {
+	Kind ReaderDocumentKind
+	Rows []ReaderRow
+}
+
+// DiffEligible reports whether a non-empty semantic diff is actually visible.
+func (document ReaderDocument) DiffEligible() bool {
+	if document.Kind != ReaderDiffDocument {
+		return false
+	}
+	for _, row := range document.Rows {
+		switch row.Kind {
+		case ReaderContext, ReaderInsertion, ReaderDeletion:
+			return true
+		}
+	}
+	return false
+}
+
+// GutterDigits is stable for the whole document and includes hidden/future
+// rows because it measures semantic identities rather than the viewport.
+func (document ReaderDocument) GutterDigits() int {
+	maximum := uint64(0)
+	for _, row := range document.Rows {
+		switch row.Kind {
+		case ReaderFile, ReaderInsertion:
+			maximum = max(maximum, row.NewLine)
+		case ReaderDeletion:
+			maximum = max(maximum, row.OldLine)
+		case ReaderContext:
+			maximum = max(maximum, row.OldLine, row.NewLine)
+		case ReaderMetadata, ReaderNotice, ReaderFold:
+			maximum = max(maximum, row.DisplayLine())
+		}
+	}
+	digits := 1
+	for maximum >= 10 {
+		digits++
+		maximum /= 10
+	}
+	return max(3, digits)
+}
+
 // Segment is one styled, single-line fragment in a compact row.
 type Segment struct {
 	Text string
@@ -119,6 +214,7 @@ type Model struct {
 	Focus          navigation.Focus
 
 	ReaderTitle      string
+	ReaderDocument   ReaderDocument
 	ReaderLines      []Line
 	ReaderCommitRows []commitrow.Row
 	ReaderEmpty      Line

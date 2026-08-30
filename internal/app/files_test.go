@@ -255,13 +255,13 @@ func TestRefreshReconcilesRenameAndDeletedReaderModes(t *testing.T) {
 	}
 
 	deleted := repository.Entry{Path: "gone.go", State: repository.FileDeleted}
-	lines := fileReaderLines(repository.File{Path: deleted.Path, Kind: repository.FileMissing}, deleted)
-	if len(lines) != 1 || !strings.Contains(lines[0].Text, "deleted") {
-		t.Fatalf("deleted file mode = %#v", lines)
+	rows := fileReaderDocument(repository.File{Path: deleted.Path, Kind: repository.FileMissing}, deleted).Rows
+	if len(rows) != 1 || !strings.Contains(rows[0].Text, "deleted") {
+		t.Fatalf("deleted file mode = %#v", rows)
 	}
-	diffLines := diffReaderLines(repository.Diff{Entry: deleted, Kind: repository.DiffReady, Content: "deleted file mode 100644\n-old"})
-	if len(diffLines) < 2 || !strings.Contains(diffLines[0].Text, "deleted file mode") {
-		t.Fatalf("deleted diff mode = %#v", diffLines)
+	diffRows := diffReaderDocument(repository.Diff{Entry: deleted, Kind: repository.DiffReady, Content: "deleted file mode 100644\n@@ -1 +0,0 @@\n-old"}).Rows
+	if len(diffRows) < 2 || !strings.Contains(diffRows[0].Text, "deleted file mode") {
+		t.Fatalf("deleted diff mode = %#v", diffRows)
 	}
 }
 
@@ -313,12 +313,12 @@ func TestFileReaderLinesPreserveExplicitSafetyStates(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			lines := fileReaderLines(test.file, repository.Entry{})
-			texts := make([]string, len(lines))
-			for index, line := range lines {
-				texts[index] = line.Text
-				if line.Tone != test.tone {
-					t.Fatalf("tone = %v, want %v", line.Tone, test.tone)
+			rows := fileReaderDocument(test.file, repository.Entry{}).Rows
+			texts := make([]string, len(rows))
+			for index, row := range rows {
+				texts[index] = row.Text
+				if row.Tone != test.tone {
+					t.Fatalf("tone = %v, want %v", row.Tone, test.tone)
 				}
 			}
 			if got := strings.Join(texts, "\n"); !strings.Contains(got, test.want) {

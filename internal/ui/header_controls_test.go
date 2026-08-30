@@ -48,14 +48,14 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 func TestWideHeaderControlsExposeNumberKeys(t *testing.T) {
 	t.Parallel()
 	plain := ansi.Strip(Render(Model{Geometry: Calculate(120, 1), Workspace: workspace.Files}))
-	if !strings.HasPrefix(plain, "1 [files] git  | esc  scratch   2 [all]  3 [file]  4 [uncommitted]") {
+	if !strings.HasPrefix(plain, "1 [files] git  | esc  scratch   4 [all]  5 [file]  6 [uncommitted]") {
 		t.Fatalf("wide Files header = %q", plain)
 	}
 }
 
 func TestSecondaryControlsNeverUseReverseHighlight(t *testing.T) {
 	t.Parallel()
-	for _, hit := range []HitKind{HitSecondaryControl, HitTertiaryControl, HitComparisonControl} {
+	for _, hit := range []HitKind{HitSecondaryControl, HitTertiaryControl, HitComparisonControl, HitDiffHighlightControl} {
 		control := renderHeaderControl(headerControl{hit: hit, key: "2", value: "active"}, true)
 		if strings.Contains(control, "\x1b[7m") {
 			t.Fatalf("control %v uses reverse-video highlight: %q", hit, control)
@@ -84,5 +84,52 @@ func TestHeaderControlHitsUsePaintedLayout(t *testing.T) {
 	controls.Git = workspace.GitRefs
 	if got := geometry.HitTest(38, 0, workspace.Git, controls, 0, 0, 0, 0).Kind; got != HitNone {
 		t.Fatalf("Git Refs claimed absent tertiary control: %v", got)
+	}
+}
+
+func TestDiffHighlightControlAndFooterShareEligibilityAndCompleteShedding(t *testing.T) {
+	t.Parallel()
+	geometry := Calculate(120, 12)
+	controls := workspace.Controls{Reader: workspace.DiffReader, RichDiff: true}
+	frame := ansi.Strip(Render(Model{
+		Geometry: geometry, Workspace: workspace.Files, Controls: controls,
+	}))
+	if !strings.Contains(strings.Split(frame, "\n")[0], "7 [sidebar]") || !strings.Contains(strings.Split(frame, "\n")[geometry.Footer.Y], "7 diff highlight") {
+		t.Fatalf("eligible Files controls/footer = %q", frame)
+	}
+	visible := layoutHeaderControls(geometry, workspace.Files, controls)
+	if len(visible) != 4 || visible[3].hit != HitDiffHighlightControl {
+		t.Fatalf("eligible controls = %+v", visible)
+	}
+	if hit := geometry.HitTest(visible[3].rect.X, visible[3].rect.Y, workspace.Files, controls, 0, 0, 0, 0); hit.Kind != HitDiffHighlightControl {
+		t.Fatalf("diff highlight hit = %+v", hit)
+	}
+	controls.DiffHighlight = workspace.DiffHighlightBackground
+	if plain := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls})); !strings.Contains(strings.Split(plain, "\n")[0], "7 [background]") {
+		t.Fatalf("background label missing: %q", plain)
+	}
+
+	controls.Git = workspace.GitStashes
+	stash := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls}))
+	if !strings.Contains(strings.Split(stash, "\n")[0], "4 [stashes]") || !strings.Contains(strings.Split(stash, "\n")[0], "7 [background]") {
+		t.Fatalf("eligible Stash header = %q", stash)
+	}
+
+	controls.RichDiff = false
+	ineligible := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls}))
+	if strings.Contains(ineligible, "sidebar") || strings.Contains(ineligible, "background") || strings.Contains(ineligible, "diff highlight") {
+		t.Fatalf("ineligible reader exposed control: %q", ineligible)
+	}
+
+	narrowGeometry := Calculate(60, 12)
+	controls.RichDiff = true
+	narrow := ansi.Strip(Render(Model{Geometry: narrowGeometry, Workspace: workspace.Files, Controls: controls}))
+	if strings.Contains(strings.Split(narrow, "\n")[0], "sidebar") || strings.Contains(strings.Split(narrow, "\n")[0], "background") {
+		t.Fatalf("narrow header painted partial optional control: %q", narrow)
+	}
+	for x := 0; x < narrowGeometry.Header.Width; x++ {
+		if hit := narrowGeometry.HitTest(x, narrowGeometry.Header.Y, workspace.Files, controls, 0, 0, 0, 0); hit.Kind == HitDiffHighlightControl {
+			t.Fatalf("shed control retained hit at x=%d", x)
+		}
 	}
 }

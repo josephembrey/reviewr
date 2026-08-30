@@ -177,7 +177,7 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	first.write(t, "r")
 	first.waitFor(t, "[+]")
 	first.resetOutput()
-	first.write(t, "3")
+	first.write(t, "5")
 	first.waitFor(t, "since reviewed")
 	first.write(t, "\t")
 	first.resetOutput()

@@ -71,7 +71,7 @@ func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode wor
 		return state, effect{}
 	}
 	pending := state.requestReader(state.readerEntry, mode)
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	return state, pending
 }
 
@@ -121,11 +121,12 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, visibleR
 	state.place.ReaderOffset = reconcileLogicalLine(oldIdentities, oldOffset, newIdentities)
 	state.reviewCursor = reconcileLogicalLine(oldIdentities, oldCursor, newIdentities)
 	state.reviewSelectionAnchor = reconcileLogicalLine(oldIdentities, oldAnchor, newIdentities)
-	state.readerPresentation = msg.lines
-	if state.readerPresentation == nil {
-		state.readerPresentation = state.deriveReaderLines()
+	presentation := msg.presentation
+	if presentation.Kind == ui.ReaderDocumentNone {
+		presentation = state.deriveReaderDocument()
 	}
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.readerPresentation = &presentation
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	if !msg.document.Exact && msg.document.Reason != "" {
 		state.comparisonWarning = msg.document.Reason
 	}
@@ -142,7 +143,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	if !ok || current != msg.comparison {
 		return state
 	}
-	oldLines := readerLineIdentities(state.readerLines())
+	oldLines := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
 	state.reviewFile = msg.content
 	state.reviewDocument = review.Document{}
@@ -153,12 +154,13 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	state.reader = repository.File{}
 	state.diff = repository.Diff{}
 	state.readerLoading = false
-	state.readerPresentation = msg.lines
-	if state.readerPresentation == nil {
-		state.readerPresentation = state.deriveReaderLines()
+	presentation := msg.presentation
+	if presentation.Kind == ui.ReaderDocumentNone {
+		presentation = state.deriveReaderDocument()
 	}
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
-	state.place.ClampReader(len(state.readerLines()), visibleRows)
+	state.readerPresentation = &presentation
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.place.ClampReader(len(state.readerRows()), visibleRows)
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"
 	}
@@ -392,64 +394,80 @@ func (state *filesState) rederiveReviews() {
 	}
 }
 
-func reviewReaderLines(path string, document review.Document) []ui.Line {
-	lines := make([]ui.Line, len(document.Lines))
+func reviewReaderDocument(path string, document review.Document) ui.ReaderDocument {
+	result := ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: make([]ui.ReaderRow, len(document.Lines))}
 	group := make([]diffCodeRow, 0, len(document.Lines))
 	for index, line := range document.Lines {
 		tone := ui.ToneDefault
 		kind := diffContext
-		marker := "  "
+		rowKind := ui.ReaderContext
+		prefix := "  "
 		switch line.Kind {
 		case review.AddedLine:
-			tone = ui.ToneAdded
 			kind = diffAdded
-			marker = "+ "
+			rowKind = ui.ReaderInsertion
+			prefix = "+ "
 		case review.RemovedLine:
-			tone = ui.ToneRemoved
 			kind = diffRemoved
-			marker = "- "
+			rowKind = ui.ReaderDeletion
+			prefix = "- "
 		case review.NoticeLine:
+			rowKind = ui.ReaderNotice
+			prefix = ""
 			if !document.Exact {
 				tone = ui.ToneError
 			} else {
 				tone = ui.ToneQuiet
 			}
 		}
-		lines[index] = ui.Line{Text: line.Text, Tone: tone}
-		if line.Kind != review.NoticeLine && len(line.Text) >= len(marker) {
-			group = append(group, diffCodeRow{index: index, marker: marker, payload: line.Text[len(marker):], kind: kind})
+		payload := line.Text
+		if line.Kind != review.NoticeLine && strings.HasPrefix(payload, prefix) {
+			payload = payload[len(prefix):]
+		}
+		payload = ui.SafeSingleLine(payload)
+		result.Rows[index] = ui.ReaderRow{
+			Identity: line.Identity, Kind: rowKind, Text: payload, Tone: tone,
+			OldLine: uint64(max(0, line.OldLine)), NewLine: uint64(max(0, line.NewLine)),
+		}
+		if line.Kind != review.NoticeLine {
+			group = append(group, diffCodeRow{index: index, payload: payload, kind: kind})
 		}
 	}
-	decorateDiffGroup(path, lines, group)
-	return lines
+	decorateDiffGroup(path, result.Rows, group)
+	return result
 }
 
-func reviewFileReaderLines(content review.Content, entry repository.Entry) []ui.Line {
+func reviewFileReaderDocument(content review.Content, entry repository.Entry) ui.ReaderDocument {
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
 	if content.Endpoint.Path != entry.Path {
-		return []ui.Line{{Text: "File changed; refresh before marking reviewed.", Tone: ui.ToneError}}
+		document.Rows = noticeRows("File changed; refresh before marking reviewed.", ui.ToneError)
+		return document
 	}
 	switch content.State {
 	case review.ContentText:
 		if content.Endpoint.Kind == review.Symlink {
-			return []ui.Line{{Text: "symlink → " + content.Text}}
+			document.Rows = noticeRows("symlink → "+content.Text, ui.ToneDefault)
+			return document
 		}
 		if content.Endpoint.Kind == review.Submodule {
-			return []ui.Line{{Text: "submodule → " + content.Text}}
+			document.Rows = noticeRows("submodule → "+content.Text, ui.ToneDefault)
+			return document
 		}
-		return highlightedSourceLines(entry.Path, content.Text)
+		document.Rows = highlightedSourceRows(entry.Path, content.Text)
 	case review.ContentAbsent:
-		return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
+		document.Rows = noticeRows("File was deleted from the worktree.", ui.ToneError)
 	case review.ContentBinary:
-		return []ui.Line{{Text: fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", content.Size), Tone: ui.ToneError}}
+		document.Rows = noticeRows(fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", content.Size), ui.ToneError)
 	case review.ContentTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("File is too large (%d bytes; bounded review reader).", content.Size), Tone: ui.ToneError}}
+		document.Rows = noticeRows(fmt.Sprintf("File is too large (%d bytes; bounded review reader).", content.Size), ui.ToneError)
 	default:
 		detail := content.Err
 		if detail == "" {
 			detail = "exact content unavailable"
 		}
-		return []ui.Line{{Text: "File is unavailable: " + detail, Tone: ui.ToneError}}
+		document.Rows = noticeRows("File is unavailable: "+detail, ui.ToneError)
 	}
+	return document
 }
 
 func reviewLoadWarning(err error) string {
