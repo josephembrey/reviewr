@@ -146,3 +146,33 @@ func TestLabANSIPaletteShowsEveryTerminalSlot(t *testing.T) {
 		t.Fatalf("palette does not emit bright-black foreground/background slots: %q", frame)
 	}
 }
+
+func TestLabDiffTintsCompareANSIAndTruecolorBackgrounds(t *testing.T) {
+	t.Parallel()
+	model := New()
+	for range 4 {
+		model, _, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	}
+	frame := model.View(100, 24)
+	plain := ansi.Strip(frame)
+	for _, want := range []string{
+		"lab / diff background tints",
+		"current ANSI blocks",
+		"proposed truecolor tint",
+		"#173D2B",
+		"#48242A",
+		"preserves syntax foregrounds",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("diff-tint lab misses %q:\n%s", want, plain)
+		}
+	}
+	for name, sequence := range map[string]string{
+		"addition": "48;2;23;61;43m",
+		"removal":  "48;2;72;36;42m",
+	} {
+		if !strings.Contains(frame, sequence) {
+			t.Errorf("diff-tint lab does not emit %s truecolor background", name)
+		}
+	}
+}
