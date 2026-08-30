@@ -82,81 +82,88 @@ func ParsePorcelainV2(data []byte) ([]FileEntry, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
-	records := bytes.Split(data, []byte{0})
-	if len(records[len(records)-1]) == 0 {
-		records = records[:len(records)-1]
-	}
-	entries := make([]FileEntry, 0, len(records))
-	for index := 0; index < len(records); index++ {
-		record := records[index]
-		if len(record) < 2 || record[1] != ' ' {
-			return nil, fmt.Errorf("parse git status record %q", record)
+	entries := make([]FileEntry, 0, bytes.Count(data, []byte{0}))
+	reader := nulReader{data: data}
+	for record, ok := reader.next(); ok; record, ok = reader.next() {
+		entry, err := parsePorcelainRecord(record, &reader)
+		if err != nil {
+			return nil, err
 		}
-		switch record[0] {
-		case '?':
-			path, err := statusPath(record[2:])
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, FileEntry{Path: path, State: FileUntracked})
-		case '!':
-			path, err := statusPath(record[2:])
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, FileEntry{Path: path, State: FileIgnored})
-		case '1':
-			fields, err := statusFields(record, 9)
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, FileEntry{Path: string(fields[8]), State: stateFromXY(fields[1])})
-		case '2':
-			fields, err := statusFields(record, 10)
-			if err != nil {
-				return nil, err
-			}
-			if index+1 >= len(records) || len(records[index+1]) == 0 {
-				return nil, fmt.Errorf("parse truncated git status rename %q", record)
-			}
-			index++
-			state := FileRenamed
-			previousPath := string(records[index])
-			if len(fields[8]) > 0 && fields[8][0] == 'C' {
-				state = FileAdded
-				previousPath = ""
-			}
-			entries = append(entries, FileEntry{
-				Path:         string(fields[9]),
-				PreviousPath: previousPath,
-				State:        state,
-			})
-		case 'u':
-			fields, err := statusFields(record, 11)
-			if err != nil {
-				return nil, err
-			}
-			entries = append(entries, FileEntry{Path: string(fields[10]), State: FileModified})
-		default:
-			return nil, fmt.Errorf("parse unsupported git status record %q", record)
-		}
+		entries = append(entries, entry)
 	}
 	return entries, nil
 }
 
-func statusFields(record []byte, count int) ([][]byte, error) {
-	fields := bytes.SplitN(record, []byte{' '}, count)
-	if len(fields) != count || len(fields[count-1]) == 0 {
-		return nil, fmt.Errorf("parse git status record %q", record)
+func parsePorcelainRecord(record []byte, reader *nulReader) (FileEntry, error) {
+	if len(record) < 2 || record[1] != ' ' {
+		return FileEntry{}, fmt.Errorf("parse git status record %q", record)
 	}
-	return fields, nil
+	switch record[0] {
+	case '?':
+		return simpleStatusEntry(record[2:], FileUntracked)
+	case '!':
+		return simpleStatusEntry(record[2:], FileIgnored)
+	case '1':
+		xy, _, path, err := statusFields(record, 9)
+		return FileEntry{Path: string(path), State: stateFromXY(xy)}, err
+	case '2':
+		return parseRenameStatus(record, reader)
+	case 'u':
+		_, _, path, err := statusFields(record, 11)
+		return FileEntry{Path: string(path), State: FileModified}, err
+	default:
+		return FileEntry{}, fmt.Errorf("parse unsupported git status record %q", record)
+	}
 }
 
-func statusPath(path []byte) (string, error) {
+func simpleStatusEntry(path []byte, state FileState) (FileEntry, error) {
 	if len(path) == 0 {
-		return "", fmt.Errorf("parse empty git status path")
+		return FileEntry{}, fmt.Errorf("parse empty git status path")
 	}
-	return string(path), nil
+	return FileEntry{Path: string(path), State: state}, nil
+}
+
+func parseRenameStatus(record []byte, reader *nulReader) (FileEntry, error) {
+	_, score, path, err := statusFields(record, 10)
+	if err != nil {
+		return FileEntry{}, err
+	}
+	previousPath, ok := reader.next()
+	if !ok || len(previousPath) == 0 {
+		return FileEntry{}, fmt.Errorf("parse truncated git status rename %q", record)
+	}
+	entry := FileEntry{Path: string(path), PreviousPath: string(previousPath), State: FileRenamed}
+	if len(score) > 0 && score[0] == 'C' {
+		entry.State = FileAdded
+		entry.PreviousPath = ""
+	}
+	return entry, nil
+}
+
+// statusFields returns the XY field, the field immediately before the path,
+// and the opaque path without allocating a slice for every metadata field.
+func statusFields(record []byte, count int) ([]byte, []byte, []byte, error) {
+	fieldIndex := 0
+	fieldStart := 0
+	var xy, beforePath []byte
+	for index, value := range record {
+		if value != ' ' || fieldIndex >= count-1 {
+			continue
+		}
+		field := record[fieldStart:index]
+		if fieldIndex == 1 {
+			xy = field
+		}
+		if fieldIndex == count-2 {
+			beforePath = field
+		}
+		fieldIndex++
+		fieldStart = index + 1
+	}
+	if fieldIndex != count-1 || fieldStart >= len(record) {
+		return nil, nil, nil, fmt.Errorf("parse git status record %q", record)
+	}
+	return xy, beforePath, record[fieldStart:], nil
 }
 
 func stateFromXY(xy []byte) FileState {

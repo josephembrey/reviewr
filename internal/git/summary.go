@@ -2,11 +2,10 @@ package git
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"io"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -37,17 +36,18 @@ func (client Client) WorktreeSummary(root string) (ChangeSummary, error) {
 	return summary, nil
 }
 
-func (Client) worktreeStats(root string, untracked []string) (map[string]changeStat, error) {
-	base, err := run(root, "rev-parse", "--verify", "-q", "HEAD")
-	if err != nil {
-		base, err = hashEmptyTree(root)
+func (client Client) worktreeStats(root string, untracked []string) (map[string]changeStat, error) {
+	base, err := client.HeadOID(root)
+	if errors.Is(err, ErrUnbornHead) {
+		base, err = client.EmptyTreeOID(root)
 		if err != nil {
 			return nil, err
 		}
+	} else if err != nil {
+		return nil, err
 	}
-	base = bytes.TrimSpace(base)
 
-	numstat, err := run(root, "diff", "-M", "-C", string(base), "--numstat", "-z", "--")
+	numstat, err := run(root, "diff", "-M", "-C", base, "--numstat", "-z", "--")
 	if err != nil {
 		return nil, err
 	}
@@ -62,22 +62,6 @@ func (Client) worktreeStats(root string, untracked []string) (map[string]changeS
 		}
 	}
 	return changes, nil
-}
-
-func hashEmptyTree(root string) ([]byte, error) {
-	cmd := exec.Command("git", "-C", root, "hash-object", "-t", "tree", "--stdin")
-	cmd.Env = withOptionalLocksDisabled(os.Environ())
-	cmd.Stdin = bytes.NewReader(nil)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git hash-object: %s: %w", bytes.TrimSpace(stderr.Bytes()), err)
-	}
-	if len(bytes.TrimSpace(out)) == 0 {
-		return nil, fmt.Errorf("git hash-object returned an empty tree identity")
-	}
-	return out, nil
 }
 
 func untrackedFileStat(root, path string) changeStat {
