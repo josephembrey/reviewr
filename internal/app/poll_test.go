@@ -44,7 +44,6 @@ func TestRepositoryPollResultsYieldToNewerUserActivity(t *testing.T) {
 		},
 	}
 	filesGeneration := model.files.listGeneration
-	summaryGeneration := model.summary.generation
 	historyGeneration := model.history.listGeneration
 
 	command := model.landRepositoryPoll(repositoryPolledMsg{
@@ -55,8 +54,8 @@ func TestRepositoryPollResultsYieldToNewerUserActivity(t *testing.T) {
 	if command == nil || model.poll.running {
 		t.Fatalf("stale poll was not retired and rescheduled: %+v", model.poll)
 	}
-	if model.files.listGeneration != filesGeneration || model.summary.generation != summaryGeneration ||
-		model.history.listGeneration != historyGeneration || model.poll.fingerprint.Worktree != "old-worktree" {
+	if model.files.listGeneration != filesGeneration || model.history.listGeneration != historyGeneration ||
+		model.poll.fingerprint.Worktree != "old-worktree" {
 		t.Fatal("stale poll result changed application state")
 	}
 
@@ -92,8 +91,6 @@ func TestRepositoryPollOnlyReloadsChangedDomainsWithoutLoadingState(t *testing.T
 	model := newTestModel(&fakeSource{})
 	model.files.loaded = true
 	model.files.listLoading = false
-	model.summary.loaded = true
-	model.summary.loading = false
 	model.history.loaded = true
 	model.history.listLoading = false
 	model.poll = repositoryPollState{
@@ -102,31 +99,29 @@ func TestRepositoryPollOnlyReloadsChangedDomainsWithoutLoadingState(t *testing.T
 		fingerprint: repository.StateFingerprint{Worktree: "old-worktree", Refs: "same-refs"},
 	}
 	filesGeneration := model.files.listGeneration
-	summaryGeneration := model.summary.generation
 	historyGeneration := model.history.listGeneration
 
 	_ = model.landRepositoryPoll(repositoryPolledMsg{
 		generation: 4,
 		state:      repository.StateFingerprint{Worktree: "new-worktree", Refs: "same-refs"},
 	})
-	if model.files.listGeneration != filesGeneration+1 || model.summary.generation != summaryGeneration+1 {
-		t.Fatalf("worktree poll generations = files %d summary %d", model.files.listGeneration, model.summary.generation)
+	if model.files.listGeneration != filesGeneration+1 {
+		t.Fatalf("worktree poll generation = %d", model.files.listGeneration)
 	}
 	if model.history.listGeneration != historyGeneration {
 		t.Fatal("worktree-only poll reloaded history")
 	}
-	if model.files.listLoading || model.summary.loading || model.history.listLoading {
-		t.Fatalf("background poll exposed loading state: files=%v summary=%v history=%v", model.files.listLoading, model.summary.loading, model.history.listLoading)
+	if model.files.listLoading || model.history.listLoading {
+		t.Fatalf("background poll exposed loading state: files=%v history=%v", model.files.listLoading, model.history.listLoading)
 	}
 
 	filesGeneration = model.files.listGeneration
-	summaryGeneration = model.summary.generation
 	historyGeneration = model.history.listGeneration
 	_ = model.landRepositoryPoll(repositoryPolledMsg{
 		generation: 4,
 		state:      repository.StateFingerprint{Worktree: "new-worktree", Refs: "same-refs"},
 	})
-	if model.files.listGeneration != filesGeneration || model.summary.generation != summaryGeneration || model.history.listGeneration != historyGeneration {
+	if model.files.listGeneration != filesGeneration || model.history.listGeneration != historyGeneration {
 		t.Fatal("unchanged fingerprint caused another reload")
 	}
 

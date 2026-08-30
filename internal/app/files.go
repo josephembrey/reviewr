@@ -412,6 +412,10 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		if entry, ok := state.entry(row.Path); ok {
 			presentation.Status = navigatorStatus(entry.State)
 			presentation.Dimmed = entry.State == repository.FileIgnored
+			if entry.Changed() && !entry.Binary {
+				changes := ui.LineChanges{Additions: entry.Additions, Deletions: entry.Deletions}
+				presentation.Changes = &changes
+			}
 			if comparison, reviewable := state.reviewSnapshot.Comparisons[row.Path]; reviewable && entry.Changed() {
 				reviewState := state.reviewAssessment(row.Path, comparison).State
 				presentation.Review = &reviewState
@@ -450,9 +454,6 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 					readerTitle += "  older review gap; full comparison"
 				} else if assessment.State == review.BasisChanged {
 					readerTitle += "  review basis changed; full comparison"
-				}
-				if state.reviewDocument.Exact {
-					readerTitle += fmt.Sprintf("  +%d -%d", state.reviewDocument.Added, state.reviewDocument.Removed)
 				}
 			}
 		}

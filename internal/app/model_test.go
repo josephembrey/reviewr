@@ -21,8 +21,6 @@ type fakeSource struct {
 	snapshots      int
 	contents       map[string]repository.File
 	diffs          map[string]repository.Diff
-	summary        repository.ChangeSummary
-	summaryErr     error
 	commits        []repository.Commit
 	commitErr      error
 	commitQueries  []repository.CommitQuery
@@ -63,10 +61,6 @@ func (s *fakeSource) ReadDiff(entry repository.Entry) repository.Diff {
 		return diff
 	}
 	return repository.Diff{Entry: entry, Kind: repository.DiffReady}
-}
-
-func (s *fakeSource) WorktreeSummary() (repository.ChangeSummary, error) {
-	return s.summary, s.summaryErr
 }
 
 func (s *fakeSource) ListCommits(query repository.CommitQuery) ([]repository.Commit, error) {
@@ -119,8 +113,10 @@ func (s *fakeSource) ReadStashFile(source repository.ChangeSource, file reposito
 func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 	t.Parallel()
 	source := &fakeSource{
-		files:   []string{"a", "b"},
-		summary: repository.ChangeSummary{Files: 2, Additions: 4, Deletions: 1},
+		snapshot: repository.NewSnapshot([]repository.Entry{
+			{Path: "a", State: repository.FileModified, Additions: 3, Deletions: 1},
+			{Path: "b", State: repository.FileModified, Additions: 1},
+		}),
 		contents: map[string]repository.File{
 			"a": {Path: "a", Kind: repository.FileReady, Content: "a1\na2"},
 			"b": {Path: "b", Kind: repository.FileReady, Content: "b1\nb2"},
@@ -134,8 +130,8 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 		t.Fatal("Init() returned no repository command")
 	}
 	batch, ok := initial().(tea.BatchMsg)
-	if !ok || len(batch) != 3 {
-		t.Fatalf("Init() message = %T, want three-command warmup batch", initial())
+	if !ok || len(batch) != 2 {
+		t.Fatalf("Init() message = %T, want two-command warmup batch", initial())
 	}
 	var loaded snapshotLoadedMsg
 	var historyLoaded bool
@@ -147,19 +143,16 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 			historyLoaded = true
 			next, _ := model.Update(message)
 			model = next.(Model)
-		case summaryLoadedMsg:
-			next, _ := model.Update(message)
-			model = next.(Model)
 		}
-	}
-	if model.summary.value != source.summary {
-		t.Fatalf("initial summary = %+v, want %+v", model.summary.value, source.summary)
 	}
 	if !historyLoaded || !model.history.loaded || model.history.listLoading {
 		t.Fatalf("initial history was not warmed: %+v", model.history)
 	}
 	next, contentCommand := model.Update(loaded)
 	model = next.(Model)
+	if summary := model.files.snapshot.Summary(); summary != (repository.ChangeSummary{Files: 2, Additions: 4, Deletions: 1}) {
+		t.Fatalf("initial summary = %+v", summary)
+	}
 	if model.files.readerEntry.Path != "a" || !model.files.readerLoading || contentCommand == nil {
 		t.Fatalf("after list load: %+v", model.files)
 	}

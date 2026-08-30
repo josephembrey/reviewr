@@ -10,20 +10,20 @@ import (
 func TestParseNumstatHandlesFilesRenamesAndBinary(t *testing.T) {
 	t.Parallel()
 	data := []byte("3\t1\tplain.go\x00-\t-\timage.png\x004\t2\t\x00old name.go\x00new name.go\x00")
-	want := map[string][2]uint64{
-		"plain.go":    {3, 1},
-		"image.png":   {0, 0},
-		"new name.go": {4, 2},
+	want := map[string]changeStat{
+		"plain.go":    {additions: 3, deletions: 1},
+		"image.png":   {binary: true},
+		"new name.go": {additions: 4, deletions: 2},
 	}
-	got, err := parseNumstat(data)
+	got, err := parseNumstatDetails(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseNumstat() = %#v, want %#v", got, want)
 	}
-	if _, err := parseNumstat([]byte("broken\x00")); err == nil {
-		t.Fatal("parseNumstat() accepted malformed output")
+	if _, err := parseNumstatDetails([]byte("broken\x00")); err == nil {
+		t.Fatal("parseNumstatDetails() accepted malformed output")
 	}
 }
 

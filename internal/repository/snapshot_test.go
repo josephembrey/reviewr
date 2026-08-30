@@ -8,8 +8,8 @@ import (
 func TestSnapshotDerivesAllAndChangedFromOneEntrySet(t *testing.T) {
 	t.Parallel()
 	entries := []Entry{
-		{Path: "added.go", State: FileAdded},
-		{Path: "deleted.go", State: FileDeleted},
+		{Path: "added.go", State: FileAdded, Additions: 4},
+		{Path: "deleted.go", State: FileDeleted, Deletions: 2},
 		{Path: "ignored.go", State: FileIgnored},
 		{Path: "modified.go", State: FileModified},
 		{Path: "renamed.go", PreviousPath: "old.go", State: FileRenamed},
@@ -23,6 +23,9 @@ func TestSnapshotDerivesAllAndChangedFromOneEntrySet(t *testing.T) {
 	wantChanged := []Entry{entries[0], entries[1], entries[3], entries[4], entries[6]}
 	if got := snapshot.Changed(); !reflect.DeepEqual(got, wantChanged) {
 		t.Fatalf("Changed() = %#v, want %#v", got, wantChanged)
+	}
+	if got := snapshot.Summary(); got != (ChangeSummary{Files: 5, Additions: 4, Deletions: 2}) {
+		t.Fatalf("Summary() = %+v", got)
 	}
 
 	all := snapshot.All()

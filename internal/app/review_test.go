@@ -221,9 +221,10 @@ func TestPartialAndBasisChangedReadersExplainFullBounds(t *testing.T) {
 			bounds := reviewdomain.Bounds{Old: current.Old, New: current.New}
 			state.displayedComparison = &current
 			state.displayedBounds = &bounds
-			state.reviewDocument = reviewdomain.Document{Bounds: bounds, Exact: true}
-			if title := state.viewModel(ui.Calculate(80, 20)).ReaderTitle; !strings.Contains(title, test.want) {
-				t.Fatalf("reader title = %q, want %q", title, test.want)
+			state.reviewDocument = reviewdomain.Document{Bounds: bounds, Added: 12, Removed: 3, Exact: true}
+			title := state.viewModel(ui.Calculate(80, 20)).ReaderTitle
+			if !strings.Contains(title, test.want) || strings.Contains(title, "+12 -3") {
+				t.Fatalf("reader title = %q, want %q without line stats", title, test.want)
 			}
 		})
 	}

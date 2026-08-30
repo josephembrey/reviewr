@@ -146,8 +146,6 @@ func TestScratchPrintablePasteAndBackgroundRefreshIsolation(t *testing.T) {
 		snapshot:   repository.NewSnapshot([]repository.Entry{{Path: "world.go"}}),
 	})
 	model = next.(Model)
-	next, _ = model.Update(summaryLoadedMsg{generation: model.summary.generation, summary: repository.ChangeSummary{Files: 9}})
-	model = next.(Model)
 	next, _ = model.Update(refSourcesLoadedMsg{
 		generation: model.refs.sourceGeneration,
 		sources:    []repository.RefSource{repository.AllRefsSource()},

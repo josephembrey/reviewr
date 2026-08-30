@@ -267,6 +267,9 @@ func (r *Repository) Snapshot() (Snapshot, error) {
 			Path:         entry.Path,
 			PreviousPath: entry.PreviousPath,
 			State:        repositoryFileState(entry.State),
+			Additions:    entry.Additions,
+			Deletions:    entry.Deletions,
+			Binary:       entry.Binary,
 		}
 	}
 	return NewSnapshot(result), nil

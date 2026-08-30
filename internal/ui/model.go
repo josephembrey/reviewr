@@ -65,6 +65,12 @@ const (
 	StatusIgnored
 )
 
+// LineChanges is one changed file's diff statistic.
+type LineChanges struct {
+	Additions uint64
+	Deletions uint64
+}
+
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
 	Identity  string
@@ -78,6 +84,9 @@ type NavigatorRow struct {
 	Expanded  bool
 	Status    NavigatorStatus
 	Dimmed    bool
+	// Changes is a right-aligned per-file statistic. Nil keeps unchanged and
+	// binary rows visually quiet.
+	Changes *LineChanges
 	// Review is an independent right-side file badge. Nil means the row is
 	// observation-only (including unchanged All-scope files).
 	Review *review.State

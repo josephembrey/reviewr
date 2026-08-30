@@ -362,6 +362,11 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 		progress := " " + item.Progress
 		row += dimStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
 	}
+	if layout.Changes.Width > 0 {
+		additions, deletions := formatLineChanges(*item.Changes)
+		row += selection.Render(" ") + addedStyle.Inherit(selection).Render(additions) +
+			selection.Render(" ") + errorStyle.Inherit(selection).Render(deletions)
+	}
 	if layout.Review.Width > 0 {
 		badge := " " + item.Review.Badge()
 		row += reviewBadgeStyle(*item.Review).Inherit(selection).Render(badge)

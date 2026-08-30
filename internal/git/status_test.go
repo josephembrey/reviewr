@@ -127,4 +127,17 @@ func TestSnapshotIncludesAllStatesAndIgnoredFiles(t *testing.T) {
 	if _, exists := states["old.go"]; exists {
 		t.Fatalf("snapshot retained rename source: %#v", entries)
 	}
+	stats := map[string][2]uint64{
+		"added.go":     {1, 0},
+		"deleted.go":   {0, 1},
+		"modified.go":  {1, 1},
+		"renamed.go":   {0, 0},
+		"untracked.go": {1, 0},
+	}
+	for path, want := range stats {
+		entry := states[path]
+		if got := [2]uint64{entry.Additions, entry.Deletions}; got != want || entry.Binary {
+			t.Fatalf("Snapshot()[%q] stats = %v binary=%v, want %v", path, got, entry.Binary, want)
+		}
+	}
 }

@@ -25,12 +25,14 @@ type FileEntry struct {
 	Path         string
 	PreviousPath string
 	State        FileState
+	Additions    uint64
+	Deletions    uint64
+	Binary       bool
 }
 
-// Snapshot reads all tracked, untracked, and ignored file identities and
-// overlays porcelain-v2 state. Two Git reads are necessary because status omits
-// unchanged tracked paths; callers still receive one coherent typed result.
-func (Client) Snapshot(root string) ([]FileEntry, error) {
+// Snapshot reads all tracked, untracked, and ignored file identities, then
+// overlays porcelain-v2 state and per-file line statistics into one result.
+func (client Client) Snapshot(root string) ([]FileEntry, error) {
 	trackedOutput, err := run(root, "ls-files", "-z", "--cached")
 	if err != nil {
 		return nil, err
@@ -51,7 +53,27 @@ func (Client) Snapshot(root string) ([]FileEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return MergeFileEntries(ParseNUL(trackedOutput), status), nil
+	entries := MergeFileEntries(ParseNUL(trackedOutput), status)
+	untracked := make([]string, 0)
+	for _, entry := range entries {
+		if entry.State == FileUntracked {
+			untracked = append(untracked, entry.Path)
+		}
+	}
+	stats, err := client.worktreeStats(root, untracked)
+	if err != nil {
+		return nil, err
+	}
+	for index := range entries {
+		stat, changed := stats[entries[index].Path]
+		if !changed {
+			continue
+		}
+		entries[index].Additions = stat.additions
+		entries[index].Deletions = stat.deletions
+		entries[index].Binary = stat.binary
+	}
+	return entries, nil
 }
 
 // ParsePorcelainV2 parses only NUL-delimited porcelain-v2 records. Paths remain

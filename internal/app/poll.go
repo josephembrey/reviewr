@@ -73,10 +73,7 @@ func (m *Model) landRepositoryPoll(msg repositoryPolledMsg) tea.Cmd {
 	m.poll.ready = true
 	m.poll.fingerprint = msg.state
 	if worktreeChanged {
-		commands = append(commands,
-			m.command(tagRepositoryPoll(m.files.poll(m.controls.Comparison.Label()), msg.activity)),
-			m.command(tagRepositoryPoll(m.summary.poll(), msg.activity)),
-		)
+		commands = append(commands, m.command(tagRepositoryPoll(m.files.poll(m.controls.Comparison.Label()), msg.activity)))
 	}
 	if refsChanged {
 		commands = append(commands, m.command(tagRepositoryPoll(m.history.poll(m.controls.Traversal, m.selectedHistoryOID()), msg.activity)))

@@ -20,7 +20,6 @@ type Source interface {
 	Snapshot() (repository.Snapshot, error)
 	ReadFile(entry repository.Entry) repository.File
 	ReadDiff(entry repository.Entry) repository.Diff
-	WorktreeSummary() (repository.ChangeSummary, error)
 	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
 	ListRefSources() ([]repository.RefSource, error)
@@ -51,7 +50,6 @@ type Model struct {
 	history   historyState
 	refs      refsState
 	stashes   stashState
-	summary   summaryState
 	note      scratchState
 	poll      repositoryPollState
 	paneStore PaneStateStore
@@ -67,7 +65,6 @@ const (
 	effectLoadSnapshot
 	effectLoadFile
 	effectLoadDiff
-	effectLoadSummary
 	effectLoadCommits
 	effectLoadCommit
 	effectLoadReviewSnapshot
@@ -192,14 +189,6 @@ type diffLoadedMsg struct {
 	activity   uint64
 }
 
-type summaryLoadedMsg struct {
-	generation uint64
-	summary    repository.ChangeSummary
-	err        error
-	background bool
-	activity   uint64
-}
-
 type commitsLoadedMsg struct {
 	generation uint64
 	commits    []repository.Commit
@@ -305,7 +294,6 @@ func NewWithPaneState(source Source, host herdr.Context, scratchStore scratch.St
 		history:   newHistoryState(),
 		refs:      newRefsState(),
 		stashes:   newStashState(),
-		summary:   newSummaryState(),
 		note:      newScratchState(scratchStore),
 		paneStore: paneStore,
 	}
@@ -329,7 +317,6 @@ func (m Model) Init() tea.Cmd {
 			generation: m.history.listGeneration,
 			query:      commitQuery(workspace.GitGraph, ""),
 		}),
-		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
 	}
 	if _, ok := m.source.(review.Provider); ok {
 		commands = append(commands, m.command(effect{kind: effectLoadReviewState}))
@@ -410,12 +397,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
-		return m, nil
-	case summaryLoadedMsg:
-		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
-			return m, nil
-		}
-		m.summary = m.summary.land(msg)
 		return m, nil
 	case commitsLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
@@ -500,11 +481,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.noteRepositoryActivity()
 	pending = m.apply(action)
-	command := m.command(pending)
-	if action.Kind == Reload {
-		command = batchCommands(command, m.command(m.summary.reload()))
-	}
-	return m, command
+	return m, m.command(pending)
 }
 
 // View renders from the same stored Geometry used by mouse routing.
@@ -542,11 +519,12 @@ func (m Model) View() tea.View {
 	presentation.DividerDragging = m.layout.dragging
 	presentation.Controls = m.controls
 	if presentation.Workspace == workspace.Files {
+		summary := m.files.snapshot.Summary()
 		presentation.Changes = ui.ChangeSummary{
-			Files:     m.summary.value.Files,
-			Additions: m.summary.value.Additions,
-			Deletions: m.summary.value.Deletions,
-			Ready:     m.summary.loaded,
+			Files:     summary.Files,
+			Additions: summary.Additions,
+			Deletions: summary.Deletions,
+			Ready:     m.files.loaded,
 		}
 	}
 	content := ui.Render(presentation)
@@ -1043,15 +1021,6 @@ func (m Model) command(pending effect) tea.Cmd {
 				generation: generation, entry: entry, diff: diff, lines: diffReaderLines(diff),
 				background: background, activity: activity,
 			}
-		}
-	case effectLoadSummary:
-		source := m.source
-		generation := pending.generation
-		background := pending.background
-		activity := pending.activity
-		return func() tea.Msg {
-			summary, err := source.WorktreeSummary()
-			return summaryLoadedMsg{generation: generation, summary: summary, err: err, background: background, activity: activity}
 		}
 	case effectLoadCommits:
 		source := m.source

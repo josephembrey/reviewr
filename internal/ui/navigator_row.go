@@ -1,10 +1,13 @@
 package ui
 
+import "strconv"
+
 // NavigatorRowLayout is the shared paint and hit-test geometry for one row.
 // Rectangles are relative to the navigator content row.
 type NavigatorRowLayout struct {
 	Label    Rect
 	Progress Rect
+	Changes  Rect
 	Review   Rect
 }
 
@@ -19,6 +22,14 @@ func LayoutNavigatorRow(row NavigatorRow, width int) NavigatorRowLayout {
 		layout.Review = Rect{X: right - 4, Width: 4, Height: 1}
 		right -= 4
 	}
+	if row.Changes != nil {
+		additions, deletions := formatLineChanges(*row.Changes)
+		changesWidth := len(additions) + len(deletions) + 2
+		if changesWidth <= right {
+			layout.Changes = Rect{X: right - changesWidth, Width: changesWidth, Height: 1}
+			right -= changesWidth
+		}
+	}
 	if row.Progress != "" {
 		progressWidth := len(row.Progress) + 1
 		if progressWidth <= right {
@@ -28,6 +39,10 @@ func LayoutNavigatorRow(row NavigatorRow, width int) NavigatorRowLayout {
 	}
 	layout.Label = Rect{Width: right, Height: 1}
 	return layout
+}
+
+func formatLineChanges(changes LineChanges) (string, string) {
+	return "+" + strconv.FormatUint(changes.Additions, 10), "-" + strconv.FormatUint(changes.Deletions, 10)
 }
 
 // HitNavigatorReview resolves a click against the same content width and row

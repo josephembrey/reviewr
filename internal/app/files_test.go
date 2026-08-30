@@ -15,7 +15,7 @@ import (
 func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 	t.Parallel()
 	state := loadedFilesState(t,
-		repository.Entry{Path: "one.go", State: repository.FileModified},
+		repository.Entry{Path: "one.go", State: repository.FileModified, Additions: 12, Deletions: 3},
 		repository.Entry{Path: "path/to/file.ext", State: repository.FileIgnored},
 	)
 	state.readerEntry = repository.Entry{Path: "path/to/file.ext", State: repository.FileIgnored}
@@ -24,13 +24,20 @@ func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 		t.Fatalf("pane titles = %q / %q", view.NavigatorTitle, view.ReaderTitle)
 	}
 	ignored := false
+	var changes *ui.LineChanges
 	for _, row := range view.NavigatorRows {
 		if row.Identity == filetree.FileIdentity("path/to/file.ext") {
 			ignored = row.Status == ui.StatusIgnored && row.Dimmed
 		}
+		if row.Identity == filetree.FileIdentity("one.go") {
+			changes = row.Changes
+		}
 	}
 	if !ignored {
 		t.Fatalf("ignored row lacks explicit dimmed status: %#v", view.NavigatorRows)
+	}
+	if changes == nil || *changes != (ui.LineChanges{Additions: 12, Deletions: 3}) {
+		t.Fatalf("changed row stats = %#v", changes)
 	}
 }
 

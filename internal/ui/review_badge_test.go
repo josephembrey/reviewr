@@ -26,12 +26,27 @@ func TestReviewBadgesUseIndependentAlignedRightSideField(t *testing.T) {
 
 func TestNavigatorRowLayoutReservesProgressAndCompleteBadge(t *testing.T) {
 	state := review.Partial
-	layout := LayoutNavigatorRow(NavigatorRow{Review: &state, Progress: "12/30"}, 20)
-	if layout.Label.Width != 10 || layout.Progress != (Rect{X: 10, Width: 6, Height: 1}) || layout.Review != (Rect{X: 16, Width: 4, Height: 1}) {
+	changes := LineChanges{Additions: 12, Deletions: 3}
+	layout := LayoutNavigatorRow(NavigatorRow{Review: &state, Changes: &changes, Progress: "12/30"}, 30)
+	if layout.Label.Width != 13 || layout.Progress != (Rect{X: 13, Width: 6, Height: 1}) ||
+		layout.Changes != (Rect{X: 19, Width: 7, Height: 1}) || layout.Review != (Rect{X: 26, Width: 4, Height: 1}) {
 		t.Fatalf("layout = %+v", layout)
 	}
 	if narrow := LayoutNavigatorRow(NavigatorRow{Review: &state}, 4); narrow.Label.Width != 0 || narrow.Review.Width != 4 {
 		t.Fatalf("narrow layout = %+v", narrow)
+	}
+}
+
+func TestChangedTreeRowRightAlignsLineStatsBeforeReviewBadge(t *testing.T) {
+	state := review.Reviewed
+	changes := LineChanges{Additions: 12, Deletions: 3}
+	row := NavigatorRow{Label: "main.go", Tree: true, Status: StatusModified, Changes: &changes, Review: &state}
+	rendered := renderNavigatorPresentationRow(row, 30, false, false, commitrow.Columns{}, time.Time{})
+	if plain := ansi.Strip(rendered); !strings.HasSuffix(plain, " +12 -3 [x]") {
+		t.Fatalf("changed row = %q", plain)
+	}
+	if !strings.Contains(rendered, addedStyle.Render("+12")) || !strings.Contains(rendered, errorStyle.Render("-3")) {
+		t.Fatalf("changed row stats lack semantic colors: %q", rendered)
 	}
 }
 
