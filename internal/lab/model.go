@@ -7,11 +7,14 @@ import tea "charm.land/bubbletea/v2"
 
 // Model is the place state for the switcher comparison page.
 type Model struct {
-	selected    int
-	destination int
-	fileSet     int
-	reader      int
-	comparison  int
+	selected     int
+	destination  int
+	fileSet      int
+	reader       int
+	comparison   int
+	page         int
+	foldSelected int
+	foldExpanded [3]bool
 }
 
 // New returns the initial lab state.
@@ -21,6 +24,13 @@ func New() Model {
 
 // Update handles only lab-local controls.
 func (model Model) Update(msg tea.KeyPressMsg) Model {
+	if msg.String() == "tab" {
+		model.page = (model.page + 1) % labPageCount
+		return model
+	}
+	if model.page == labPageFolds {
+		return model.updateFolds(msg)
+	}
 	switch msg.String() {
 	case "j", "down":
 		model.selected = min(model.selected+1, len(variants)-1)
@@ -47,6 +57,22 @@ func (model Model) Update(msg tea.KeyPressMsg) Model {
 		model.comparison = (model.comparison + 1) % len(comparisonLabels)
 	case "0", "`", "n":
 		model.destination = destinationScratch
+	}
+	return model
+}
+
+func (model Model) updateFolds(msg tea.KeyPressMsg) Model {
+	switch msg.String() {
+	case "j", "down":
+		model.foldSelected = min(model.foldSelected+1, len(foldVariants)-1)
+	case "k", "up":
+		model.foldSelected = max(model.foldSelected-1, 0)
+	case "h", "left":
+		model.foldExpanded[model.foldSelected] = false
+	case "l", "right":
+		model.foldExpanded[model.foldSelected] = true
+	case "enter", " ":
+		model.foldExpanded[model.foldSelected] = !model.foldExpanded[model.foldSelected]
 	}
 	return model
 }

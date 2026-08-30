@@ -47,3 +47,33 @@ func TestLabControlsExploreWithoutLeavingThePage(t *testing.T) {
 		t.Fatalf("Scratch preview destination = %d", model.destination)
 	}
 }
+
+func TestLabDiffFoldPagePreviewsThreeInteractiveModels(t *testing.T) {
+	t.Parallel()
+	model := New().Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	frame := model.View(100, 24)
+	plain := ansi.Strip(frame)
+	for _, want := range []string{"lab / diff folds", "unchanged gaps", "hunk accordion", "whole-file context", "6 unchanged lines", "return previous", "return current"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("fold lab misses %q:\n%s", want, plain)
+		}
+	}
+
+	model = model.Update(tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j"}))
+	model = model.Update(tea.KeyPressMsg(tea.Key{Code: 'l', Text: "l"}))
+	if model.foldSelected != 1 || !model.foldExpanded[1] {
+		t.Fatalf("fold lab state = %+v", model)
+	}
+	plain = ansi.Strip(model.View(100, 24))
+	if !strings.Contains(plain, "return previous") || !strings.Contains(plain, "return current") || !strings.Contains(plain, "@@ 108-116") {
+		t.Fatalf("expanded hunk preview is incomplete:\n%s", plain)
+	}
+	model = model.Update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
+	if model.foldExpanded[1] {
+		t.Fatal("h did not collapse selected fold preview")
+	}
+	plain = ansi.Strip(model.View(100, 24))
+	if !strings.Contains(plain, "3 collapsed hunks") || strings.Contains(plain, "func value() string") {
+		t.Fatalf("collapsed hunk preview is incoherent:\n%s", plain)
+	}
+}

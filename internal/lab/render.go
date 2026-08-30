@@ -27,6 +27,12 @@ const (
 	readerDiff
 )
 
+const (
+	labPageSwitchers = iota
+	labPageFolds
+	labPageCount
+)
+
 var (
 	accent  = lipgloss.Color("#7AA2F7")
 	green   = lipgloss.Color("#9ECE6A")
@@ -55,6 +61,13 @@ var variants = []variantSpec{
 
 // View renders a fixed-size development page.
 func (model Model) View(width, height int) string {
+	if model.page == labPageFolds {
+		return model.viewFolds(width, height)
+	}
+	return model.viewSwitchers(width, height)
+}
+
+func (model Model) viewSwitchers(width, height int) string {
 	width = max(0, width)
 	height = max(0, height)
 	lines := []string{
@@ -78,7 +91,11 @@ func (model Model) View(width, height int) string {
 	}
 	lines = append(lines, quiet.Render("ctrl+l or esc close  •  q quit"))
 
-	fitted := make([]string, height)
+	return fitPage(lines, width, height)
+}
+
+func fitPage(lines []string, width, height int) string {
+	fitted := make([]string, max(0, height))
 	for row := range fitted {
 		if row < len(lines) {
 			fitted[row] = fit(lines[row], width)
