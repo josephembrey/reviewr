@@ -164,19 +164,15 @@ func (r *Repository) CommonDir() (string, error) {
 	return r.git.ResolveCommonDir(r.root)
 }
 
-// ScratchStores builds the private project and optional linked-worktree note
-// sessions from canonical Git identities. Comparing Git-dir to common-dir is
-// Git's own robust distinction between the primary and linked checkouts.
+// ScratchStores builds the private project-wide and checkout-local note
+// sessions from canonical Git identities. Every checkout, including the
+// primary one, has a distinct worktree note.
 func (r *Repository) ScratchStores(lookupEnv func(string) (string, bool)) (scratch.Stores, error) {
 	commonDir, err := r.git.ResolveCommonDir(r.root)
 	if err != nil {
 		return scratch.Stores{}, fmt.Errorf("resolve Scratch project identity: %w", err)
 	}
-	gitDir, err := r.git.ResolveGitDir(r.root)
-	if err != nil {
-		return scratch.Stores{}, fmt.Errorf("resolve Scratch worktree identity: %w", err)
-	}
-	return scratch.NewStores(commonDir, r.root, gitDir != commonDir, lookupEnv), nil
+	return scratch.NewStores(commonDir, r.root, lookupEnv), nil
 }
 
 // ReviewRepositoryID returns the canonical private-state namespace without

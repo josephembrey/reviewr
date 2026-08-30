@@ -44,9 +44,8 @@ func (scope Scope) String() string {
 	return "project"
 }
 
-// Stores contains the available independently locked persistence sessions.
-// Worktree is nil for the primary checkout, where both concepts collapse to
-// the project note.
+// Stores contains the independently locked project-wide and checkout-local
+// persistence sessions.
 type Stores struct {
 	Project  Store
 	Worktree Store
@@ -126,14 +125,14 @@ func WorktreeStatePaths(commonDir, worktreeRoot string, lookupEnv func(string) (
 	}, nil
 }
 
-// NewStores constructs the project session and, for a linked checkout, a
-// separately keyed and separately locked worktree session.
-func NewStores(commonDir, worktreeRoot string, linked bool, lookupEnv func(string) (string, bool)) Stores {
-	stores := Stores{Project: NewPrivateStore(commonDir, lookupEnv)}
-	if linked {
-		stores.Worktree = NewWorktreePrivateStore(commonDir, worktreeRoot, lookupEnv)
+// NewStores constructs both the project-wide and checkout-local sessions.
+// The primary checkout is a worktree too; treating it specially would make
+// the same scope selector mean different things in different checkouts.
+func NewStores(commonDir, worktreeRoot string, lookupEnv func(string) (string, bool)) Stores {
+	return Stores{
+		Project:  NewPrivateStore(commonDir, lookupEnv),
+		Worktree: NewWorktreePrivateStore(commonDir, worktreeRoot, lookupEnv),
 	}
-	return stores
 }
 
 func stateBase(lookupEnv func(string) (string, bool)) (string, error) {

@@ -107,7 +107,7 @@ func TestCommonDirSharesLinkedWorktreesAndIsolatesClones(t *testing.T) {
 	}
 }
 
-func TestScratchStoresCollapsePrimaryAndSeparateLinkedWorktree(t *testing.T) {
+func TestScratchStoresExposeProjectAndLocalNotesInEveryCheckout(t *testing.T) {
 	root := initRepository(t)
 	writeFile(t, root, "tracked.txt", "tracked\n")
 	runGit(t, root, "add", "tracked.txt")
@@ -137,11 +137,8 @@ func TestScratchStoresCollapsePrimaryAndSeparateLinkedWorktree(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = linkedStores.Close() })
 
-	if primaryStores.HasWorktree() {
-		t.Fatal("primary checkout exposed a duplicate worktree note")
-	}
-	if !linkedStores.HasWorktree() {
-		t.Fatal("linked checkout did not expose a worktree note")
+	if !primaryStores.HasWorktree() || !linkedStores.HasWorktree() {
+		t.Fatalf("worktree scopes = primary %v linked %v; want both", primaryStores.HasWorktree(), linkedStores.HasWorktree())
 	}
 	if _, readOnly, err := primaryStores.Project.Load(); err != nil || readOnly {
 		t.Fatalf("primary project Load() = readOnly %v, %v", readOnly, err)
@@ -151,6 +148,12 @@ func TestScratchStoresCollapsePrimaryAndSeparateLinkedWorktree(t *testing.T) {
 	}
 	if text, readOnly, err := linkedStores.Project.Load(); err != nil || !readOnly || text != "shared" {
 		t.Fatalf("linked project Load() = %q, readOnly %v, %v", text, readOnly, err)
+	}
+	if text, readOnly, err := primaryStores.Worktree.Load(); err != nil || readOnly || text != "" {
+		t.Fatalf("primary worktree Load() = %q, readOnly %v, %v", text, readOnly, err)
+	}
+	if err := primaryStores.Worktree.Save("primary local"); err != nil {
+		t.Fatal(err)
 	}
 	if text, readOnly, err := linkedStores.Worktree.Load(); err != nil || readOnly || text != "" {
 		t.Fatalf("linked worktree Load() = %q, readOnly %v, %v", text, readOnly, err)

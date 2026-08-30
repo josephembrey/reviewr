@@ -73,8 +73,8 @@ func (state *scopedScratchState) tag(pending effect, scope scratch.Scope) effect
 	return pending
 }
 
-// open always enters at project scope. This is observable only in a linked
-// worktree; primary checkouts have no second state or switcher.
+// open always enters at project scope; the worktree scope remains available
+// in every checkout, including the primary one.
 func (state *scopedScratchState) open() effect {
 	state.current().finishPointer()
 	state.scope = scratch.Project

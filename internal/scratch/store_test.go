@@ -62,8 +62,10 @@ func TestWorktreeStatePathsPreserveProjectCompatibilityAndStayOpaque(t *testing.
 	if strings.Contains(worktree.Directory, commonDir) || strings.Contains(worktree.Directory, root) {
 		t.Fatalf("private identities leaked into worktree path %q", worktree.Directory)
 	}
-	if stores := NewStores(commonDir, root, false, lookup); stores.HasWorktree() {
-		t.Fatal("primary checkout constructed a duplicate worktree store")
+	stores := NewStores(commonDir, root, lookup)
+	t.Cleanup(func() { _ = stores.Close() })
+	if !stores.HasWorktree() {
+		t.Fatal("checkout did not construct its worktree store")
 	}
 }
 
@@ -83,7 +85,7 @@ func TestProjectAndWorktreeStoresHaveIndependentFilesAndLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stores := NewStores(commonDir, root, true, lookup)
+	stores := NewStores(commonDir, root, lookup)
 	t.Cleanup(func() { _ = stores.Close() })
 	projectText, projectReadOnly, projectErr := stores.Project.Load()
 	worktreeText, worktreeReadOnly, worktreeErr := stores.Worktree.Load()
