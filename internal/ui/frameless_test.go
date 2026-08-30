@@ -266,13 +266,32 @@ func TestBontreeTreeRowsPreserveSelectionAndCompactPaths(t *testing.T) {
 				if !strings.Contains(ansi.Strip(selected), test.want) {
 					t.Fatalf("selected row = %q, want %q", ansi.Strip(selected), test.want)
 				}
-				selection := selectionStyle(focused)
+				selection := treeSelectionStyle(focused)
 				if !strings.HasSuffix(selected, selection.Render(strings.Repeat(" ", 24-lipgloss.Width(strings.TrimRight(ansi.Strip(selected), " "))))) {
 					t.Fatalf("selected row does not carry selection through its trailing fill: %q", selected)
 				}
 			}
 		})
 	}
+}
+
+func TestTreeSelectionUsesOneWhiteBarInsteadOfReversingFileColors(t *testing.T) {
+	t.Parallel()
+	icon := treeFileIcon("main.go")
+	styles := resolveTreeRowStyles(
+		NavigatorRow{Tree: true, Label: "main.go", Status: StatusModified},
+		icon,
+		treeRowStyleLayers{statusAccent: treeStatusModified, selected: true, focused: true},
+	)
+	if styles.row.GetReverse() {
+		t.Fatal("tree selection still reverses token colors")
+	}
+	if styles.row.GetForeground() != lipgloss.Black || styles.row.GetBackground() != lipgloss.White {
+		t.Fatalf("selection colors = foreground %v background %v, want black on white", styles.row.GetForeground(), styles.row.GetBackground())
+	}
+	assertSameColor(t, styles.marker.GetForeground(), lipgloss.Yellow)
+	assertSameColor(t, styles.icon.GetForeground(), fileTreeIconColor(icon.tone))
+	assertSameColor(t, styles.filename.GetForeground(), lipgloss.Yellow)
 }
 
 func TestBontreeTreeRowsClipAtEveryNarrowWidth(t *testing.T) {

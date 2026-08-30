@@ -256,9 +256,16 @@ func resolveTreeRowStyles(item NavigatorRow, icon fileTreeIcon, layers treeRowSt
 		styles.filename = ignoredTreeStyle
 	}
 	if layers.selected {
-		styles.row = selectionStyle(layers.focused)
+		styles.row = treeSelectionStyle(layers.focused)
 	}
 	return styles
+}
+
+func treeSelectionStyle(focused bool) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Black).
+		Background(lipgloss.White).
+		Bold(focused)
 }
 
 func fileTreeIconColor(tone fileIconTone) color.Color {

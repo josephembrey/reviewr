@@ -151,7 +151,7 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			filenameHasColor: true,
 		},
 		{
-			name:             "focused selection is a row layer",
+			name:             "focused selection adds one white background layer",
 			item:             file,
 			icon:             icon,
 			layers:           treeRowStyleLayers{selected: true, focused: true},
@@ -176,8 +176,15 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			if test.filenameHasColor {
 				assertSameColor(t, styles.filename.GetForeground(), test.wantFilename)
 			}
-			if styles.row.GetReverse() != test.wantSelection || styles.row.GetBold() != test.wantFocusedBold {
-				t.Fatalf("row reverse=%v bold=%v, want reverse=%v bold=%v", styles.row.GetReverse(), styles.row.GetBold(), test.wantSelection, test.wantFocusedBold)
+			if styles.row.GetReverse() || styles.row.GetBold() != test.wantFocusedBold {
+				t.Fatalf("row reverse=%v bold=%v, want reverse=false bold=%v", styles.row.GetReverse(), styles.row.GetBold(), test.wantFocusedBold)
+			}
+			_, hasBackground := styles.row.GetBackground().(lipgloss.NoColor)
+			if hasBackground == test.wantSelection {
+				t.Fatalf("row has background = %v, want %v", !hasBackground, test.wantSelection)
+			}
+			if test.wantSelection {
+				assertSameColor(t, styles.row.GetBackground(), lipgloss.White)
 			}
 		})
 	}
