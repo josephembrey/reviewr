@@ -112,9 +112,10 @@ type ChangeSummary struct {
 
 // Repository is a resolved Git worktree with read-only operations.
 type Repository struct {
-	root     string
-	git      gitadapter.Client
-	maxBytes int64
+	root      string
+	commonDir string
+	git       gitadapter.Client
+	maxBytes  int64
 }
 
 // StateFingerprint is the observable Git state used by the application's
@@ -131,7 +132,11 @@ func Open(path string) (*Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve Git worktree: %w", err)
 	}
-	return &Repository{root: root, git: client, maxBytes: DefaultMaxFileBytes}, nil
+	commonDir, err := client.ResolveCommonDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Git common directory: %w", err)
+	}
+	return &Repository{root: root, commonDir: commonDir, git: client, maxBytes: DefaultMaxFileBytes}, nil
 }
 
 // Root returns the resolved absolute worktree root.
@@ -152,19 +157,15 @@ func (r *Repository) PollState() (StateFingerprint, error) {
 // CommonDir returns the canonical absolute Git common directory used for
 // clone-scoped private state. It performs no writes and is called only during
 // executable startup.
-func (r *Repository) CommonDir() (string, error) {
-	return r.git.ResolveCommonDir(r.root)
+func (r *Repository) CommonDir() string {
+	return r.commonDir
 }
 
 // NotesStores builds the private project-wide and checkout-local note
 // sessions from canonical Git identities. Every checkout, including the
 // primary one, has a distinct worktree note.
-func (r *Repository) NotesStores(lookupEnv func(string) (string, bool)) (notes.Stores, error) {
-	commonDir, err := r.git.ResolveCommonDir(r.root)
-	if err != nil {
-		return notes.Stores{}, fmt.Errorf("resolve Notes project identity: %w", err)
-	}
-	return notes.NewStores(commonDir, r.root, lookupEnv), nil
+func (r *Repository) NotesStores(lookupEnv func(string) (string, bool)) notes.Stores {
+	return notes.NewStores(r.commonDir, r.root, lookupEnv)
 }
 
 // Snapshot returns one typed source for the All and Changed file scopes.

@@ -11,11 +11,7 @@ import (
 // ReviewRepositoryID returns the canonical private-state namespace without
 // enumerating or mutating repository status.
 func (r *Repository) ReviewRepositoryID() (review.RepositoryID, error) {
-	common, err := r.git.ResolveCommonDir(r.root)
-	if err != nil {
-		return review.RepositoryID{}, err
-	}
-	return review.ResolveRepositoryID(r.root, common)
+	return review.RepositoryID{CommonGitDir: r.commonDir, Worktree: r.root}, nil
 }
 
 // ReviewComparisons enriches already-enumerated typed candidates with exact

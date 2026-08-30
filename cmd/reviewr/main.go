@@ -34,14 +34,8 @@ func run(args []string) error {
 	host := herdr.NewRuntime(herdr.Detect(os.LookupEnv))
 	host.Start()
 	defer host.Close()
-	stores, err := repo.NotesStores(os.LookupEnv)
-	if err != nil {
-		return err
-	}
-	commonDir, err := repo.CommonDir()
-	if err != nil {
-		return errors.Join(err, stores.Close())
-	}
+	stores := repo.NotesStores(os.LookupEnv)
+	commonDir := repo.CommonDir()
 	sessionStore, restored, _ := session.Open("", commonDir, repo.Root())
 	model := app.NewWithSessionAndNotesScopes(repo, host.Context(), stores, sessionStore, restored)
 	final, runErr := tea.NewProgram(model).Run()

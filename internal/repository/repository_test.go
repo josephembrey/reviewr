@@ -89,10 +89,7 @@ func TestCommonDirSharesLinkedWorktreesAndIsolatesClones(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		common, err := repo.CommonDir()
-		if err != nil {
-			t.Fatal(err)
-		}
+		common := repo.CommonDir()
 		if !filepath.IsAbs(common) {
 			t.Fatalf("common directory is not absolute: %q", common)
 		}
@@ -126,15 +123,9 @@ func TestNotesStoresExposeProjectAndLocalNotesInEveryCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	primaryStores, err := primaryRepo.NotesStores(lookup)
-	if err != nil {
-		t.Fatal(err)
-	}
+	primaryStores := primaryRepo.NotesStores(lookup)
 	t.Cleanup(func() { _ = primaryStores.Close() })
-	linkedStores, err := linkedRepo.NotesStores(lookup)
-	if err != nil {
-		t.Fatal(err)
-	}
+	linkedStores := linkedRepo.NotesStores(lookup)
 	t.Cleanup(func() { _ = linkedStores.Close() })
 
 	if !primaryStores.HasWorktree() || !linkedStores.HasWorktree() {
@@ -256,8 +247,8 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commonDir, err := repo.CommonDir(); err != nil || commonDir == "" {
-		t.Fatalf("CommonDir() = %q, %v", commonDir, err)
+	if commonDir := repo.CommonDir(); commonDir == "" {
+		t.Fatal("CommonDir() is empty")
 	}
 	snapshot, err := repo.Snapshot()
 	if err != nil {
@@ -321,10 +312,7 @@ func TestNotesPrivateStateDoesNotWriteRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commonDir, err := repo.CommonDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	commonDir := repo.CommonDir()
 	stateHome := t.TempDir()
 	store := notes.NewPrivateStore(commonDir, func(key string) (string, bool) {
 		return stateHome, key == "XDG_STATE_HOME"
