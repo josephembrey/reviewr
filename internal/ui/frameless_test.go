@@ -3,9 +3,11 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -188,7 +190,7 @@ func TestTreeRowsRenderStructureSafelyWithinFixedWidth(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			for _, focused := range []bool{true, false} {
-				got := renderNavigatorPresentationRow(test.row, 18, true, focused)
+				got := renderNavigatorPresentationRow(test.row, 18, true, focused, commitrow.Columns{}, time.Time{})
 				if width := lipgloss.Width(got); width != 18 {
 					t.Fatalf("row width = %d, want 18: %q", width, got)
 				}
@@ -204,6 +206,8 @@ func TestTreeRowsRenderStructureSafelyWithinFixedWidth(t *testing.T) {
 		7,
 		false,
 		false,
+		commitrow.Columns{},
+		time.Time{},
 	)); got != 7 {
 		t.Fatalf("narrow clipped tree row width = %d, want 7", got)
 	}
@@ -230,9 +234,9 @@ func TestBontreeTreeRowsPreserveSelectionAndCompactPaths(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			unselected := renderNavigatorPresentationRow(test.row, 24, false, false)
+			unselected := renderNavigatorPresentationRow(test.row, 24, false, false, commitrow.Columns{}, time.Time{})
 			for _, focused := range []bool{false, true} {
-				selected := renderNavigatorPresentationRow(test.row, 24, true, focused)
+				selected := renderNavigatorPresentationRow(test.row, 24, true, focused, commitrow.Columns{}, time.Time{})
 				if got := lipgloss.Width(selected); got != 24 {
 					t.Fatalf("selected row width = %d, want 24", got)
 				}
@@ -256,7 +260,7 @@ func TestBontreeTreeRowsClipAtEveryNarrowWidth(t *testing.T) {
 	row := NavigatorRow{Tree: true, Label: "internal/ui/render.go", Depth: 8}
 	for width := 1; width <= 12; width++ {
 		for _, selected := range []bool{false, true} {
-			got := renderNavigatorPresentationRow(row, width, selected, true)
+			got := renderNavigatorPresentationRow(row, width, selected, true, commitrow.Columns{}, time.Time{})
 			if gotWidth := lipgloss.Width(got); gotWidth != width {
 				t.Fatalf("width %d selected=%v rendered width = %d: %q", width, selected, gotWidth, got)
 			}
@@ -302,7 +306,7 @@ func TestTreeStatusMarkersComposeWithIconsWithoutChangingMouseRows(t *testing.T)
 			Status:   status,
 			Dimmed:   status == StatusIgnored,
 		}
-		row := renderNavigatorPresentationRow(rows[index], 18, false, false)
+		row := renderNavigatorPresentationRow(rows[index], 18, false, false, commitrow.Columns{}, time.Time{})
 		if width := lipgloss.Width(row); width != 18 {
 			t.Fatalf("status %v row width = %d, want 18", status, width)
 		}

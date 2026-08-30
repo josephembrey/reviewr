@@ -31,6 +31,10 @@ type Geometry struct {
 	Reader         Rect
 	ReaderTitle    Rect
 	ReaderRows     Rect
+	ScratchTitle   Rect
+	ScratchRows    Rect
+	ScratchText    Rect
+	ScratchBar     Rect
 	Footer         Rect
 }
 
@@ -96,6 +100,17 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	g.HeaderScratch = clipTo(g.Header, workspaceSwitcherRect(workspace.Scratch))
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
+	g.ScratchTitle, g.ScratchRows = surfaceRows(g.Body)
+	g.ScratchText = g.ScratchRows
+	if g.ScratchRows.Width > 1 {
+		g.ScratchText.Width--
+		g.ScratchBar = Rect{
+			X:      g.ScratchRows.X + g.ScratchRows.Width - 1,
+			Y:      g.ScratchRows.Y,
+			Width:  1,
+			Height: g.ScratchRows.Height,
+		}
+	}
 	return g
 }
 
@@ -129,6 +144,8 @@ const (
 	HitNavigator
 	HitNavigatorRow
 	HitReader
+	HitScratchText
+	HitScratchScrollbar
 )
 
 // Hit is a mouse target. Index is meaningful only for HitNavigatorRow.
@@ -136,6 +153,30 @@ type Hit struct {
 	Kind       HitKind
 	Index      int
 	GrabOffset int
+}
+
+// ScratchHitTest resolves the full-width overlay using the same explicit
+// rectangles and scrollbar calculation used to paint it.
+func (g Geometry) ScratchHitTest(x, y, totalRows, offset int) Hit {
+	if g.HeaderFiles.Contains(x, y) {
+		return Hit{Kind: HitFilesWorkspace}
+	}
+	if g.HeaderGit.Contains(x, y) {
+		return Hit{Kind: HitGitWorkspace}
+	}
+	if g.HeaderScratch.Contains(x, y) {
+		return Hit{Kind: HitScratchWorkspace}
+	}
+	if g.Header.Contains(x, y) || g.ScratchTitle.Contains(x, y) {
+		return Hit{Kind: HitNone}
+	}
+	if bar, ok := CalculateScrollbar(g.ScratchRows, totalRows, offset); ok && bar.Track.Contains(x, y) {
+		return Hit{Kind: HitScratchScrollbar, GrabOffset: bar.GrabOffset(y)}
+	}
+	if g.ScratchText.Contains(x, y) {
+		return Hit{Kind: HitScratchText}
+	}
+	return Hit{Kind: HitNone}
 }
 
 // HitTest resolves a cell using visible Navigator state. A visible row takes

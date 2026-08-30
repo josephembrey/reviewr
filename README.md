@@ -4,7 +4,11 @@ A fast terminal application for reviewing repository changes beside coding agent
 
 reviewr is being built from the ground up in Go with Bubble Tea. The current slice provides a
 read-only repository navigator and file reader with keyboard and mouse navigation, stable selection
-across reloads, shared render/hit-test geometry, and an explicit content-addressed review ledger.
+across reloads, shared render/hit-test geometry, an explicit content-addressed review ledger, and a
+global minimal Scratch note editor. Scratch opens with `Esc`, autosaves outside the repository per
+Git clone, and returns to the exact remembered Files or Git state when closed. While Scratch is open,
+`1` is reserved to return to that remembered workspace, so a literal `1` cannot be entered in the
+note.
 
 When launched inside Herdr, reviewr automatically uses the injected host context and labels an
 otherwise-unlabeled current pane `reviewr`. Standalone launches require no Herdr installation.

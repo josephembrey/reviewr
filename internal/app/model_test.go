@@ -15,18 +15,28 @@ import (
 )
 
 type fakeSource struct {
-	files       []string
-	listErr     error
-	snapshot    repository.Snapshot
-	snapshots   int
-	contents    map[string]repository.File
-	diffs       map[string]repository.Diff
-	summary     repository.ChangeSummary
-	summaryErr  error
-	commits     []repository.Commit
-	commitErr   error
-	summaries   map[string]repository.CommitSummary
-	summaryErrs map[string]error
+	files          []string
+	listErr        error
+	snapshot       repository.Snapshot
+	snapshots      int
+	contents       map[string]repository.File
+	diffs          map[string]repository.Diff
+	summary        repository.ChangeSummary
+	summaryErr     error
+	commits        []repository.Commit
+	commitErr      error
+	commitQueries  []repository.CommitQuery
+	summaries      map[string]repository.CommitSummary
+	summaryErrs    map[string]error
+	refSources     []repository.RefSource
+	refErr         error
+	refCommits     map[repository.RefSourceID][]repository.RefCommit
+	refCommitErrs  map[repository.RefSourceID]error
+	stashes        []repository.Stash
+	stashErr       error
+	stashFiles     map[string][]repository.ChangedFile
+	stashFileErrs  map[string]error
+	stashDocuments map[string]repository.ChangeDocument
 }
 
 func (s *fakeSource) Snapshot() (repository.Snapshot, error) {
@@ -59,7 +69,8 @@ func (s *fakeSource) WorktreeSummary() (repository.ChangeSummary, error) {
 	return s.summary, s.summaryErr
 }
 
-func (s *fakeSource) ListCommits() ([]repository.Commit, error) {
+func (s *fakeSource) ListCommits(query repository.CommitQuery) ([]repository.Commit, error) {
+	s.commitQueries = append(s.commitQueries, query)
 	return append([]repository.Commit(nil), s.commits...), s.commitErr
 }
 
@@ -71,6 +82,38 @@ func (s *fakeSource) ReadCommit(oid string) (repository.CommitSummary, error) {
 		return summary, nil
 	}
 	return repository.CommitSummary{}, errors.New("missing commit")
+}
+
+func (s *fakeSource) ListRefSources() ([]repository.RefSource, error) {
+	return append([]repository.RefSource(nil), s.refSources...), s.refErr
+}
+
+func (s *fakeSource) ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error) {
+	if err := s.refCommitErrs[source.ID]; err != nil {
+		return nil, err
+	}
+	return append([]repository.RefCommit(nil), s.refCommits[source.ID]...), nil
+}
+
+func (s *fakeSource) ListStashes() ([]repository.Stash, error) {
+	return append([]repository.Stash(nil), s.stashes...), s.stashErr
+}
+
+func (s *fakeSource) ListStashFiles(source repository.ChangeSource) ([]repository.ChangedFile, error) {
+	if err := s.stashFileErrs[source.OID]; err != nil {
+		return nil, err
+	}
+	return append([]repository.ChangedFile(nil), s.stashFiles[source.OID]...), nil
+}
+
+func (s *fakeSource) ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument {
+	if document, ok := s.stashDocuments[source.OID+"\x00"+file.Identity()]; ok {
+		return document
+	}
+	return repository.ChangeDocument{
+		Change: file,
+		Patch:  repository.File{Path: file.Path, Kind: repository.FileUnreadable, Err: errors.New("missing stash file")},
+	}
 }
 
 func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
@@ -197,12 +240,12 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 		t.Fatalf("workspace toggle = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\n0 commits") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
 
-func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
+func TestScratchOverlayEditsAndPreservesPrimaryWorkspace(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
@@ -210,18 +253,35 @@ func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
 
 	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	model = next.(Model)
-	if !model.scratch || model.active != workspace.Files || command != nil {
+	if !model.scratch || model.active != workspace.Files || command == nil {
 		t.Fatalf("Scratch activation = scratch %v primary %v command=%v", model.scratch, model.active, command != nil)
 	}
+	next, _ = model.Update(command())
+	model = next.(Model)
 	frame := ansi.Strip(model.View().Content)
-	if !strings.Contains(frame, "Scratch editor coming next.") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
-		t.Fatalf("Scratch stub frame = %q", frame)
+	if !strings.Contains(frame, "Scratch") || !strings.Contains(frame, "Ln 1, Col 1") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
+		t.Fatalf("Scratch editor frame = %q", frame)
 	}
 	if model.files.place.Selected != 1 || model.files.place.Top != 1 || model.files.place.ReaderOffset != 3 {
 		t.Fatalf("Scratch activation changed Files place: %+v", model.files.place)
 	}
 
-	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	for _, value := range []rune{'h', 'j', 'k', 'l'} {
+		next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
+		model = next.(Model)
+		if command == nil {
+			t.Fatalf("typing %q did not schedule autosave", value)
+		}
+	}
+	if model.note.editor.Text() != "hjkl" {
+		t.Fatalf("modeless text = %q", model.note.editor.Text())
+	}
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	model = next.(Model)
+	if !model.scratch || command == nil {
+		t.Fatalf("1 did not synchronously save before closing: scratch %v command=%v", model.scratch, command != nil)
+	}
+	next, _ = model.Update(command())
 	model = next.(Model)
 	if model.scratch || model.active != workspace.Files {
 		t.Fatalf("1 from Scratch = scratch %v primary %v", model.scratch, model.active)
@@ -247,6 +307,7 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 			repository.Entry{Path: "root.go"},
 		),
 	}, workspace.AllFiles, workspace.FileReader, model.geometry.NavigatorRows.Height)
+	model.files.readerEntry = repository.Entry{Path: "src/a.go"}
 	model.files.reader = repository.File{Path: "src/a.go", Kind: repository.FileReady, Content: strings.Repeat("line\n", 20)}
 	model.files.readerLoading = false
 	model.files.place.ReaderOffset = 3
@@ -264,19 +325,24 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 		t.Fatalf("directory selection = %q files %+v", selected, model.files)
 	}
 
-	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
 	row, _ := model.files.tree.Row(filetree.DirectoryIdentity("src"))
 	if row.Expanded || len(model.files.place.Items) != 2 || model.files.readerEntry.Path != "src/a.go" || model.files.place.ReaderOffset != 3 {
-		t.Fatalf("collapsed tree = row %+v files %+v", row, model.files)
-	}
-	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft}))
-	if len(model.files.place.Items) != 2 {
-		t.Fatal("repeated collapse changed visible rows")
+		t.Fatalf("initially collapsed tree = row %+v files %+v", row, model.files)
 	}
 	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyRight}))
 	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
 	if !row.Expanded || len(model.files.place.Items) != 4 {
 		t.Fatalf("expanded tree = row %+v items %#v", row, model.files.place.Items)
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if row.Expanded || len(model.files.place.Items) != 2 {
+		t.Fatalf("collapsed tree = row %+v items %#v", row, model.files.place.Items)
+	}
+	update(tea.KeyPressMsg(tea.Key{Code: 'l', Text: "l"}))
+	row, _ = model.files.tree.Row(filetree.DirectoryIdentity("src"))
+	if !row.Expanded || len(model.files.place.Items) != 4 {
+		t.Fatalf("re-expanded tree = row %+v items %#v", row, model.files.place.Items)
 	}
 
 	directoryY := model.geometry.NavigatorRows.Y + model.files.place.Selected - model.files.place.Top
@@ -555,7 +621,7 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	model.history.place.Top = 1
 	model.history.place.Focus = navigation.FocusReader
 	model.history.place.ReaderOffset = 3
-	refresh := model.history.reload()
+	refresh := model.history.reload(workspace.GitGraph, "")
 	model.history, _ = model.history.landCommits(commitsLoadedMsg{
 		generation: refresh.generation,
 		commits: []repository.Commit{
@@ -565,6 +631,101 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	}, model.geometry.NavigatorRows.Height)
 	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB || model.history.place.Focus != navigation.FocusReader || model.history.place.ReaderOffset != 3 {
 		t.Fatalf("history refresh reset place: selected=%q state=%+v", selected, model.history.place)
+	}
+}
+
+func TestHistoryTraversalSwitchesUniversesAndKeepsFullOID(t *testing.T) {
+	t.Parallel()
+	const (
+		oidHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidSide = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		oidRoot = "cccccccccccccccccccccccccccccccccccccccc"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history.listLoading = true
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{Traversal: repository.CommitGraph},
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidHead {
+		t.Fatalf("initial graph selection = %q, want HEAD", selected)
+	}
+	model.history.place.SelectIndex(0, model.geometry.NavigatorRows.Height)
+
+	firstParent := model.apply(Action{Kind: ToggleTertiary})
+	if model.controls.Traversal != workspace.GitFirstParent || firstParent.query != (repository.CommitQuery{Traversal: repository.CommitFirstParent, StartOID: oidSide}) {
+		t.Fatalf("first-parent switch = controls %+v effect %+v", model.controls, firstParent)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: firstParent.generation,
+		query:      firstParent.query,
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("first-parent selection = %q", selected)
+	}
+
+	refresh := model.apply(Action{Kind: Reload})
+	if refresh.query.StartOID != oidSide || refresh.query.Traversal != repository.CommitFirstParent {
+		t.Fatalf("first-parent refresh query = %+v", refresh.query)
+	}
+	graph := model.apply(Action{Kind: ToggleTertiary})
+	if graph.query != (repository.CommitQuery{Traversal: repository.CommitGraph}) {
+		t.Fatalf("graph switch query = %+v", graph.query)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: graph.generation,
+		query:      graph.query,
+		commits: []repository.Commit{
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("graph return selection = %q", selected)
+	}
+}
+
+func TestHistoryMouseRowsUseSharedNavigatorGeometry(t *testing.T) {
+	t.Parallel()
+	const (
+		oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{},
+		commits: []repository.Commit{
+			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first", Head: true},
+			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	click := tea.MouseClickMsg(tea.Mouse{
+		X:      model.geometry.NavigatorRows.X,
+		Y:      model.geometry.NavigatorRows.Y + 1,
+		Button: tea.MouseLeft,
+	})
+	next, command := model.Update(click)
+	model = next.(Model)
+	if command == nil {
+		t.Fatal("commit-row click did not request selected summary")
+	}
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB {
+		t.Fatalf("commit-row click selected %q, want %q", selected, oidB)
 	}
 }
 

@@ -87,6 +87,36 @@ func TestTreeCollapseExpandToggleAndRebuild(t *testing.T) {
 	}
 }
 
+func TestCollapseAllKeepsNestedDirectoriesCollapsed(t *testing.T) {
+	t.Parallel()
+	tree := New([]string{
+		"src/a.go",
+		"src/b.go",
+		"src/ui/render.go",
+		"src/ui/theme.go",
+		"root.go",
+	})
+
+	tree.CollapseAll()
+	if got, want := tree.Identities(), []string{DirectoryIdentity("src"), FileIdentity("root.go")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("collapsed identities = %#v, want %#v", got, want)
+	}
+	for _, path := range []string{"src", "src/ui"} {
+		row, ok := tree.Row(DirectoryIdentity(path))
+		if !ok || row.Expanded {
+			t.Fatalf("collapsed row %q = %#v, %v", path, row, ok)
+		}
+	}
+
+	if !tree.Expand(DirectoryIdentity("src")) {
+		t.Fatal("top-level directory did not expand")
+	}
+	row, ok := tree.Row(DirectoryIdentity("src/ui"))
+	if !ok || row.Expanded {
+		t.Fatalf("nested directory after parent expansion = %#v, %v; want collapsed", row, ok)
+	}
+}
+
 func TestFirstVisibleFileSkipsDirectories(t *testing.T) {
 	t.Parallel()
 	tree := New([]string{"src/a.go", "src/b.go", "root.go"})

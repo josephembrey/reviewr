@@ -3,8 +3,10 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/review"
 )
 
@@ -14,7 +16,7 @@ func TestReviewBadgesUseIndependentAlignedRightSideField(t *testing.T) {
 		state := state
 		t.Run(state.Label(), func(t *testing.T) {
 			row := NavigatorRow{Label: "main.go", Tree: true, Status: StatusModified, Review: &state}
-			rendered := ansi.Strip(renderNavigatorPresentationRow(row, 24, false, false))
+			rendered := ansi.Strip(renderNavigatorPresentationRow(row, 24, false, false, commitrow.Columns{}, time.Time{}))
 			if len([]rune(rendered)) != 24 || !strings.HasPrefix(rendered, " M ") || !strings.HasSuffix(rendered, " "+state.Badge()) {
 				t.Fatalf("rendered row = %q", rendered)
 			}
@@ -61,12 +63,12 @@ func TestEveryBadgeCellHitsReviewWithoutActivatingTheRow(t *testing.T) {
 
 func TestDirectoryProgressAndUnchangedRowsHaveIndependentPresentation(t *testing.T) {
 	directory := NavigatorRow{Label: "src", Tree: true, Directory: true, Expanded: true, Progress: "2/3"}
-	got := ansi.Strip(renderNavigatorPresentationRow(directory, 20, true, true))
+	got := ansi.Strip(renderNavigatorPresentationRow(directory, 20, true, true, commitrow.Columns{}, time.Time{}))
 	if !strings.HasSuffix(got, " 2/3") || strings.Contains(got, "[") {
 		t.Fatalf("directory row = %q", got)
 	}
 	unchanged := NavigatorRow{Label: "plain.go", Tree: true}
-	got = ansi.Strip(renderNavigatorPresentationRow(unchanged, 20, false, false))
+	got = ansi.Strip(renderNavigatorPresentationRow(unchanged, 20, false, false, commitrow.Columns{}, time.Time{}))
 	if strings.Contains(got, "[") || LayoutNavigatorRow(unchanged, 20).Review.Width != 0 {
 		t.Fatalf("unchanged row = %q", got)
 	}

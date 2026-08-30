@@ -30,8 +30,13 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	}
 	controls.Git = workspace.GitRefs
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [refs]") || strings.Contains(git, "[graph]") {
+	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Refs header = %q", git)
+	}
+	controls.Git = workspace.GitStashes
+	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
+	if !strings.HasPrefix(git, "1  files [git] | esc  scratch  [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+		t.Fatalf("Git Stashes header = %q", git)
 	}
 
 	scratch := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Scratch, Controls: controls, Changes: changes}))

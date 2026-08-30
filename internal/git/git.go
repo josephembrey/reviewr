@@ -52,17 +52,32 @@ func (Client) ResolveRoot(path string) (string, error) {
 	return filepath.Clean(string(out)), nil
 }
 
-// CommonGitDir returns the absolute repository directory shared by linked worktrees.
-func (Client) CommonGitDir(root string) (string, error) {
+// ResolveCommonDir returns the canonical absolute Git common directory. Git's
+// machine-oriented rev-parse output is decoded when it quotes an unusual path.
+// Linked worktrees of one clone resolve to the same identity.
+func (Client) ResolveCommonDir(root string) (string, error) {
 	out, err := run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}
-	value := strings.TrimSpace(string(out))
-	if value == "" {
-		return "", errors.New("git returned an empty common directory")
+	value := strings.TrimSuffix(string(out), "\n")
+	if value == "" || strings.ContainsRune(value, '\n') || strings.ContainsRune(value, 0) {
+		return "", fmt.Errorf("git returned an invalid common directory")
 	}
-	return filepath.Clean(value), nil
+	if strings.HasPrefix(value, "\"") {
+		value, err = strconv.Unquote(value)
+		if err != nil {
+			return "", fmt.Errorf("decode Git common directory: %w", err)
+		}
+	}
+	if !filepath.IsAbs(value) {
+		return "", fmt.Errorf("git returned a non-absolute common directory %q", value)
+	}
+	canonical, err := filepath.EvalSymlinks(filepath.Clean(value))
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Git common directory: %w", err)
+	}
+	return canonical, nil
 }
 
 // HeadOID returns the exact current HEAD object identity.
@@ -185,13 +200,22 @@ func run(root string, args ...string) ([]byte, error) {
 }
 
 func runBounded(root string, maxBytes int64, args ...string) ([]byte, error) {
-	return runBoundedAllowExit(root, maxBytes, nil, args...)
+	return runBoundedInputAllowExit(root, maxBytes, nil, nil, args...)
+}
+
+func runBoundedInput(root string, maxBytes int64, input io.Reader, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExit(root, maxBytes, input, nil, args...)
 }
 
 func runBoundedAllowExit(root string, maxBytes int64, allowedExitCodes map[int]struct{}, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExit(root, maxBytes, nil, allowedExitCodes, args...)
+}
+
+func runBoundedInputAllowExit(root string, maxBytes int64, input io.Reader, allowedExitCodes map[int]struct{}, args ...string) ([]byte, error) {
 	commandArgs := append([]string{"--literal-pathspecs", "-C", root}, args...)
 	cmd := exec.Command("git", commandArgs...)
 	cmd.Env = withOptionalLocksDisabled(os.Environ())
+	cmd.Stdin = input
 	stdout := boundedBuffer{limit: max(0, maxBytes)}
 	stderr := boundedBuffer{limit: 64 << 10}
 	cmd.Stdout = &stdout

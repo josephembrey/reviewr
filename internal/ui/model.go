@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/review"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -13,12 +15,21 @@ const (
 	ToneDefault Tone = iota
 	ToneQuiet
 	ToneError
+	ToneAccent
 	ToneAdded
 	ToneRemoved
+	ToneInfo
+	ToneWarning
 )
 
 // Line is one logical reader or empty-state line.
 type Line struct {
+	Text string
+	Tone Tone
+}
+
+// Segment is one styled, single-line fragment in a compact row.
+type Segment struct {
 	Text string
 	Tone Tone
 }
@@ -41,6 +52,9 @@ const (
 type NavigatorRow struct {
 	Identity  string
 	Label     string
+	Prefix    []Segment
+	Suffix    []Segment
+	Commit    *commitrow.Row
 	Tree      bool
 	Depth     int
 	Directory bool
@@ -78,9 +92,14 @@ type Model struct {
 	Top            int
 	Focus          navigation.Focus
 
-	ReaderTitle   string
-	ReaderLines   []Line
-	ReaderEmpty   Line
-	ReaderOffset  int
-	FooterWarning string
+	ReaderTitle      string
+	ReaderLines      []Line
+	ReaderCommitRows []commitrow.Row
+	ReaderEmpty      Line
+	ReaderOffset     int
+	FooterWarning    string
+
+	Scratch       scratch.Presentation
+	ScratchStatus string
+	ScratchError  bool
 }

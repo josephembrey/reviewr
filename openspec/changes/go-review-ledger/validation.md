@@ -66,5 +66,54 @@ fixture:
 - `openspec validate go-review-ledger --strict`: pass.
 - `nix develop -c just check`: pass, including all hooks, ordinary and `dev` tests, and the full
   repository race suite.
-- Source/tests and specification/documentation were committed as focused local commits. No push or
-  merge commit was performed; the branch retains the user-authorized fast-forward to `640515b`.
+- Source/tests and specification/documentation were committed as focused local commits without a
+  push. The later main-tip reconciliation is recorded below.
+
+## Main-tip reconciliation
+
+The completed ledger was reconciled with exact main tip
+`c4b0574f1cea2f299a8912be260c2d888e04c7a4` after main added Git Log/Refs/Stashes, the shared
+Files/Stashes reader document, Scratch, compact rows and headers, and initial recursive Files
+collapse.
+
+- Main remains authoritative for the typed repository snapshot and reads, Git and Scratch state,
+  Bontree icons/status styling, first-snapshot `CollapseAll`, and shared render/hit-test geometry.
+  Review remains an additive Files-only comparison provider and optional right-side row field.
+- The canonical Git common-directory resolver is shared as the path authority. Scratch remains
+  clone-scoped under its own private note store; review receipt keys additionally include the
+  canonical worktree and remain under the independent `reviews/` store.
+- `TestInitialNestedCollapseCoexistsWithReviewBadgesAndRollups` proves hidden nested descendants
+  remain initially collapsed while their parent derives complete review progress and visible changed
+  files retain independent badges.
+- `TestReviewActivityLeavesGitAndScratchPlaceUntouched` performs exact Files review activity and
+  proves Log, Refs, Stashes, and Scratch place state remain unchanged; semantic review actions are
+  rejected whenever the current destination is not Files.
+- `TestPTYReviewLedgerReconciliation` passes against a real Git fixture at 80x24 and 60x12. It
+  covers initial collapsed progress, binary Basis changed, `x`, both `R` bounds, priority `X`
+  ancestor expansion, a painted separator-cell badge click, text Updated and `since reviewed`,
+  refresh, restart recovery, and Git/Scratch switching.
+
+### Reconciliation benchmark
+
+The same three-run, 500 ms benchmark command was captured immediately before and after the merge.
+The post-merge steady-state fixture explicitly expands its initially collapsed directory so both
+sides measure 1,000 visible changed rows.
+
+| Operation | Pre-merge observations | Post-merge observations | Mean change |
+| --- | --- | --- | --- |
+| Review refresh derivation | 2.598 ms, 2.814 ms, 2.733 ms | 2.791 ms, 2.666 ms, 2.680 ms | 2.715 ms → 2.712 ms (-0.1%) |
+| Cached steady navigator presentation | 4.778 ms, 4.195 ms, 4.833 ms | 5.858 ms, 4.619 ms, 5.515 ms | 4.602 ms → 5.331 ms (+15.8%) |
+
+The presentation samples have visible run-to-run variance. They perform no Git calls or endpoint
+hashing; the merge adds main's commit-row scan and time-aware shared row dispatch while retaining
+one tree renderer and one review geometry calculation.
+
+### Reconciliation gates
+
+- Focused ordinary and race tests for review, repository, app, UI, tree/navigation, Git,
+  Scratch, commit graph/rows, and the executable: pass.
+- `nix develop -c just check`: pass, including hooks, ordinary tests, `dev` tests, the full race
+  suite, and both real PTY tests.
+- `nix develop -c just build`: pass.
+- `git diff --check`: pass.
+- `openspec validate go-review-ledger --strict`: pass; all 26 tasks remain complete.

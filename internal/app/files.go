@@ -143,6 +143,9 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 
 	entries := entriesForScope(state.snapshot, scope)
 	state.tree.Rebuild(entryPaths(entries))
+	if firstLoad {
+		state.tree.CollapseAll()
+	}
 	state.reconcileCursor(oldRows)
 	state.entries = orderEntries(entries, state.tree.Files())
 	if firstLoad {
@@ -437,7 +440,7 @@ func (state filesState) readerLines() []ui.Line {
 		if state.displayedBounds != nil {
 			return reviewReaderLines(state.reviewDocument)
 		}
-		return diffReaderLines(state.diff)
+		return (readerDocument{Diff: state.diff, Mode: state.readerMode}).lines()
 	}
 	if state.displayedComparison != nil {
 		if state.reviewFile.Endpoint != state.displayedComparison.New {
@@ -445,64 +448,9 @@ func (state filesState) readerLines() []ui.Line {
 		}
 		return reviewFileReaderLines(state.reviewFile, state.readerEntry)
 	}
-	return fileReaderLines(state.reader, state.readerEntry)
-}
-
-func fileReaderLines(file repository.File, entry repository.Entry) []ui.Line {
-	switch file.Kind {
-	case repository.FileReady:
-		if file.Symlink {
-			return []ui.Line{{Text: "symlink → " + file.Content}}
-		}
-		rawLines := ui.SafeContentLines(file.Content)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
-		}
-		return lines
-	case repository.FileMissing:
-		if entry.State == repository.FileDeleted {
-			return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
-		}
-		return []ui.Line{{Text: "File is missing from the worktree.", Tone: ui.ToneError}}
-	case repository.FileUnreadable:
-		detail := ""
-		if file.Err != nil {
-			detail = ": " + file.Err.Error()
-		}
-		return []ui.Line{{Text: "File is unreadable" + detail, Tone: ui.ToneError}}
-	case repository.FileBinary:
-		return []ui.Line{{Text: fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", file.Size), Tone: ui.ToneError}}
-	case repository.FileTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("File is too large (%d bytes; limit %d bytes).", file.Size, repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
-	default:
-		return nil
-	}
-}
-
-func diffReaderLines(diff repository.Diff) []ui.Line {
-	switch diff.Kind {
-	case repository.DiffReady:
-		if diff.Content == "" {
-			return []ui.Line{{Text: "No uncommitted diff for this file.", Tone: ui.ToneQuiet}}
-		}
-		rawLines := ui.SafeContentLines(diff.Content)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
-		}
-		return lines
-	case repository.DiffTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("Diff is too large (limit %d bytes).", repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
-	case repository.DiffUnavailable:
-		detail := ""
-		if diff.Err != nil {
-			detail = ": " + diff.Err.Error()
-		}
-		return []ui.Line{{Text: "Diff is unavailable" + detail, Tone: ui.ToneError}}
-	default:
-		return nil
-	}
+	return (readerDocument{
+		File: state.reader, Entry: state.readerEntry, Diff: state.diff, Mode: state.readerMode,
+	}).lines()
 }
 
 func entriesForScope(snapshot repository.Snapshot, scope workspace.FileSet) []repository.Entry {

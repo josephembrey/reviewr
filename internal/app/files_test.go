@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,6 +34,43 @@ func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 	}
 }
 
+func TestFileTreeStartsFullyCollapsed(t *testing.T) {
+	t.Parallel()
+	state := newFilesState()
+	state, pending := state.landSnapshot(snapshotLoadedMsg{
+		generation: state.listGeneration,
+		snapshot: snapshotOf(
+			repository.Entry{Path: "src/a.go"},
+			repository.Entry{Path: "src/b.go"},
+			repository.Entry{Path: "src/ui/render.go"},
+			repository.Entry{Path: "src/ui/theme.go"},
+			repository.Entry{Path: "root.go"},
+		),
+	}, workspace.AllFiles, workspace.FileReader, 10)
+
+	if got, want := state.place.Items, []string{filetree.DirectoryIdentity("src"), filetree.FileIdentity("root.go")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("initial tree identities = %#v, want %#v", got, want)
+	}
+	for _, path := range []string{"src", "src/ui"} {
+		row, ok := state.tree.Row(filetree.DirectoryIdentity(path))
+		if !ok || row.Expanded {
+			t.Fatalf("initial directory %q = %#v, %v; want collapsed", path, row, ok)
+		}
+	}
+	if pending.entry.Path != "root.go" || state.readerEntry.Path != "root.go" {
+		t.Fatalf("initial visible reader = effect %+v state %+v", pending, state.readerEntry)
+	}
+
+	state.selectIdentity(filetree.DirectoryIdentity("src"))
+	if !state.expandSelected(10) {
+		t.Fatal("selected top-level directory did not expand")
+	}
+	row, _ := state.tree.Row(filetree.DirectoryIdentity("src/ui"))
+	if row.Expanded {
+		t.Fatalf("nested directory expanded with its parent: %+v", row)
+	}
+}
+
 func TestFileSelectionSeparatesTreeCursorFromOpenReader(t *testing.T) {
 	t.Parallel()
 	state := newFilesState()
@@ -44,9 +82,16 @@ func TestFileSelectionSeparatesTreeCursorFromOpenReader(t *testing.T) {
 			repository.Entry{Path: "root.go"},
 		),
 	}, workspace.AllFiles, workspace.FileReader, 10)
-	if pending.entry.Path != "src/a.go" || state.readerEntry.Path != "src/a.go" {
+	if pending.entry.Path != "root.go" || state.readerEntry.Path != "root.go" {
 		t.Fatalf("initial file = %q effect=%+v", state.readerEntry.Path, pending)
 	}
+	if !state.tree.Expand(filetree.DirectoryIdentity("src")) {
+		t.Fatal("src did not expand for selection test")
+	}
+	state.reconcileVisibleRows(10)
+	state.selectIdentity(filetree.FileIdentity("src/a.go"))
+	entry, _ := state.entry("src/a.go")
+	state.requestReader(entry, workspace.FileReader)
 	state.reader = repository.File{Path: "src/a.go", Kind: repository.FileReady, Content: "content"}
 	state.readerLoading = false
 	state.place.ReaderOffset = 7
@@ -79,8 +124,8 @@ func TestFileRefreshPreservesHiddenOpenFileAndCollapsedDirectory(t *testing.T) {
 	state.readerEntry = repository.Entry{Path: "src/a.go"}
 	state.readerLoading = false
 	state.place.ReaderOffset = 4
-	if !state.tree.Collapse(filetree.DirectoryIdentity("src")) {
-		t.Fatal("src did not collapse")
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
+		t.Fatalf("src did not start collapsed: %#v, %v", row, ok)
 	}
 	state.place.Reconcile(state.tree.Identities())
 	state.place.EnsureSelectionVisible(10)
@@ -120,8 +165,8 @@ func TestScopeSwitchDerivesOneTreeAndPreservesRoleReaderAndFold(t *testing.T) {
 		repository.Entry{Path: "ignored.log", State: repository.FileIgnored},
 		repository.Entry{Path: "z.go", State: repository.FileUnchanged},
 	)
-	if !state.tree.Collapse(filetree.DirectoryIdentity("src")) {
-		t.Fatal("src did not collapse")
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
+		t.Fatalf("src did not start collapsed: %#v, %v", row, ok)
 	}
 	state.place.Reconcile(state.tree.Identities())
 	state.selectIdentity(filetree.FileIdentity("z.go"))

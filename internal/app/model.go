@@ -2,11 +2,15 @@
 package app
 
 import (
+	"errors"
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -17,25 +21,34 @@ type Source interface {
 	ReadFile(entry repository.Entry) repository.File
 	ReadDiff(entry repository.Entry) repository.Diff
 	WorktreeSummary() (repository.ChangeSummary, error)
-	ListCommits() ([]repository.Commit, error)
+	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
+	ListRefSources() ([]repository.RefSource, error)
+	ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error)
+	ListStashes() ([]repository.Stash, error)
+	ListStashFiles(source repository.ChangeSource) ([]repository.ChangedFile, error)
+	ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument
 }
 
 // Model is the Bubble Tea root. Input routing and effects are delegated to
 // semantic actions and workspace-scoped transitions.
 type Model struct {
-	source          Source
-	host            herdr.Context
-	active          workspace.Kind
-	scratch         bool
-	controls        workspace.Controls
-	lab             labState
-	layout          layoutState
-	scrollbar       scrollbarDragState
-	geometry        ui.Geometry
-	files           filesState
-	history         historyState
-	summary         summaryState
+	source    Source
+	host      herdr.Context
+	active    workspace.Kind
+	scratch   bool
+	controls  workspace.Controls
+	lab       labState
+	layout    layoutState
+	scrollbar scrollbarDragState
+	geometry  ui.Geometry
+	files     filesState
+	history   historyState
+	refs      refsState
+	stashes   stashState
+	summary   summaryState
+	note      scratchState
+
 	reviewStateRoot string
 }
 
@@ -55,14 +68,28 @@ const (
 	effectLoadReviewFile
 	effectVerifyReview
 	effectPersistReview
+	effectLoadRefSources
+	effectLoadRefCommits
+	effectLoadStashes
+	effectLoadStashFiles
+	effectLoadStashFile
+	effectLoadScratch
+	effectDebounceScratch
+	effectSaveScratch
 	effectQuit
 )
 
 type effect struct {
-	kind             effectKind
-	generation       uint64
-	identity         string
-	entry            repository.Entry
+	kind        effectKind
+	generation  uint64
+	identity    string
+	entry       repository.Entry
+	query       repository.CommitQuery
+	refSource   repository.RefSource
+	stashSource repository.ChangeSource
+	changedFile repository.ChangedFile
+	text        string
+
 	scope            string
 	reviewGeneration uint64
 	comparison       review.FileComparison
@@ -149,6 +176,7 @@ type commitsLoadedMsg struct {
 	generation uint64
 	commits    []repository.Commit
 	err        error
+	query      repository.CommitQuery
 }
 
 type commitLoadedMsg struct {
@@ -158,9 +186,61 @@ type commitLoadedMsg struct {
 	err        error
 }
 
+type scratchLoadedMsg struct {
+	generation uint64
+	text       string
+	readOnly   bool
+	err        error
+}
+
+type scratchSaveDueMsg struct{ generation uint64 }
+
+type scratchSavedMsg struct {
+	generation uint64
+	err        error
+}
+
+type refSourcesLoadedMsg struct {
+	generation uint64
+	sources    []repository.RefSource
+	err        error
+}
+
+type refCommitsLoadedMsg struct {
+	generation uint64
+	sourceID   repository.RefSourceID
+	commits    []repository.RefCommit
+	err        error
+}
+
+type stashesLoadedMsg struct {
+	generation uint64
+	stashes    []repository.Stash
+	err        error
+}
+
+type stashFilesLoadedMsg struct {
+	generation uint64
+	oid        string
+	files      []repository.ChangedFile
+	err        error
+}
+
+type stashFileLoadedMsg struct {
+	generation   uint64
+	oid          string
+	fileIdentity string
+	document     repository.ChangeDocument
+}
+
 // New creates a model with both primary workspaces ready for their tagged
 // startup loads. History is warmed while Files remains the visible workspace.
 func New(source Source, host herdr.Context) Model {
+	return NewWithScratch(source, host, scratch.NewMemoryStore())
+}
+
+// NewWithScratch creates a model with an explicit clone-scoped Scratch store.
+func NewWithScratch(source Source, host herdr.Context, store scratch.Store) Model {
 	return Model{
 		source:  source,
 		host:    host,
@@ -168,7 +248,10 @@ func New(source Source, host herdr.Context) Model {
 		lab:     newLabState(),
 		files:   newFilesState(),
 		history: newHistoryState(),
+		refs:    newRefsState(),
+		stashes: newStashState(),
 		summary: newSummaryState(),
+		note:    newScratchState(store),
 	}
 }
 
@@ -185,7 +268,11 @@ func NewWithReviewStateRoot(source Source, host herdr.Context, root string) Mode
 func (m Model) Init() tea.Cmd {
 	commands := []tea.Cmd{
 		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration, reviewGeneration: m.files.reviewGeneration, scope: m.controls.Comparison.Label()}),
-		m.command(effect{kind: effectLoadCommits, generation: m.history.listGeneration}),
+		m.command(effect{
+			kind:       effectLoadCommits,
+			generation: m.history.listGeneration,
+			query:      commitQuery(workspace.GitGraph, ""),
+		}),
 		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
 	}
 	if _, ok := m.source.(review.Provider); ok {
@@ -249,14 +336,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commitLoadedMsg:
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
 		return m, nil
-	}
-
-	place := m.activePlace()
-	action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
-	if !ok {
+	case scratchLoadedMsg:
+		m.note.landLoad(msg)
+		m.note.resize(m.geometry)
+		return m, nil
+	case scratchSaveDueMsg:
+		return m, m.command(m.note.due(msg))
+	case scratchSavedMsg:
+		exit, next := m.note.landSave(msg)
+		if exit != scratchExitNone {
+			next = m.finishScratchExit(exit)
+		}
+		return m, m.command(next)
+	case refSourcesLoadedMsg:
+		m.refs, pending = m.refs.landSources(msg, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case refCommitsLoadedMsg:
+		m.refs = m.refs.landPreview(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case stashesLoadedMsg:
+		m.stashes, pending = m.stashes.landStashes(msg, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case stashFilesLoadedMsg:
+		m.stashes, pending = m.stashes.landFiles(msg, m.geometry.ReaderRows.Height)
+		return m, m.command(pending)
+	case stashFileLoadedMsg:
+		m.stashes = m.stashes.landReader(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	}
-	if m.scratch && !allowedInScratch(action.Kind) {
+
+	var action Action
+	var ok bool
+	if m.scratch {
+		action, ok = routeScratchMessage(msg, m.geometry, m.note.editor.Presentation(), m.note.editor.Dragging(), m.note.scrollbarDragging)
+	} else {
+		place := m.activePlace()
+		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+	}
+	if !ok {
 		return m, nil
 	}
 	pending = m.apply(action)
@@ -281,7 +398,17 @@ func (m Model) View() tea.View {
 	}
 	var presentation ui.Model
 	if m.scratch {
-		presentation = ui.Model{Geometry: m.geometry}
+		status, statusError := m.note.status()
+		presentation = ui.Model{
+			Geometry:      m.geometry,
+			Scratch:       m.note.editor.Presentation(),
+			ScratchStatus: status,
+			ScratchError:  statusError,
+		}
+	} else if m.gitStashesActive() {
+		presentation = m.stashes.viewModel(m.geometry, time.Now())
+	} else if m.gitRefsActive() {
+		presentation = m.refs.viewModel(m.geometry)
 	} else if m.active == workspace.Git {
 		presentation = m.history.viewModel(m.geometry)
 	} else {
@@ -291,11 +418,13 @@ func (m Model) View() tea.View {
 	presentation.PrimaryWorkspace = m.active
 	presentation.DividerDragging = m.layout.dragging
 	presentation.Controls = m.controls
-	presentation.Changes = ui.ChangeSummary{
-		Files:     m.summary.value.Files,
-		Additions: m.summary.value.Additions,
-		Deletions: m.summary.value.Deletions,
-		Ready:     m.summary.loaded,
+	if presentation.Workspace == workspace.Files {
+		presentation.Changes = ui.ChangeSummary{
+			Files:     m.summary.value.Files,
+			Additions: m.summary.value.Additions,
+			Deletions: m.summary.value.Deletions,
+			Ready:     m.summary.loaded,
+		}
 	}
 	content := ui.Render(presentation)
 	view := tea.NewView(content)
@@ -308,34 +437,58 @@ func (m Model) View() tea.View {
 func (m *Model) apply(action Action) effect {
 	switch action.Kind {
 	case Quit:
+		pending := m.note.requestExit(scratchExitQuit)
+		if pending.kind != effectNone || m.note.saving {
+			return pending
+		}
+		m.note.pendingExit = scratchExitNone
 		return effect{kind: effectQuit}
 	case ToggleWorkspace:
 		m.scrollbar.finish()
 		if m.scratch {
-			m.scratch = false
-			return effect{}
+			return m.requestScratchExit(scratchExitClose)
 		}
 		m.scratch = false
 		return m.activate(m.active.Toggle())
 	case ToggleScratch:
 		m.scrollbar.finish()
-		m.scratch = !m.scratch
 		if m.scratch {
-			m.layout.finishDrag()
+			return m.requestScratchExit(scratchExitClose)
 		}
+		m.scratch = true
+		m.layout.finishDrag()
+		return m.note.open()
 	case ShowFiles:
 		m.scrollbar.finish()
+		if m.scratch {
+			return m.requestScratchExit(scratchExitFiles)
+		}
 		return m.activate(workspace.Files)
 	case ShowGit:
 		m.scrollbar.finish()
+		if m.scratch {
+			return m.requestScratchExit(scratchExitGit)
+		}
 		return m.activate(workspace.Git)
 	case ShowScratch:
 		m.scrollbar.finish()
+		if m.scratch {
+			return effect{}
+		}
 		m.scratch = true
 		m.layout.finishDrag()
+		return m.note.open()
 	case ToggleSecondary:
 		if m.active == workspace.Git {
+			m.scrollbar.finish()
 			m.controls.Git = m.controls.Git.Next()
+			if m.controls.Git == workspace.GitRefs {
+				preferredOID, _ := m.history.place.SelectedIdentity()
+				return m.refs.enter(preferredOID)
+			}
+			if m.controls.Git == workspace.GitStashes && !m.stashes.loaded && !m.stashes.listLoading {
+				return m.stashes.reload()
+			}
 		} else {
 			m.controls.Files = m.controls.Files.Toggle()
 			if m.controls.Files == workspace.AllFiles {
@@ -347,35 +500,42 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Git {
 			if m.controls.Git == workspace.GitLog {
 				m.controls.Traversal = m.controls.Traversal.Toggle()
+				return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 			}
 		} else {
 			m.controls.Reader = m.controls.Reader.Toggle()
 			return m.files.requestMode(m.controls.Reader)
 		}
 	case ToggleComparison:
-		if m.active == workspace.Files {
+		if m.destination() == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
 			return m.files.requestComparison(m.controls.Comparison.Label())
 		}
 	case ToggleReview:
-		if m.active == workspace.Files {
+		if m.destination() == workspace.Files {
 			return m.files.requestReviewToggle(m.files.place.Focus, action.Index)
 		}
 	case ActivateReviewBadge:
-		if m.active == workspace.Files {
+		if m.destination() == workspace.Files {
 			return m.files.requestReviewToggle(navigation.FocusNavigator, action.Index)
 		}
 	case ToggleReviewBounds:
-		if m.active == workspace.Files {
+		if m.destination() == workspace.Files {
 			return m.files.toggleReviewBounds(m.controls.Reader)
 		}
 	case NextReviewGap:
-		if m.active == workspace.Files {
+		if m.destination() == workspace.Files {
 			return m.files.selectNextReviewGap(m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 	case Reload:
+		if m.gitStashesActive() {
+			return m.stashes.reload()
+		}
+		if m.gitRefsActive() {
+			return m.refs.reload()
+		}
 		if m.active == workspace.Git {
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		pending := m.files.reload()
 		pending.scope = m.controls.Comparison.Label()
@@ -388,6 +548,7 @@ func (m *Model) apply(action Action) effect {
 			m.scrollbar.finish()
 		}
 		m.resizeWorkspaceState()
+		m.note.resize(m.geometry)
 	case StartPaneResize:
 		m.scrollbar.finish()
 		m.layout.startDrag()
@@ -415,12 +576,24 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Files {
 			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
+		if m.gitStashesActive() {
+			return m.stashes.selectStashDelta(1, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(1, m.geometry.NavigatorRows.Height)
+		}
 		if m.history.place.SelectDelta(1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
 		}
 	case SelectPrevious:
 		if m.active == workspace.Files {
 			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height, m.controls.Reader)
+		}
+		if m.gitStashesActive() {
+			return m.stashes.selectStashDelta(-1, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(-1, m.geometry.NavigatorRows.Height)
 		}
 		if m.history.place.SelectDelta(-1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
@@ -429,6 +602,14 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
 			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height, m.controls.Reader)
+		}
+		if m.gitStashesActive() {
+			m.stashes.place.Focus = navigation.FocusNavigator
+			return m.stashes.selectStashIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
@@ -441,9 +622,25 @@ func (m *Model) apply(action Action) effect {
 			m.files.toggleSelected(m.geometry.NavigatorRows.Height)
 			return pending
 		}
+		if m.gitStashesActive() {
+			m.stashes.place.Focus = navigation.FocusNavigator
+			return m.stashes.selectStashIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
+		}
+	case SelectNextFile:
+		if m.gitStashesActive() {
+			return m.stashes.selectFileDelta(1, m.geometry.ReaderRows.Height)
+		}
+	case SelectPreviousFile:
+		if m.gitStashesActive() {
+			return m.stashes.selectFileDelta(-1, m.geometry.ReaderRows.Height)
 		}
 	case ExpandDirectory:
 		if m.active == workspace.Files {
@@ -455,6 +652,10 @@ func (m *Model) apply(action Action) effect {
 		}
 	case ScrollReader:
 		m.activePlace().ScrollReader(action.Amount, m.activeReaderLineCount(), m.geometry.ReaderRows.Height)
+	default:
+		if m.scratch {
+			return m.note.apply(action, m.geometry)
+		}
 	}
 	return effect{}
 }
@@ -466,8 +667,18 @@ func (m *Model) activate(next workspace.Kind) effect {
 	}
 	m.active = next
 	if next == workspace.Git {
+		if m.controls.Git == workspace.GitStashes {
+			if !m.stashes.loaded && !m.stashes.listLoading {
+				return m.stashes.reload()
+			}
+			return effect{}
+		}
+		if m.controls.Git == workspace.GitRefs {
+			preferredOID, _ := m.history.place.SelectedIdentity()
+			return m.refs.enter(preferredOID)
+		}
 		if !m.history.loaded && !m.history.listLoading {
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		return effect{}
 	}
@@ -487,23 +698,49 @@ func (m Model) destination() workspace.Kind {
 	return m.active
 }
 
-func allowedInScratch(kind ActionKind) bool {
-	switch kind {
-	case Quit, ToggleWorkspace, ToggleScratch, ShowFiles, ShowGit, ShowScratch, Resize:
-		return true
-	default:
-		return false
-	}
-}
-
 func (m *Model) activePlace() *navigation.State {
+	if m.gitStashesActive() {
+		return &m.stashes.place
+	}
+	if m.gitRefsActive() {
+		return &m.refs.place
+	}
 	if m.active == workspace.Git {
 		return &m.history.place
 	}
 	return &m.files.place
 }
 
+func (m *Model) requestScratchExit(exit scratchExit) effect {
+	pending := m.note.requestExit(exit)
+	if pending.kind != effectNone || m.note.saving {
+		return pending
+	}
+	return m.finishScratchExit(exit)
+}
+
+func (m *Model) finishScratchExit(exit scratchExit) effect {
+	m.note.pendingExit = scratchExitNone
+	m.scratch = false
+	switch exit {
+	case scratchExitFiles:
+		return m.activate(workspace.Files)
+	case scratchExitGit:
+		return m.activate(workspace.Git)
+	case scratchExitQuit:
+		return effect{kind: effectQuit}
+	default:
+		return effect{}
+	}
+}
+
 func (m Model) activeReaderLineCount() int {
+	if m.gitStashesActive() {
+		return len(m.stashes.readerLines())
+	}
+	if m.gitRefsActive() {
+		return len(m.refs.commits)
+	}
 	if m.active == workspace.Git {
 		return len(commitSummaryLines(m.history.summary))
 	}
@@ -517,15 +754,34 @@ func (m Model) activeNavigatorRows() []ui.NavigatorRow {
 	return m.files.viewModel(m.geometry).NavigatorRows
 }
 
+func (m Model) selectedHistoryOID() string {
+	oid, _ := m.history.place.SelectedIdentity()
+	return oid
+}
+
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil {
 		m.files.place.ClampReader(len(m.files.readerLines()), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
+	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
+	if m.stashes.readerFileID != "" {
+		m.stashes.place.ClampReader(len(m.stashes.readerLines()), m.geometry.ReaderRows.Height)
+	}
+}
+
+func (m Model) gitRefsActive() bool {
+	return m.active == workspace.Git && m.controls.Git == workspace.GitRefs
+}
+
+func (m Model) gitStashesActive() bool {
+	return m.active == workspace.Git && m.controls.Git == workspace.GitStashes
 }
 
 func (m Model) command(pending effect) tea.Cmd {
@@ -614,6 +870,9 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectPersistReview:
 		store, delta := pending.store, pending.delta
 		return func() tea.Msg {
+			if store == nil {
+				return reviewPersistedMsg{delta: delta, err: errors.New("review state store unavailable")}
+			}
 			ledger, err := store.Replay(delta)
 			return reviewPersistedMsg{delta: delta, ledger: ledger, err: err}
 		}
@@ -641,9 +900,10 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectLoadCommits:
 		source := m.source
 		generation := pending.generation
+		query := pending.query
 		return func() tea.Msg {
-			commits, err := source.ListCommits()
-			return commitsLoadedMsg{generation: generation, commits: commits, err: err}
+			commits, err := source.ListCommits(query)
+			return commitsLoadedMsg{generation: generation, commits: commits, err: err, query: query}
 		}
 	case effectLoadCommit:
 		source := m.source
@@ -653,11 +913,79 @@ func (m Model) command(pending effect) tea.Cmd {
 			summary, err := source.ReadCommit(oid)
 			return commitLoadedMsg{generation: generation, oid: oid, summary: summary, err: err}
 		}
+	case effectLoadScratch:
+		store := m.note.store
+		generation := pending.generation
+		return func() tea.Msg {
+			text, readOnly, err := store.Load()
+			return scratchLoadedMsg{generation: generation, text: text, readOnly: readOnly, err: err}
+		}
+	case effectDebounceScratch:
+		generation := pending.generation
+		return tea.Tick(scratchSaveDebounce, func(time.Time) tea.Msg {
+			return scratchSaveDueMsg{generation: generation}
+		})
+	case effectSaveScratch:
+		store := m.note.store
+		generation := pending.generation
+		text := pending.text
+		return func() tea.Msg {
+			return scratchSavedMsg{generation: generation, err: store.Save(text)}
+		}
+	case effectLoadRefSources:
+		source := m.source
+		generation := pending.generation
+		return func() tea.Msg {
+			sources, err := source.ListRefSources()
+			return refSourcesLoadedMsg{generation: generation, sources: sources, err: err}
+		}
+	case effectLoadRefCommits:
+		source := m.source
+		generation := pending.generation
+		refSource := pending.refSource
+		return func() tea.Msg {
+			commits, err := source.ListRefCommits(refSource)
+			return refCommitsLoadedMsg{generation: generation, sourceID: refSource.ID, commits: commits, err: err}
+		}
+	case effectLoadStashes:
+		source := m.source
+		generation := pending.generation
+		return func() tea.Msg {
+			stashes, err := source.ListStashes()
+			return stashesLoadedMsg{generation: generation, stashes: stashes, err: err}
+		}
+	case effectLoadStashFiles:
+		source := m.source
+		generation := pending.generation
+		oid := pending.identity
+		stashSource := pending.stashSource
+		return func() tea.Msg {
+			files, err := source.ListStashFiles(stashSource)
+			return stashFilesLoadedMsg{generation: generation, oid: oid, files: files, err: err}
+		}
+	case effectLoadStashFile:
+		source := m.source
+		generation := pending.generation
+		oid := pending.identity
+		stashSource := pending.stashSource
+		file := pending.changedFile
+		return func() tea.Msg {
+			return stashFileLoadedMsg{
+				generation: generation, oid: oid, fileIdentity: file.Identity(),
+				document: source.ReadStashFile(stashSource, file),
+			}
+		}
 	case effectQuit:
 		return tea.Quit
 	default:
 		return nil
 	}
+}
+
+// Shutdown reliably flushes an edited note and releases the OS-backed lock.
+// The executable owns this final lifecycle step after Bubble Tea returns.
+func (m *Model) Shutdown() error {
+	return m.note.shutdown()
 }
 
 func batchCommands(commands ...tea.Cmd) tea.Cmd {

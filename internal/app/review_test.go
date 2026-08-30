@@ -266,8 +266,8 @@ func TestNextReviewGapUsesPriorityTreeOrderAndExpandsAncestors(t *testing.T) {
 	narrow.New.ContentID = "narrow-new"
 	_ = state.ledger.Mark(narrow, reviewdomain.Bounds{Old: narrow.Old, New: narrow.New}, nil)
 
-	if !state.tree.Collapse(filetree.DirectoryIdentity("z")) {
-		t.Fatal("basis directory did not collapse")
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("z")); !ok || row.Expanded {
+		t.Fatalf("basis directory did not start collapsed: %+v, %v", row, ok)
 	}
 	state.reconcileVisibleRows(10)
 	pending := state.selectNextReviewGap(10, workspace.FileReader)
@@ -295,8 +295,8 @@ func TestDirectoryRollupUsesHiddenChangedDescendantsAndUnchangedHasNoBadge(t *te
 	b := testComparison("src/b.go", "head", "b0", "b1")
 	state.reviewSnapshot = reviewdomain.Snapshot{Scope: "uncommitted", Comparisons: map[string]reviewdomain.FileComparison{"src/a.go": a, "src/b.go": b}}
 	_ = state.ledger.Mark(a, reviewdomain.Bounds{Old: a.Old, New: a.New}, nil)
-	if !state.tree.Collapse(filetree.DirectoryIdentity("src")) {
-		t.Fatal("src did not collapse")
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
+		t.Fatalf("src did not start collapsed: %+v, %v", row, ok)
 	}
 	state.reconcileVisibleRows(10)
 	rows := state.viewModel(ui.Calculate(80, 20)).NavigatorRows
@@ -311,6 +311,147 @@ func TestDirectoryRollupUsesHiddenChangedDescendantsAndUnchangedHasNoBadge(t *te
 				t.Fatalf("unchanged row has review badge: %+v", row)
 			}
 		}
+	}
+}
+
+func TestInitialNestedCollapseCoexistsWithReviewBadgesAndRollups(t *testing.T) {
+	reviewed := testComparison("src/reviewed.go", "head", "reviewed-old", "reviewed-new")
+	nestedGap := testComparison("src/nested/gap.go", "head", "gap-old", "gap-new")
+	nestedGapTwo := testComparison("src/nested/other.go", "head", "other-old", "other-new")
+	rootGap := testComparison("root.go", "head", "root-old", "root-new")
+	state := newFilesState()
+	if !state.ledger.Mark(reviewed, reviewdomain.Bounds{Old: reviewed.Old, New: reviewed.New}, nil) {
+		t.Fatal("failed to seed reviewed descendant")
+	}
+	state, _ = state.landSnapshot(snapshotLoadedMsg{
+		generation:       state.listGeneration,
+		reviewGeneration: state.reviewGeneration,
+		reviewCapable:    true,
+		snapshot: snapshotOf(
+			repository.Entry{Path: reviewed.New.Path, State: repository.FileModified},
+			repository.Entry{Path: nestedGap.New.Path, State: repository.FileModified},
+			repository.Entry{Path: nestedGapTwo.New.Path, State: repository.FileModified},
+			repository.Entry{Path: rootGap.New.Path, State: repository.FileModified},
+		),
+		reviewSnapshot: reviewdomain.Snapshot{Scope: "uncommitted", Comparisons: map[string]reviewdomain.FileComparison{
+			reviewed.New.Path:     reviewed,
+			nestedGap.New.Path:    nestedGap,
+			nestedGapTwo.New.Path: nestedGapTwo,
+			rootGap.New.Path:      rootGap,
+		}},
+	}, workspace.ChangedFiles, workspace.FileReader, 10)
+
+	for _, path := range []string{"src", "src/nested"} {
+		row, ok := state.tree.Row(filetree.DirectoryIdentity(path))
+		if !ok || row.Expanded {
+			t.Fatalf("initial directory %q = %+v, %v; want collapsed", path, row, ok)
+		}
+	}
+	view := state.viewModel(ui.Calculate(80, 24))
+	if got, want := len(view.NavigatorRows), 2; got != want {
+		t.Fatalf("initial visible rows = %d, want %d: %+v", got, want, view.NavigatorRows)
+	}
+	for _, row := range view.NavigatorRows {
+		switch row.Identity {
+		case filetree.DirectoryIdentity("src"):
+			if row.Progress != "1/3" || row.Review != nil {
+				t.Fatalf("collapsed directory review presentation = %+v", row)
+			}
+		case filetree.FileIdentity("root.go"):
+			if row.Review == nil || *row.Review != reviewdomain.Unreviewed || row.Progress != "" {
+				t.Fatalf("visible changed-file review presentation = %+v", row)
+			}
+		default:
+			t.Fatalf("collapsed descendant leaked into initial rows: %+v", row)
+		}
+	}
+}
+
+func TestReviewActivityLeavesGitAndScratchPlaceUntouched(t *testing.T) {
+	comparison := testComparison("a.go", "head", "old", "new")
+	gap := testComparison("b.go", "head", "old-b", "new-b")
+	source := &fakeReviewSource{
+		fakeSource: &fakeSource{snapshot: snapshotOf(
+			repository.Entry{Path: "a.go", State: repository.FileModified},
+			repository.Entry{Path: "b.go", State: repository.FileModified},
+		)},
+		comparisons: map[string]reviewdomain.Snapshot{"uncommitted": {Scope: "uncommitted", Comparisons: map[string]reviewdomain.FileComparison{
+			"a.go": comparison,
+			"b.go": gap,
+		}}},
+		contents: map[reviewdomain.Endpoint]reviewdomain.Content{
+			comparison.Old: content(comparison.Old, "old\n"),
+			comparison.New: content(comparison.New, "new\n"),
+			gap.Old:        content(gap.Old, "old-b\n"),
+			gap.New:        content(gap.New, "new-b\n"),
+		},
+	}
+	model := New(source, herdr.Context{})
+	model.geometry = ui.Calculate(80, 24)
+	model.controls.Files = workspace.ChangedFiles
+	next, readerCommand := model.Update(model.command(effect{
+		kind: effectLoadSnapshot, generation: model.files.listGeneration,
+		reviewGeneration: model.files.reviewGeneration, scope: "uncommitted",
+	})())
+	model = next.(Model)
+	if readerCommand == nil {
+		t.Fatal("review snapshot did not request the visible Files reader")
+	}
+	next, _ = model.Update(readerCommand())
+	model = next.(Model)
+
+	model.history.place = navigation.State{Items: []string{"commit-1", "commit-2"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 7}
+	model.refs.place = navigation.State{Items: []string{"all", "branch"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 5}
+	model.stashes.place = navigation.State{Items: []string{"stash-1", "stash-2"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
+	model.note.editor.Load("first\nsecond\nthird")
+	model.note.editor.MoveEnd(false)
+	model.note.editor.Resize(12, 1)
+	model.note.editor.SetScroll(1)
+	model.note.loaded = true
+	model.note.generation = 4
+	model.note.savedGeneration = 4
+	historyPlace := model.history.place
+	refsPlace := model.refs.place
+	stashesPlace := model.stashes.place
+	scratchPlace := model.note.editor.Presentation()
+	scratchGeneration := model.note.generation
+
+	next, verifyCommand := model.Update(tea.KeyPressMsg(tea.Key{Code: 'x', Text: "x"}))
+	model = next.(Model)
+	if verifyCommand == nil {
+		t.Fatal("Files x did not request exact endpoint verification")
+	}
+	next, _ = model.Update(verifyCommand())
+	model = next.(Model)
+	if model.files.ledger.Assess(comparison).State != reviewdomain.Reviewed {
+		t.Fatal("Files review activity did not create exact coverage")
+	}
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'X', Text: "X"}))
+	model = next.(Model)
+
+	model.active = workspace.Git
+	beforeReceipts := model.files.ledger.Receipts()
+	for _, action := range []Action{{Kind: ToggleReview}, {Kind: ToggleReviewBounds}, {Kind: NextReviewGap}, {Kind: ActivateReviewBadge, Index: 0}} {
+		if pending := model.apply(action); pending.kind != effectNone {
+			t.Fatalf("Git accepted review action %+v as effect %+v", action, pending)
+		}
+	}
+	model.active = workspace.Files
+	model.scratch = true
+	for _, action := range []Action{{Kind: ToggleReview}, {Kind: ToggleReviewBounds}, {Kind: NextReviewGap}, {Kind: ActivateReviewBadge, Index: 0}} {
+		if pending := model.apply(action); pending.kind != effectNone {
+			t.Fatalf("Scratch accepted review action %+v as effect %+v", action, pending)
+		}
+	}
+
+	if !reflect.DeepEqual(model.history.place, historyPlace) || !reflect.DeepEqual(model.refs.place, refsPlace) || !reflect.DeepEqual(model.stashes.place, stashesPlace) {
+		t.Fatalf("review activity changed Git place: log=%+v refs=%+v stashes=%+v", model.history.place, model.refs.place, model.stashes.place)
+	}
+	if !reflect.DeepEqual(model.note.editor.Presentation(), scratchPlace) || model.note.generation != scratchGeneration {
+		t.Fatalf("review activity changed Scratch place: presentation=%+v generation=%d", model.note.editor.Presentation(), model.note.generation)
+	}
+	if !reflect.DeepEqual(model.files.ledger.Receipts(), beforeReceipts) {
+		t.Fatal("review-inert workspaces mutated Files receipts")
 	}
 }
 
@@ -346,8 +487,8 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	state.reviewSelectionAnchor = 0
 	state.place.Focus = navigation.FocusReader
 	state.reviewFull["src/a.go"] = true
-	if !state.tree.Collapse(filetree.DirectoryIdentity("src")) {
-		t.Fatal("src did not collapse")
+	if row, ok := state.tree.Row(filetree.DirectoryIdentity("src")); !ok || row.Expanded {
+		t.Fatalf("src did not start collapsed: %+v, %v", row, ok)
 	}
 	state.contentGeneration = 3
 	second := reviewdomain.BuildDocument(bounds, content(comparison.Old, "prefix\nkeep\nold\n"), content(comparison.New, "prefix\nkeep\nnew\n"))
@@ -571,6 +712,10 @@ func BenchmarkReviewNavigatorSteadyState1000(b *testing.B) {
 	}
 	state := newFilesState()
 	state, _ = state.landSnapshot(snapshotLoadedMsg{generation: state.listGeneration, snapshot: snapshotOf(entries...)}, workspace.AllFiles, workspace.FileReader, 40)
+	if !state.tree.Expand(filetree.DirectoryIdentity("src")) {
+		b.Fatal("benchmark fixture did not expand its collapsed 1,000-file directory")
+	}
+	state.reconcileVisibleRows(40)
 	state.reviewSnapshot = reviewdomain.Snapshot{Scope: "uncommitted", Comparisons: make(map[string]reviewdomain.FileComparison, len(entries))}
 	for _, entry := range entries {
 		state.reviewSnapshot.Comparisons[entry.Path] = testComparison(entry.Path, "head", entry.Path+":old", entry.Path+":new")
