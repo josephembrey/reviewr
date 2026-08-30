@@ -5,34 +5,40 @@ import (
 
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/notes"
+	"github.com/josephembrey/reviewr/internal/session"
 )
 
-type fakePaneStateStore struct {
+type fakeSessionStore struct {
 	generation uint64
-	swapped    bool
+	state      session.State
 }
 
-func (store *fakePaneStateStore) SavePaneSwapped(generation uint64, swapped bool) error {
+func (store *fakeSessionStore) Save(generation uint64, state session.State) error {
 	store.generation = generation
-	store.swapped = swapped
+	store.state = state
 	return nil
 }
 
-func TestPaneSideLoadsBeforeLayoutAndPersistsEachSwap(t *testing.T) {
+func TestPaneLayoutLoadsBeforeFirstFrameAndDebouncesEachChange(t *testing.T) {
 	t.Parallel()
-	store := &fakePaneStateStore{}
-	model := NewWithPaneState(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), store, true)
+	store := &fakeSessionStore{}
+	model := NewWithSession(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), store, session.State{
+		Layout: session.Layout{NavigatorWidth: 31, Customized: true, Swapped: true},
+	})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
-	if !model.layout.swapped || model.geometry.Reader.X != 0 {
+	if !model.layout.swapped || !model.layout.customized || model.layout.navigatorWidth != 31 || model.geometry.Reader.X != 0 {
 		t.Fatalf("startup pane preference was not applied: layout=%+v geometry=%+v", model.layout, model.geometry)
 	}
 
 	pending := model.apply(Action{Kind: SwapPanes})
-	if pending.kind != effectSavePaneState || pending.generation != 1 || pending.swapped {
-		t.Fatalf("pane swap persistence effect = %+v", pending)
+	if pending.kind != effectNone || model.layout.swapped {
+		t.Fatalf("pane swap state = effect %+v layout %+v", pending, model.layout)
 	}
-	message := model.command(pending)().(paneStateSavedMsg)
-	if message.err != nil || store.generation != 1 || store.swapped {
-		t.Fatalf("saved pane preference = generation %d swapped %v err %v", store.generation, store.swapped, message.err)
+	due := model.commandAfterAction(pending)().(sessionSaveDueMsg)
+	next, saveCommand := model.Update(due)
+	model = next.(Model)
+	message := saveCommand().(sessionSavedMsg)
+	if message.err != nil || store.generation != 1 || store.state.Layout.Swapped || store.state.Layout.NavigatorWidth != 31 {
+		t.Fatalf("saved pane session = generation %d state %+v err %v", store.generation, store.state.Layout, message.err)
 	}
 }

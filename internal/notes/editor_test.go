@@ -217,3 +217,21 @@ func TestCursorLineColumnUsesLogicalTabAndWideWidths(t *testing.T) {
 		t.Fatalf("wide/tab cursor position = %d:%d, want 1:7", line, column)
 	}
 }
+
+func TestEditorPlaceRestoresCursorSelectionAndIndependentScroll(t *testing.T) {
+	t.Parallel()
+	editor := NewEditor()
+	editor.Load("alpha beta gamma delta")
+	editor.Resize(6, 2)
+	want := Place{Cursor: 15, Anchor: 6, PreferredCol: 3, Scroll: 2}
+	editor.RestorePlace(want)
+	if got := editor.Place(); got != want {
+		t.Fatalf("restored place = %+v, want %+v", got, want)
+	}
+
+	editor.RestorePlace(Place{Cursor: 999, Anchor: 999, Scroll: 999})
+	got := editor.Place()
+	if got.Cursor != editor.Len() || got.Anchor != -1 || got.Scroll >= len(editor.Document().Rows) {
+		t.Fatalf("stale restored place was not clamped: %+v", got)
+	}
+}

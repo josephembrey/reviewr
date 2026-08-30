@@ -72,12 +72,13 @@ func TestPTYNotesEditingPersistenceAndLocking(t *testing.T) {
 	first.write(t, "3")
 	first.waitFor(t, "Notes")
 	first.waitFor(t, "wide 界")
+	waitForSessionValue(t, stateHome, `"active": "notes"`)
 
 	second := startPTYReviewr(t, repository, stateHome, 60, 12)
 	t.Cleanup(second.stop)
-	second.waitFor(t, "files")
-	second.resetOutput()
-	second.write(t, "3")
+	// The second process resumes the worktree's active Notes destination while
+	// the first process keeps the note's edit lock.
+	second.waitFor(t, "Notes")
 	second.waitFor(t, "read-only")
 	second.write(t, "x")
 	second.waitFor(t, "another reviewr is")
@@ -258,6 +259,23 @@ func waitForReviewReceipts(t *testing.T, stateHome string, want int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("review state never persisted %d receipts beneath %s", want, stateHome)
+}
+
+func waitForSessionValue(t *testing.T, stateHome, value string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	pattern := filepath.Join(stateHome, "reviewr", "sessions", "*.json")
+	for time.Now().Before(deadline) {
+		paths, _ := filepath.Glob(pattern)
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err == nil && bytes.Contains(data, []byte(value)) {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("worktree session never contained %q beneath %s", value, stateHome)
 }
 
 type ptySession struct {

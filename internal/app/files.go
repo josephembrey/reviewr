@@ -26,6 +26,7 @@ type filesState struct {
 	diff                  repository.Diff
 	readerPresentation    *ui.ReaderDocument
 	readerContextExpanded bool
+	restoredReaderRows    []string
 	reviewSnapshot        review.Snapshot
 	ledger                review.Ledger
 	store                 *review.Store
@@ -120,7 +121,7 @@ func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
-	oldLines := readerRowIdentities(state.readerRows())
+	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	state.reader = msg.file
 	state.diff = repository.Diff{}
@@ -135,6 +136,7 @@ func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
 	return state
 }
@@ -143,7 +145,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}
-	oldLines := readerRowIdentities(state.readerRows())
+	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	state.diff = msg.diff
 	state.reader = repository.File{}
@@ -158,6 +160,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, _ int) filesState {
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
 	return state
 }
@@ -176,6 +179,7 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	oldRows := state.tree.Rows()
 	oldEntries := append([]repository.Entry(nil), state.entries...)
 	oldReader := state.readerEntry
+	_, hadSelection := state.place.SelectedIdentity()
 	if state.treeScopeReady {
 		state.folds[state.treeScope] = state.tree.Folds()
 	}
@@ -188,7 +192,7 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	state.folds[scope] = state.tree.Folds()
 	state.reconcileCursor(oldRows)
 	state.entries = orderEntries(entries, state.tree.Files())
-	if firstLoad {
+	if firstLoad && !hadSelection {
 		state.selectFirstVisibleFile()
 	}
 	state.place.EnsureSelectionVisible(visibleRows)
@@ -240,6 +244,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.displayedBounds = nil
 		state.readerPresentation = nil
 		state.readerContextExpanded = false
+		state.restoredReaderRows = nil
 	}
 	state.readerEntry = entry
 	state.readerMode = mode
@@ -412,6 +417,7 @@ func (state *filesState) clearReader() {
 	state.displayedBounds = nil
 	state.readerPresentation = nil
 	state.readerContextExpanded = false
+	state.restoredReaderRows = nil
 	state.requestedComparison = nil
 	state.requestedBounds = nil
 	state.readerLoading = false
@@ -552,6 +558,14 @@ func (state *filesState) setReaderContextExpanded(expanded bool) bool {
 
 func (state filesState) readerRows() []ui.ReaderRow {
 	return state.readerDocument().Rows
+}
+
+func (state filesState) previousReaderRows() []string {
+	current := readerRowIdentities(state.readerRows())
+	if len(current) == 0 && len(state.restoredReaderRows) != 0 {
+		return append([]string(nil), state.restoredReaderRows...)
+	}
+	return current
 }
 
 func (state filesState) deriveReaderDocument() ui.ReaderDocument {

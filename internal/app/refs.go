@@ -17,17 +17,18 @@ type refsState struct {
 	commits  []repository.RefCommit
 	selected repository.RefSourceID
 
-	sourceGeneration  uint64
-	previewGeneration uint64
-	loaded            bool
-	entered           bool
-	sourceLoading     bool
-	previewLoading    bool
-	sourceError       error
-	previewError      error
-	preferredOID      string
-	previewSource     repository.RefSourceID
-	preservePreview   bool
+	sourceGeneration    uint64
+	previewGeneration   uint64
+	loaded              bool
+	entered             bool
+	sourceLoading       bool
+	previewLoading      bool
+	sourceError         error
+	previewError        error
+	preferredOID        string
+	previewSource       repository.RefSourceID
+	preservePreview     bool
+	restoredPreviewRows []string
 }
 
 func newRefsState() refsState {
@@ -73,6 +74,7 @@ func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (re
 	}
 	state.sourceError = nil
 	oldSelected := state.selected
+	restoredIdentity, hadRestoredSelection := state.place.SelectedIdentity()
 	state.sources = append([]repository.RefSource(nil), msg.sources...)
 	identities := make([]string, len(state.sources))
 	for index, source := range state.sources {
@@ -81,7 +83,11 @@ func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (re
 	state.place.Reconcile(identities)
 
 	target := 0
-	if firstLoad {
+	restorePreview := false
+	if firstLoad && hadRestoredSelection {
+		target = state.place.Selected
+		restorePreview = target >= 0 && target < len(state.sources) && state.sources[target].ID.Key() == restoredIdentity
+	} else if firstLoad {
 		target = initialRefSourceIndex(state.sources, state.preferredOID)
 	} else if index, ok := refSourceIndex(state.sources, oldSelected); ok {
 		target = index
@@ -101,6 +107,10 @@ func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (re
 	state.place.Selected = target
 	state.selected = state.sources[target].ID
 	state.place.EnsureSelectionVisible(visibleRows)
+	if restorePreview {
+		return state, state.requestRestoredPreview(state.sources[target])
+	}
+	state.restoredPreviewRows = nil
 	preserve := !firstLoad && state.selected == oldSelected
 	if msg.background && preserve {
 		return state, state.requestPreviewQuiet(state.sources[target])
@@ -124,7 +134,10 @@ func (state refsState) landPreview(msg refCommitsLoadedMsg, visibleRows int) ref
 	oldCommits := state.commits
 	oldOffset := state.place.ReaderOffset
 	state.commits = append([]repository.RefCommit(nil), msg.commits...)
-	if state.preservePreview {
+	if len(state.restoredPreviewRows) != 0 {
+		state.place.ReaderOffset = reconcilePreviewIdentities(state.restoredPreviewRows, oldOffset, state.commits)
+		state.restoredPreviewRows = nil
+	} else if state.preservePreview {
 		state.place.ReaderOffset = reconcilePreviewOffset(oldCommits, oldOffset, state.commits)
 	} else {
 		state.place.ReaderOffset = 0
@@ -180,6 +193,18 @@ func (state *refsState) requestPreviewQuiet(source repository.RefSource) effect 
 	return effect{
 		kind: effectLoadRefCommits, generation: state.previewGeneration,
 		refSource: source, background: true,
+	}
+}
+
+func (state *refsState) requestRestoredPreview(source repository.RefSource) effect {
+	state.previewGeneration++
+	state.previewSource = source.ID
+	state.previewLoading = true
+	state.previewError = nil
+	state.preservePreview = false
+	return effect{
+		kind: effectLoadRefCommits, generation: state.previewGeneration,
+		refSource: source,
 	}
 }
 
@@ -307,6 +332,16 @@ func reconcilePreviewOffset(old []repository.RefCommit, oldOffset int, current [
 		currentIDs[index] = commit.OID
 	}
 	place := navigation.State{Items: oldIDs, Selected: oldOffset, Top: oldOffset}
+	place.Reconcile(currentIDs)
+	return place.Selected
+}
+
+func reconcilePreviewIdentities(old []string, oldOffset int, current []repository.RefCommit) int {
+	currentIDs := make([]string, len(current))
+	for index, commit := range current {
+		currentIDs[index] = commit.OID
+	}
+	place := navigation.State{Items: append([]string(nil), old...), Selected: oldOffset, Top: oldOffset}
 	place.Reconcile(currentIDs)
 	return place.Selected
 }

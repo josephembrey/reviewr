@@ -12,6 +12,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
+	"github.com/josephembrey/reviewr/internal/session"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -30,30 +31,30 @@ type Source interface {
 	ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument
 }
 
-// PaneStateStore persists authored pane-side choices outside the repository.
-type PaneStateStore interface {
-	SavePaneSwapped(generation uint64, swapped bool) error
+// SessionStore persists authored worktree UI state outside the repository.
+type SessionStore interface {
+	Save(generation uint64, state session.State) error
 }
 
 // Model is the Bubble Tea root. Input routing and effects are delegated to
 // semantic actions and workspace-scoped transitions.
 type Model struct {
-	source    Source
-	host      herdr.Context
-	active    workspace.Kind
-	controls  workspace.Controls
-	lab       labState
-	layout    layoutState
-	scrollbar scrollbarDragState
-	geometry  ui.Geometry
-	files     filesState
-	history   historyState
-	refs      refsState
-	stashes   stashState
-	note      scopedNotesState
-	poll      repositoryPollState
-	paneStore PaneStateStore
-	paneSave  uint64
+	source       Source
+	host         herdr.Context
+	active       workspace.Kind
+	controls     workspace.Controls
+	lab          labState
+	layout       layoutState
+	scrollbar    scrollbarDragState
+	geometry     ui.Geometry
+	files        filesState
+	history      historyState
+	refs         refsState
+	stashes      stashState
+	note         scopedNotesState
+	poll         repositoryPollState
+	sessionStore SessionStore
+	sessionSave  uint64
 
 	reviewStateRoot string
 }
@@ -81,7 +82,7 @@ const (
 	effectLoadNotes
 	effectDebounceNotes
 	effectSaveNotes
-	effectSavePaneState
+	effectSaveSession
 	effectQuit
 )
 
@@ -95,7 +96,7 @@ type effect struct {
 	stashSource repository.ChangeSource
 	changedFile repository.ChangedFile
 	text        string
-	swapped     bool
+	session     session.State
 	background  bool
 	activity    uint64
 	notesScope  notes.Scope
@@ -227,7 +228,11 @@ type notesSavedMsg struct {
 	err        error
 }
 
-type paneStateSavedMsg struct {
+type sessionSaveDueMsg struct {
+	generation uint64
+}
+
+type sessionSavedMsg struct {
 	generation uint64
 	err        error
 }
@@ -284,37 +289,38 @@ func New(source Source, host herdr.Context) Model {
 
 // NewWithNotes creates a model with an explicit project-scoped Notes store.
 func NewWithNotes(source Source, host herdr.Context, store notes.Store) Model {
-	return NewWithPaneState(source, host, store, nil, false)
+	return NewWithSession(source, host, store, nil, session.State{})
 }
 
 // NewWithNotesScopes creates a model with project and optional linked-
 // worktree Notes sessions.
 func NewWithNotesScopes(source Source, host herdr.Context, stores notes.Stores) Model {
-	return NewWithPaneStateAndNotesScopes(source, host, stores, nil, false)
+	return NewWithSessionAndNotesScopes(source, host, stores, nil, session.State{})
 }
 
-// NewWithPaneState creates a model with a startup pane-side preference and
-// its external persistence boundary.
-func NewWithPaneState(source Source, host herdr.Context, notesStore notes.Store, paneStore PaneStateStore, swapped bool) Model {
-	return NewWithPaneStateAndNotesScopes(source, host, notes.Stores{Project: notesStore}, paneStore, swapped)
+// NewWithSession creates a model with a restored worktree session and its
+// external persistence boundary.
+func NewWithSession(source Source, host herdr.Context, notesStore notes.Store, store SessionStore, restored session.State) Model {
+	return NewWithSessionAndNotesScopes(source, host, notes.Stores{Project: notesStore}, store, restored)
 }
 
-// NewWithPaneStateAndNotesScopes creates a model with independently scoped
-// Notes sessions plus a startup pane-side preference.
-func NewWithPaneStateAndNotesScopes(source Source, host herdr.Context, stores notes.Stores, paneStore PaneStateStore, swapped bool) Model {
-	return Model{
-		source:    source,
-		host:      host,
-		active:    workspace.Files,
-		layout:    layoutState{swapped: swapped},
-		lab:       newLabState(),
-		files:     newFilesState(),
-		history:   newHistoryState(),
-		refs:      newRefsState(),
-		stashes:   newStashState(),
-		note:      newScopedNotesState(stores),
-		paneStore: paneStore,
+// NewWithSessionAndNotesScopes creates a model with independently scoped Notes
+// sessions and restores authored worktree place before the first frame.
+func NewWithSessionAndNotesScopes(source Source, host herdr.Context, stores notes.Stores, store SessionStore, restored session.State) Model {
+	model := Model{
+		source:       source,
+		host:         host,
+		active:       workspace.Files,
+		lab:          newLabState(),
+		files:        newFilesState(),
+		history:      newHistoryState(),
+		refs:         newRefsState(),
+		stashes:      newStashState(),
+		note:         newScopedNotesState(stores),
+		sessionStore: store,
 	}
+	model.restoreSession(restored)
+	return model
 }
 
 // NewWithReviewStateRoot injects an application-private state root for tests
@@ -333,8 +339,15 @@ func (m Model) Init() tea.Cmd {
 		m.command(effect{
 			kind:       effectLoadCommits,
 			generation: m.history.listGeneration,
-			query:      commitQuery(workspace.GitGraph, ""),
+			query:      commitQuery(m.controls.Traversal, ""),
 		}),
+	}
+	if m.active == workspace.Notes {
+		commands = append(commands, m.command(m.note.initialLoad()))
+	} else if m.gitRefsActive() {
+		commands = append(commands, m.command(effect{kind: effectLoadRefSources, generation: m.refs.sourceGeneration}))
+	} else if m.gitStashesActive() {
+		commands = append(commands, m.command(effect{kind: effectLoadStashes, generation: m.stashes.listGeneration}))
 	}
 	if _, ok := m.source.(review.Provider); ok {
 		commands = append(commands, m.command(effect{kind: effectLoadReviewState}))
@@ -348,6 +361,13 @@ func (m Model) Init() tea.Cmd {
 // Update routes external input to one semantic action and lands tagged results.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case sessionSaveDueMsg:
+		if msg.generation != m.sessionSave || m.sessionStore == nil {
+			return m, nil
+		}
+		return m, m.command(effect{kind: effectSaveSession, generation: msg.generation, session: m.sessionState()})
+	case sessionSavedMsg:
+		return m, nil
 	case repositoryPollTickMsg:
 		return m, m.beginRepositoryPoll()
 	case repositoryPolledMsg:
@@ -362,7 +382,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.noteRepositoryActivity()
 			pending := m.apply(action)
-			return m, m.command(pending)
+			return m, m.commandAfterAction(pending)
 		}
 	}
 	if handled, command := m.updateLab(msg); handled {
@@ -448,9 +468,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.active = workspace.Notes
 			m.note.scope = m.note.normalize(msg.scope)
 		}
-		return m, m.command(next)
-	case paneStateSavedMsg:
-		return m, nil
+		return m, m.commandAfterAction(next)
 	case refSourcesLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
 			return m, nil
@@ -499,7 +517,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.noteRepositoryActivity()
 	pending = m.apply(action)
-	return m, m.command(pending)
+	return m, m.commandAfterAction(pending)
 }
 
 // View renders from the same stored Geometry used by mouse routing.
@@ -681,10 +699,6 @@ func (m *Model) apply(action Action) effect {
 		m.scrollbar.finish()
 		m.geometry = m.layout.swap(m.geometry.Screen.Width, m.geometry.Screen.Height)
 		m.resizeWorkspaceState()
-		if m.paneStore != nil {
-			m.paneSave++
-			return effect{kind: effectSavePaneState, generation: m.paneSave, swapped: m.layout.swapped}
-		}
 	case StartScrollbarDrag:
 		m.layout.finishDrag()
 		m.scrollbar.start(action.Pane, action.Grab)
@@ -999,14 +1013,16 @@ func (m *Model) resizeWorkspaceState() {
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil || m.files.readerDocument().Kind != ui.ReaderDocumentNone {
+	if len(m.files.restoredReaderRows) == 0 &&
+		(m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil || m.files.readerDocument().Kind != ui.ReaderDocumentNone) {
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
 	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
-	if m.stashes.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone {
+	if len(m.stashes.restoredReaderRows) == 0 &&
+		(m.stashes.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone) {
 		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
 	}
 }
@@ -1216,14 +1232,14 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			return notesSavedMsg{scope: scope, generation: generation, err: store.Save(text)}
 		}
-	case effectSavePaneState:
-		store := m.paneStore
-		generation, swapped := pending.generation, pending.swapped
+	case effectSaveSession:
+		store := m.sessionStore
+		generation, state := pending.generation, pending.session
 		if store == nil {
 			return nil
 		}
 		return func() tea.Msg {
-			return paneStateSavedMsg{generation: generation, err: store.SavePaneSwapped(generation, swapped)}
+			return sessionSavedMsg{generation: generation, err: store.Save(generation, state)}
 		}
 	case effectLoadRefSources:
 		source := m.source
@@ -1299,11 +1315,15 @@ func (m Model) command(pending effect) tea.Cmd {
 	}
 }
 
-// Shutdown reliably flushes an edited note and releases the OS-backed lock.
-// Pane order is saved when it changes so an older concurrent process cannot
-// overwrite a newer choice merely by exiting.
+// Shutdown synchronously saves final place, flushes edited notes, and releases
+// their OS-backed locks. The final generation supersedes delayed save commands.
 func (m *Model) Shutdown() error {
-	return m.note.shutdown()
+	var sessionErr error
+	if m.sessionStore != nil {
+		m.sessionSave++
+		sessionErr = m.sessionStore.Save(m.sessionSave, m.sessionState())
+	}
+	return errors.Join(sessionErr, m.note.shutdown())
 }
 
 func batchCommands(commands ...tea.Cmd) tea.Cmd {

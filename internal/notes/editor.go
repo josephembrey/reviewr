@@ -29,6 +29,15 @@ type Editor struct {
 	redo         []snapshot
 }
 
+// Place is the user-controlled position within a note. Text and undo history
+// are intentionally excluded because they have separate ownership.
+type Place struct {
+	Cursor       int
+	Anchor       int
+	PreferredCol int
+	Scroll       int
+}
+
 type snapshot struct {
 	graphemes []string
 	cursor    int
@@ -87,6 +96,28 @@ func (e Editor) Len() int { return len(e.graphemes) }
 
 // Cursor returns the grapheme boundary containing the insertion point.
 func (e Editor) Cursor() int { return e.cursor }
+
+// Place returns the editor position for worktree-session persistence.
+func (e Editor) Place() Place {
+	return Place{
+		Cursor: e.cursor, Anchor: e.anchor,
+		PreferredCol: e.preferredCol, Scroll: e.scroll,
+	}
+}
+
+// RestorePlace applies a position to freshly loaded text and clamps stale
+// grapheme and viewport offsets without forcing the cursor into view.
+func (e *Editor) RestorePlace(place Place) {
+	e.cursor = clamp(place.Cursor, 0, len(e.graphemes))
+	e.anchor = place.Anchor
+	if e.anchor < 0 || e.anchor > len(e.graphemes) || e.anchor == e.cursor {
+		e.anchor = -1
+	}
+	e.preferredCol = place.PreferredCol
+	e.scroll = place.Scroll
+	e.dragging = false
+	e.clampScroll(e.Document())
+}
 
 // Selection returns a normalized half-open grapheme range.
 func (e Editor) Selection() (int, int, bool) {

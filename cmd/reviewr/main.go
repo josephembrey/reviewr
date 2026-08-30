@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/app"
 	"github.com/josephembrey/reviewr/internal/herdr"
-	"github.com/josephembrey/reviewr/internal/preferences"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/session"
 )
 
 func main() {
@@ -38,8 +38,12 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	paneStore, paneState, _ := preferences.Open("")
-	model := app.NewWithPaneStateAndNotesScopes(repo, host.Context(), stores, paneStore, paneState.PanesSwapped)
+	commonDir, err := repo.CommonDir()
+	if err != nil {
+		return errors.Join(err, stores.Close())
+	}
+	sessionStore, restored, _ := session.Open("", commonDir, repo.Root())
+	model := app.NewWithSessionAndNotesScopes(repo, host.Context(), stores, sessionStore, restored)
 	final, runErr := tea.NewProgram(model).Run()
 	model, ok := final.(app.Model)
 	if !ok {

@@ -80,6 +80,14 @@ func (state *scopedNotesState) open() effect {
 	return state.tag(state.current().open(), state.scope)
 }
 
+func (state scopedNotesState) initialLoad() effect {
+	note := state.current()
+	if !note.loading {
+		return effect{}
+	}
+	return state.tag(effect{kind: effectLoadNotes, generation: note.loadGeneration}, state.scope)
+}
+
 func (state *scopedNotesState) selectScope(scope notes.Scope) effect {
 	scope = state.normalize(scope)
 	if !state.hasWorktree() || scope == state.scope || state.switchPending {
@@ -186,6 +194,7 @@ func (state *scopedNotesState) shutdown() error {
 type notesState struct {
 	editor              notes.Editor
 	store               notes.Store
+	restoredPlace       *notes.Place
 	loaded              bool
 	loading             bool
 	readOnly            bool
@@ -239,6 +248,10 @@ func (state *notesState) landLoad(msg notesLoadedMsg) {
 		state.editor.Reconcile(msg.text)
 	} else {
 		state.editor.Load(msg.text)
+	}
+	if state.restoredPlace != nil {
+		state.editor.RestorePlace(*state.restoredPlace)
+		state.restoredPlace = nil
 	}
 	state.refreshMarkdown()
 }

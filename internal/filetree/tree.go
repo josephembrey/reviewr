@@ -102,6 +102,20 @@ func (t Tree) Folds() FoldState {
 	}
 }
 
+// NewFoldState restores a persisted directory snapshot. Unknown and duplicate
+// paths are harmless because Tree validates them against its current hierarchy.
+func NewFoldState(known, collapsed []string) FoldState {
+	return FoldState{known: sliceSet(known), collapsed: sliceSet(collapsed)}
+}
+
+// Paths exposes a deterministic persistence representation without making the
+// FoldState maps mutable outside this package.
+func (state FoldState) Paths() (known, collapsed []string) {
+	known = sortedSet(state.known)
+	collapsed = sortedSet(state.collapsed)
+	return known, collapsed
+}
+
 // RestoreFolds applies authored state to surviving directories. Directories
 // absent from the saved hierarchy follow collapseNew.
 func (t *Tree) RestoreFolds(state FoldState, collapseNew bool) {
@@ -310,6 +324,25 @@ func cloneSet(source map[string]struct{}) map[string]struct{} {
 		clone[value] = struct{}{}
 	}
 	return clone
+}
+
+func sliceSet(paths []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path != "" {
+			result[path] = struct{}{}
+		}
+	}
+	return result
+}
+
+func sortedSet(source map[string]struct{}) []string {
+	result := make([]string, 0, len(source))
+	for path := range source {
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func join(parent, child string) string {

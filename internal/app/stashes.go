@@ -28,6 +28,7 @@ type stashState struct {
 	reader                repository.ChangeDocument
 	readerPresentation    *ui.ReaderDocument
 	readerContextExpanded bool
+	restoredReaderRows    []string
 	readerOID             string
 	readerFileID          string
 	readerPlaces          map[string]stashReaderPlace
@@ -151,6 +152,9 @@ func (state stashState) landReader(msg stashFileLoadedMsg, _ int) stashState {
 		return state
 	}
 	oldLines := readerRowIdentities(state.readerRows())
+	if len(oldLines) == 0 && len(state.restoredReaderRows) != 0 {
+		oldLines = append([]string(nil), state.restoredReaderRows...)
+	}
 	oldOffset := state.place.ReaderOffset
 	state.reader = msg.document
 	state.readerLoading = false
@@ -160,6 +164,7 @@ func (state stashState) landReader(msg stashFileLoadedMsg, _ int) stashState {
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
+	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
 	state.saveReaderPlace()
 	return state
@@ -245,10 +250,13 @@ func (state *stashState) requestSelectedFile(_ int) effect {
 		state.reader = repository.ChangeDocument{}
 		state.readerPresentation = nil
 		state.readerContextExpanded = false
+		state.restoredReaderRows = nil
 	}
 	state.readerOID = stash.OID
 	state.readerFileID = fileIdentity
-	state.place.ClampReaderSource(len(state.readerRows()))
+	if len(state.restoredReaderRows) == 0 {
+		state.place.ClampReaderSource(len(state.readerRows()))
+	}
 	return effect{
 		kind: effectLoadStashFile, generation: state.readerGeneration, identity: stash.OID,
 		stashSource: stash.Source, changedFile: change,
@@ -302,6 +310,7 @@ func (state *stashState) clearReader() {
 	state.reader = repository.ChangeDocument{}
 	state.readerPresentation = nil
 	state.readerContextExpanded = false
+	state.restoredReaderRows = nil
 	state.readerOID = ""
 	state.readerFileID = ""
 	state.readerLoading = false
