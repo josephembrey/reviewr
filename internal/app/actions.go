@@ -17,6 +17,7 @@ const (
 	ShowGit
 	ShowNotes
 	CycleDestination
+	CyclePreviousDestination
 	ToggleNotesScope
 	SelectProjectNotes
 	SelectWorktreeNotes
@@ -151,6 +152,9 @@ func routeNotesMessage(msg tea.Msg, geometry ui.Geometry, presentation notes.Pre
 		case tea.KeyEnter:
 			return Action{Kind: NotesInsert, Text: "\n"}, true
 		case tea.KeyTab:
+			if selecting {
+				return Action{Kind: CyclePreviousDestination}, true
+			}
 			return Action{Kind: CycleDestination}, true
 		}
 		if key.Text != "" && key.Mod&(tea.ModAlt|tea.ModMeta|tea.ModSuper|tea.ModHyper) == 0 {
@@ -235,12 +239,6 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return Action{Kind: Quit}, true
-		case "1":
-			return Action{Kind: ShowFiles}, true
-		case "2":
-			return Action{Kind: ShowGit}, true
-		case "3":
-			return Action{Kind: ShowNotes}, true
 		case workspace.SecondaryControlKey:
 			return Action{Kind: ToggleSecondary}, true
 		case workspace.TertiaryControlKey:
@@ -269,6 +267,8 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			}
 		case "tab":
 			return Action{Kind: CycleDestination}, true
+		case "shift+tab":
+			return Action{Kind: CyclePreviousDestination}, true
 		case "z":
 			return Action{Kind: SwapPanes}, true
 		case "r":

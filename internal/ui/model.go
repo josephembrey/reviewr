@@ -228,9 +228,12 @@ type Model struct {
 	ReaderColumn  int
 	FooterWarning string
 
-	Notes            notes.Presentation
-	NotesStatus      string
-	NotesError       bool
-	NotesScope       notes.Scope
-	NotesHasWorktree bool
+	Notes       notes.Presentation
+	NotesStatus string
+	NotesError  bool
+	// NotesStatusPriority keeps read-only and error state ahead of optional help
+	// when the footer cannot fit every entry.
+	NotesStatusPriority bool
+	NotesScope          notes.Scope
+	NotesHasWorktree    bool
 }

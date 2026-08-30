@@ -1,12 +1,12 @@
 package workspace
 
-// Header action keys follow the three direct destination keys. Keeping the
-// local grammar centralized prevents input, header, and footer drift.
+// Header action keys are local to the active tab. Tab and Shift+Tab own
+// top-level navigation, leaving the compact number row for view controls.
 const (
-	SecondaryControlKey  = "4"
-	TertiaryControlKey   = "5"
-	ComparisonControlKey = "6"
-	DiffHighlightKey     = "7"
+	SecondaryControlKey  = "1"
+	TertiaryControlKey   = "2"
+	ComparisonControlKey = "3"
+	DiffHighlightKey     = "4"
 )
 
 // FileSet selects the Files navigator universe.

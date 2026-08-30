@@ -223,17 +223,17 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 	model.files.tree.Rebuild([]string{"file.go"})
 	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(filesFrame, "files | git | notes") || !strings.Contains(filesFrame, "\n1 files") {
+	if !strings.HasPrefix(filesFrame, "[files|git|notes]") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
 	}
 
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = next.(Model)
 	if model.active != workspace.Git || command != nil {
 		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "files | git | notes") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "[files|git|notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
@@ -250,9 +250,18 @@ func TestCycleDestinationUsesVisibleTabOrder(t *testing.T) {
 	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Files || pending.kind != effectNone {
 		t.Fatalf("Notes -> Files = active %v effect %+v", model.active, pending)
 	}
+	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Notes || pending.kind != effectLoadNotes {
+		t.Fatalf("Files -> Notes = active %v effect %+v", model.active, pending)
+	}
+	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Git || pending.kind != effectNone {
+		t.Fatalf("Notes -> Git = active %v effect %+v", model.active, pending)
+	}
+	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Files || pending.kind != effectNone {
+		t.Fatalf("Git -> Files = active %v effect %+v", model.active, pending)
+	}
 }
 
-func TestDestinationKeysAndMouseAreDirectAndIdempotent(t *testing.T) {
+func TestDestinationMouseSelectionIsDirectAndIdempotent(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
@@ -275,10 +284,10 @@ func TestDestinationKeysAndMouseAreDirectAndIdempotent(t *testing.T) {
 	if command != nil || model.active != workspace.Files {
 		t.Fatalf("Files mouse tab = active %v command=%v", model.active, command != nil)
 	}
-	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	next, command = model.Update(tea.MouseClickMsg(tea.Mouse{X: model.geometry.HeaderFiles.X, Y: model.geometry.HeaderFiles.Y, Button: tea.MouseLeft}))
 	model = next.(Model)
-	if command != nil || model.active != workspace.Files {
-		t.Fatalf("active Files key = active %v command=%v", model.active, command != nil)
+	if command != nil || model.active != workspace.Files || model.controls.Files != workspace.AllFiles {
+		t.Fatalf("active Files mouse tab = active %v controls %+v command=%v", model.active, model.controls, command != nil)
 	}
 }
 
@@ -288,7 +297,12 @@ func TestNotesDestinationEditsAndPreservesFilesPlace(t *testing.T) {
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	model.files.place = navigation.State{Items: []string{"a", "b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model = next.(Model)
+	if model.active != workspace.Git || command != nil {
+		t.Fatalf("first Tab = active %v command=%v", model.active, command != nil)
+	}
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = next.(Model)
 	if model.active != workspace.Notes || command == nil {
 		t.Fatalf("Notes activation = active %v command=%v", model.active, command != nil)
@@ -432,7 +446,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 		t.Fatalf("minimum-size recovery = geometry %+v command=%v", model.geometry.Screen, command != nil)
 	}
 	frame = ansi.Strip(model.View().Content)
-	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "files | git | notes") {
+	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "[files|git|notes]") {
 		t.Fatalf("recovered frame = %q", frame)
 	}
 }
@@ -566,51 +580,57 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		model = next.(Model)
 		return command
 	}
-
-	if command := press('4'); command != nil || model.controls.Files != workspace.ChangedFiles {
-		t.Fatalf("Files 4 = controls %+v command=%v", model.controls, command != nil)
+	pressTab := func() tea.Cmd {
+		next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+		model = next.(Model)
+		return command
 	}
-	press('5')
-	press('6')
+
+	if command := press('1'); command != nil || model.controls.Files != workspace.ChangedFiles {
+		t.Fatalf("Files 1 = controls %+v command=%v", model.controls, command != nil)
+	}
+	press('2')
+	press('3')
 	if model.controls.Reader != workspace.DiffReader || model.controls.Comparison != workspace.Branch {
 		t.Fatalf("Files controls = %+v", model.controls)
 	}
-	press('4')
+	press('1')
 	if model.controls.Files != workspace.AllFiles || model.controls.Reader != workspace.FileReader {
 		t.Fatalf("Changed -> All did not reset reader to File: %+v", model.controls)
 	}
 
-	press('3')
+	pressTab()
+	pressTab()
 	beforeNotes := model.controls
-	press('4')
-	press('5')
-	press('6')
+	press('1')
+	press('2')
+	press('3')
 	if model.controls != beforeNotes {
 		t.Fatalf("Notes keys changed hidden controls: before %+v after %+v", beforeNotes, model.controls)
 	}
 	pressEscape()
 
-	if command := press('2'); command != nil || model.active != workspace.Git {
+	if command := pressTab(); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git activation = active %v command=%v", model.active, command != nil)
 	}
-	press('4')
+	press('1')
 	if model.controls.Git != workspace.GitRefs {
-		t.Fatalf("Git 4 = %+v", model.controls)
+		t.Fatalf("Git 1 = %+v", model.controls)
 	}
-	press('5')
+	press('2')
 	if model.controls.Traversal != workspace.GitGraph {
 		t.Fatalf("Git Refs exposed a tertiary toggle: %+v", model.controls)
 	}
-	press('4')
-	press('4')
-	press('5')
+	press('1')
+	press('1')
+	press('2')
 	if model.controls.Git != workspace.GitLog || model.controls.Traversal != workspace.GitFirstParent {
 		t.Fatalf("Git Log controls = %+v", model.controls)
 	}
 	comparison := model.controls.Comparison
-	press('6')
+	press('3')
 	if model.controls.Comparison != comparison {
-		t.Fatalf("Git 6 changed hidden Files comparison: %+v", model.controls)
+		t.Fatalf("Git 3 changed hidden Files comparison: %+v", model.controls)
 	}
 }
 
@@ -630,7 +650,7 @@ func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {
 		t.Fatalf("initial snapshot count/tree = %d/%d", source.snapshots, model.files.tree.FileCount())
 	}
 
-	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '4', Text: "4"}))
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
 	model = next.(Model)
 	if source.snapshots != 1 || model.controls.Files != workspace.ChangedFiles || model.files.tree.FileCount() != 1 {
 		t.Fatalf("keyboard scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())

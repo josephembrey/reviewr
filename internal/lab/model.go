@@ -44,19 +44,13 @@ func (model Model) Update(msg tea.KeyPressMsg) Model {
 	case "l", "right":
 		model.destination = (model.destination + 1) % 3
 	case "1":
-		model.destination = destinationFiles
-	case "2":
-		model.destination = destinationGit
-	case "3":
-		model.destination = destinationNotes
-	case "4":
 		model.fileSet = 1 - model.fileSet
 		if model.fileSet == fileSetAll {
 			model.reader = readerFile
 		}
-	case "5":
+	case "2":
 		model.reader = 1 - model.reader
-	case "6":
+	case "3":
 		model.comparison = (model.comparison + 1) % len(comparisonLabels)
 	}
 	return model

@@ -14,28 +14,28 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	changes := ChangeSummary{Ready: true}
 
 	files := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Changes: changes}))
-	if !strings.HasPrefix(files, "files | git | notes [all] [file] [uncommitted]") {
+	if !strings.HasPrefix(files, "[files|git|notes] [all] [file] [uncommitted]") {
 		t.Fatalf("Files header = %q", files)
 	}
 
 	controls := workspace.Controls{Files: workspace.ChangedFiles, Reader: workspace.DiffReader, Comparison: workspace.LastTurn}
 	files = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(files, "files | git | notes [changed] [diff] [last-turn]") {
+	if !strings.HasPrefix(files, "[files|git|notes] [changed] [diff] [last-turn]") {
 		t.Fatalf("cycled Files header = %q", files)
 	}
 
 	git := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Changes: changes}))
-	if !strings.HasPrefix(git, "files | git | notes [log] [graph]") {
+	if !strings.HasPrefix(git, "[files|git|notes] [log] [graph]") {
 		t.Fatalf("Git Log header = %q", git)
 	}
 	controls.Git = workspace.GitRefs
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "files | git | notes [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "[files|git|notes] [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Refs header = %q", git)
 	}
 	controls.Git = workspace.GitStashes
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "files | git | notes [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "[files|git|notes] [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Stashes header = %q", git)
 	}
 
@@ -48,7 +48,7 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 func TestWideHeaderControlsExposeNumberKeys(t *testing.T) {
 	t.Parallel()
 	plain := ansi.Strip(Render(Model{Geometry: Calculate(120, 1), Workspace: workspace.Files}))
-	if !strings.HasPrefix(plain, "files | git | notes  4 [all]  5 [file]  6 [uncommitted]") {
+	if !strings.HasPrefix(plain, "[files|git|notes]  1 [all]  2 [file]  3 [uncommitted]") {
 		t.Fatalf("wide Files header = %q", plain)
 	}
 }
@@ -92,7 +92,7 @@ func TestDiffHighlightControlAndFooterShareEligibilityAndCompleteShedding(t *tes
 	frame := ansi.Strip(Render(Model{
 		Geometry: geometry, Workspace: workspace.Files, Controls: controls,
 	}))
-	if !strings.Contains(strings.Split(frame, "\n")[0], "7 [sidebar]") || !strings.Contains(strings.Split(frame, "\n")[geometry.Footer.Y], "7 diff highlight") {
+	if !strings.Contains(strings.Split(frame, "\n")[0], "4 [sidebar]") || !strings.Contains(strings.Split(frame, "\n")[geometry.Footer.Y], "4 diff highlight") {
 		t.Fatalf("eligible Files controls/footer = %q", frame)
 	}
 	visible := layoutHeaderControls(geometry, workspace.Files, controls)
@@ -103,13 +103,13 @@ func TestDiffHighlightControlAndFooterShareEligibilityAndCompleteShedding(t *tes
 		t.Fatalf("diff highlight hit = %+v", hit)
 	}
 	controls.DiffHighlight = workspace.DiffHighlightBackground
-	if plain := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls})); !strings.Contains(strings.Split(plain, "\n")[0], "7 [background]") {
+	if plain := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls})); !strings.Contains(strings.Split(plain, "\n")[0], "4 [background]") {
 		t.Fatalf("background label missing: %q", plain)
 	}
 
 	controls.Git = workspace.GitStashes
 	stash := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls}))
-	if !strings.Contains(strings.Split(stash, "\n")[0], "4 [stashes]") || !strings.Contains(strings.Split(stash, "\n")[0], "7 [background]") {
+	if !strings.Contains(strings.Split(stash, "\n")[0], "1 [stashes]") || !strings.Contains(strings.Split(stash, "\n")[0], "4 [background]") {
 		t.Fatalf("eligible Stash header = %q", stash)
 	}
 

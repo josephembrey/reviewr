@@ -40,13 +40,13 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	key := func(value rune) tea.Cmd {
 		return update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
 	}
-	if command := key('2'); command != nil || model.active != workspace.Git {
+	if command := update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab})); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git switch = active %v command=%v", model.active, command != nil)
 	}
-	if command := key('4'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
+	if command := key('1'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
 		t.Fatalf("Refs switch = controls %+v refs %+v command=%v", model.controls, model.refs, command != nil)
 	}
-	command := key('4')
+	command := key('1')
 	if command == nil || model.controls.Git != workspace.GitStashes || !model.stashes.listLoading {
 		t.Fatalf("Stashes switch = controls %+v state %+v command=%v", model.controls, model.stashes, command != nil)
 	}
@@ -90,11 +90,11 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	model.files.place.ReaderOffset = 7
 	model.history.place.ReaderOffset = 3
 	model.stashes.place.ReaderOffset = 2
-	if command := key('4'); command != nil || model.controls.Git != workspace.GitLog || model.activePlace().ReaderOffset != 3 {
+	if command := key('1'); command != nil || model.controls.Git != workspace.GitLog || model.activePlace().ReaderOffset != 3 {
 		t.Fatalf("Log did not restore independent place: controls %+v place %+v", model.controls, model.activePlace())
 	}
-	key('4')
-	if command := key('4'); command != nil || model.controls.Git != workspace.GitStashes || model.activePlace().ReaderOffset != 2 || model.stashes.reader.Change.Path != "other.go" {
+	key('1')
+	if command := key('1'); command != nil || model.controls.Git != workspace.GitStashes || model.activePlace().ReaderOffset != 2 || model.stashes.reader.Change.Path != "other.go" {
 		t.Fatalf("Stashes did not restore independent place: controls %+v stash %+v", model.controls, model.stashes)
 	}
 	model.apply(Action{Kind: ShowFiles})
@@ -244,7 +244,7 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	frame := ui.Render(model)
 	plain := ansi.Strip(frame)
 	for _, want := range []string{
-		"4 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "old", "new", "f/F move files",
+		"1 [stashes]", "stashes · 1", "stash@{0}", "feature/reader", "3f", "+12", "-4", "1h", "stash@{0} · 2/3 · before.go → renamed.go", "Renamed:", "old", "new", "f/F move files",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("stash frame misses %q:\n%s", want, plain)

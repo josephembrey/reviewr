@@ -77,7 +77,7 @@ func (model Model) viewSwitchers(width, height int) string {
 	height = max(0, height)
 	lines := []string{
 		title.Render("lab / switchers"),
-		quiet.Render("tab next page  •  j/k choose  •  h/l preview destination  •  1/2/3 destination  •  4/5/6 Files controls"),
+		quiet.Render("tab next page  •  j/k choose  •  h/l preview destination  •  1/2/3 Files controls  •  4 diff style"),
 		"",
 	}
 	for index, spec := range variants {
@@ -116,11 +116,11 @@ func renderDestinations(model Model) string {
 }
 
 func renderFilesControls(model Model) string {
-	return topTabs(model.destination) + "  " + secondary(model) + "  " + neutralControl("7", "sidebar", accent)
+	return topTabs(model.destination) + "  " + secondary(model) + "  " + neutralControl("4", "sidebar", accent)
 }
 
 func renderGitControls(model Model) string {
-	return topTabs(model.destination) + "  " + neutralControl("4", "log", green) + "  " + neutralControl("5", "graph", purple)
+	return topTabs(model.destination) + "  " + neutralControl("1", "log", green) + "  " + neutralControl("2", "graph", purple)
 }
 
 func renderNotesHelp(model Model) string {
@@ -135,19 +135,19 @@ func option(label string, active bool) string {
 }
 
 func topTabs(destination int) string {
-	return quiet.Render("[ ") + strings.Join([]string{
+	return quiet.Render("[") + strings.Join([]string{
 		option("files", destination == destinationFiles),
 		option("git", destination == destinationGit),
 		option("notes", destination == destinationNotes),
-	}, quiet.Render(" | ")) + quiet.Render(" ]")
+	}, quiet.Render("|")) + quiet.Render("]")
 }
 
 func secondary(model Model) string {
 	sets := []string{"all", "changed"}
 	readers := []string{"file", "diff"}
-	return neutralControl("4", sets[model.fileSet], green) + "  " +
-		neutralControl("5", readers[model.reader], purple) + "  " +
-		neutralControl("6", comparisonLabels[model.comparison], yellow)
+	return neutralControl("1", sets[model.fileSet], green) + "  " +
+		neutralControl("2", readers[model.reader], purple) + "  " +
+		neutralControl("3", comparisonLabels[model.comparison], yellow)
 }
 
 func neutralControl(key, value string, foreground color.Color) string {

@@ -58,7 +58,14 @@ func newScopedNotesTestModel(project, worktree *fakeNotesStore) Model {
 
 func openNotes(t *testing.T, model Model) Model {
 	t.Helper()
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
+	if model.active == workspace.Files {
+		next, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+		model = next.(Model)
+		if model.active != workspace.Git {
+			t.Fatalf("open Notes first Tab = active %v", model.active)
+		}
+	}
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = next.(Model)
 	if model.active != workspace.Notes || command == nil {
 		t.Fatalf("open Notes = active %v command=%v", model.active, command != nil)
@@ -576,7 +583,12 @@ func TestNotesInitialProjectScopeAndReadOnlyProjectDoesNotBlockWorktree(t *testi
 	if model.active != workspace.Files {
 		t.Fatal("Notes did not close after local save")
 	}
-	next, reloadWorktree := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	model = next.(Model)
+	if model.active != workspace.Git {
+		t.Fatalf("re-entry first Tab = active %v", model.active)
+	}
+	next, reloadWorktree := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = next.(Model)
 	if reloadWorktree == nil || model.note.scope != notes.Worktree || worktree.loads != 1 {
 		t.Fatalf("re-entry did not preserve worktree scope: scope=%v command=%v worktree loads=%d", model.note.scope, reloadWorktree != nil, worktree.loads)

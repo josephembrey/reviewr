@@ -37,13 +37,13 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	if !strings.HasPrefix(plain, switcher) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
 		t.Fatalf("normal header = %q", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(19, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(17, 1), Workspace: workspace.Files}))
 	if plain != switcher {
-		t.Fatalf("19-column header = %q, want switcher only", plain)
+		t.Fatalf("17-column header = %q, want switcher only", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(20, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(18, 1), Workspace: workspace.Files}))
 	if plain != switcher+" " {
-		t.Fatalf("20-column header = %q, want switcher only", plain)
+		t.Fatalf("18-column header = %q, want switcher only", plain)
 	}
 }
 
@@ -127,7 +127,7 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 func TestHeaderKeepsChangeTotalsWhenFullSummaryCannotFit(t *testing.T) {
 	t.Parallel()
 	model := Model{
-		Geometry:  Calculate(68, 1),
+		Geometry:  Calculate(66, 1),
 		Workspace: workspace.Files,
 		Controls: workspace.Controls{
 			Files:      workspace.ChangedFiles,

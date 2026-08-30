@@ -89,20 +89,23 @@ func renderFooter(model Model) string {
 		if model.NotesError {
 			style = errorStyle
 		}
-		footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"}) +
-			renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus)) +
-			renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Tab", label: "next"})
+		priorityStatus := model.NotesStatusPriority || model.NotesError
+		footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
+		if priorityStatus {
+			footer += renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
+		}
+		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Tab/Shift+Tab", label: "cycle"})
 		if model.NotesHasWorktree {
 			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
+		}
+		if !priorityStatus {
+			footer += renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
 		}
 		return fit(footer, width)
 	}
 
 	destinations := []footerEntry{
-		{key: "1", label: "files"},
-		{key: "2", label: "git"},
-		{key: "3", label: "notes"},
-		{key: "tab", label: "next"},
+		{key: "Tab/Shift+Tab", label: "cycle"},
 	}
 	entries := append(destinations, []footerEntry{
 		{key: "j/k or ↑/↓", label: "navigate"},
@@ -263,9 +266,10 @@ func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
 		{workspace.Notes, "notes"},
 	}
 	var rendered strings.Builder
+	rendered.WriteString(chromeStyle.Render("["))
 	for index, item := range labels {
 		if index > 0 {
-			rendered.WriteString(mutedStyle.Render(" | "))
+			rendered.WriteString(mutedStyle.Render("|"))
 		}
 		if item.kind == activeWorkspace {
 			rendered.WriteString(headerStyle.Render(item.label))
@@ -273,6 +277,7 @@ func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
 			rendered.WriteString(chromeStyle.Render(item.label))
 		}
 	}
+	rendered.WriteString(chromeStyle.Render("]"))
 	return fit(rendered.String(), min(max(0, width), len(workspaceSwitcher)))
 }
 

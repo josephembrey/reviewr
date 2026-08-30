@@ -538,12 +538,13 @@ func (m Model) View() tea.View {
 		note := m.note.current()
 		status, statusError := note.status()
 		presentation = ui.Model{
-			Geometry:         m.geometry,
-			Notes:            note.presentation(),
-			NotesStatus:      status,
-			NotesError:       statusError,
-			NotesScope:       m.note.scope,
-			NotesHasWorktree: m.note.hasWorktree(),
+			Geometry:            m.geometry,
+			Notes:               note.presentation(),
+			NotesStatus:         status,
+			NotesError:          statusError,
+			NotesStatusPriority: statusError || note.readOnly,
+			NotesScope:          m.note.scope,
+			NotesHasWorktree:    m.note.hasWorktree(),
 		}
 	} else if m.gitStashesActive() {
 		presentation = m.stashes.viewModel(m.geometry, time.Now())
@@ -603,6 +604,15 @@ func (m *Model) apply(action Action) effect {
 			return m.activate(workspace.Notes)
 		default:
 			return m.requestNotesExit(notesExitFiles)
+		}
+	case CyclePreviousDestination:
+		switch m.active {
+		case workspace.Files:
+			return m.activate(workspace.Notes)
+		case workspace.Git:
+			return m.activate(workspace.Files)
+		default:
+			return m.requestNotesExit(notesExitGit)
 		}
 	case ToggleNotesScope:
 		return m.note.toggleScope()
