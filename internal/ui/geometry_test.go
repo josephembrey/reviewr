@@ -99,7 +99,7 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 				"reader rows":         g.ReaderRows, "notes title": g.NotesTitle,
 				"project scope": g.NotesProjectScope, "worktree scope": g.NotesWorktreeScope,
 				"notes rows": g.NotesRows, "notes text": g.NotesText,
-				"notes bar": g.NotesBar, "footer": g.Footer,
+				"notes bar": g.NotesBar, "footer": g.Footer, "footer help": g.FooterHelp,
 			} {
 				if rect.X < 0 || rect.Y < 0 || rect.Width < 0 || rect.Height < 0 ||
 					rect.X+rect.Width > width || rect.Y+rect.Height > height {

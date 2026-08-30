@@ -39,6 +39,7 @@ type Geometry struct {
 	NotesText          Rect
 	NotesBar           Rect
 	Footer             Rect
+	FooterHelp         Rect
 }
 
 // MinimumPaneWidth is the draggable split's preferred lower bound. Geometry
@@ -145,6 +146,7 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	// the potential lane; CalculateScrollbar decides whether it is reserved.
 	g.NotesText = g.NotesRows
 	g.NotesBar = scrollbarLane(g.NotesRows)
+	g.FooterHelp = footerHelpRect(g.Footer)
 	return g
 }
 
@@ -222,6 +224,13 @@ func readerContextFoldRect(title Rect) Rect {
 		Width:  readerContextFoldWidth,
 		Height: title.Height,
 	}
+}
+
+func footerHelpRect(footer Rect) Rect {
+	if footer.Width == 0 || footer.Height == 0 {
+		return Rect{}
+	}
+	return Rect{X: footer.X + footer.Width - 1, Y: footer.Y, Width: 1, Height: 1}
 }
 
 func clamp(value, low, high int) int {

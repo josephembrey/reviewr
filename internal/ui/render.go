@@ -34,7 +34,11 @@ func Render(model Model) string {
 	if len(blocks) == 0 {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, blocks...)
+	frame := lipgloss.JoinVertical(lipgloss.Left, blocks...)
+	if model.HelpOpen {
+		return renderHelpOverlay(frame, g.Screen)
+	}
+	return frame
 }
 
 func renderTitle(title string, focused bool) string {

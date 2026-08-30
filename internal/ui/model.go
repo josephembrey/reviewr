@@ -207,6 +207,7 @@ type Model struct {
 	Geometry        Geometry
 	Workspace       workspace.Kind
 	DividerDragging bool
+	HelpOpen        bool
 	Controls        workspace.Controls
 	Changes         ChangeSummary
 

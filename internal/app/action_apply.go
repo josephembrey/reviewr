@@ -23,6 +23,8 @@ func (m *Model) apply(action Action) effect {
 		return m.applyViewControl(action)
 	case ToggleReview, ActivateReviewBadge, ToggleReviewBounds, NextReviewGap:
 		return m.applyReviewAction(action)
+	case ToggleHelp:
+		m.helpOpen = !m.helpOpen
 	case Reload:
 		return m.reloadActiveWorkspace()
 	case Resize,

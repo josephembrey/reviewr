@@ -16,8 +16,6 @@ var (
 		{key: "tab", label: "focus"},
 		{key: "j/k or ↑/↓", label: "navigate"},
 		{key: "z", label: "swap"},
-		{key: "r", label: "refresh"},
-		{key: "q", label: "quit"},
 	}
 	filesFooterEntries = []footerEntry{
 		{key: "tab", label: "focus"},
@@ -27,28 +25,44 @@ var (
 		{key: "x", label: "review"},
 		{key: "R", label: "bounds"},
 		{key: "X", label: "next gap"},
-		{key: "r", label: "refresh"},
-		{key: "q", label: "quit"},
 	}
 )
 
 func renderFooter(model Model) string {
-	width := model.Geometry.Footer.Width
+	var content string
 	if model.Workspace == workspace.Files && model.FooterWarning != "" {
-		return fit(errorStyle.Render(SafeSingleLine(model.FooterWarning)), width)
+		content = errorStyle.Render(SafeSingleLine(model.FooterWarning))
+	} else {
+		var entries []footerEntry
+		switch {
+		case model.Workspace == workspace.Notes:
+			content = renderNotesFooter(model)
+		case model.Workspace == workspace.Files:
+			entries = filesFooterEntries
+		case model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes:
+			entries = stashFooterEntries(model.ReaderContextFoldable)
+		default:
+			entries = standardFooterEntries
+		}
+		if content == "" {
+			content = renderFooterEntries(entries)
+		}
 	}
-	var entries []footerEntry
-	switch {
-	case model.Workspace == workspace.Notes:
-		return fit(renderNotesFooter(model), width)
-	case model.Workspace == workspace.Files:
-		entries = filesFooterEntries
-	case model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes:
-		entries = stashFooterEntries(model.ReaderContextFoldable)
-	default:
-		entries = standardFooterEntries
+	return renderFooterHelp(content, model.Geometry)
+}
+
+func renderFooterHelp(content string, geometry Geometry) string {
+	footer := geometry.Footer
+	help := geometry.FooterHelp
+	if footer.Width <= 0 || footer.Height <= 0 {
+		return ""
 	}
-	return fit(renderFooterEntries(entries), width)
+	if help.Width == 0 {
+		return fit(content, footer.Width)
+	}
+	contentWidth := max(0, help.X-footer.X-1)
+	gap := max(0, help.X-footer.X-contentWidth)
+	return fit(content, contentWidth) + strings.Repeat(" ", gap) + headerStyle.Render("?")
 }
 
 func renderNotesFooter(model Model) string {
@@ -58,17 +72,18 @@ func renderNotesFooter(model Model) string {
 	}
 	priorityStatus := model.NotesStatusPriority || model.NotesError
 	status := style.Render(SafeSingleLine(model.NotesStatus))
-	footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
 	if priorityStatus {
-		footer += renderFooterSeparator() + status
+		footer := status + renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
+		if model.NotesHasWorktree {
+			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
+		}
+		return footer
 	}
+	footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"})
 	if model.NotesHasWorktree {
 		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
 	}
-	if !priorityStatus {
-		footer += renderFooterSeparator() + status
-	}
-	return footer
+	return footer + renderFooterSeparator() + status
 }
 
 func stashFooterEntries(contextFoldable bool) []footerEntry {
@@ -82,8 +97,6 @@ func stashFooterEntries(contextFoldable bool) []footerEntry {
 	}
 	return append(entries,
 		footerEntry{key: "z", label: "swap"},
-		footerEntry{key: "r", label: "refresh"},
-		footerEntry{key: "q", label: "quit"},
 	)
 }
 

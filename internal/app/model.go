@@ -43,6 +43,7 @@ type Model struct {
 	lab            labState
 	layout         layoutState
 	scrollbar      scrollbarDragState
+	helpOpen       bool
 	geometry       ui.Geometry
 	files          filesState
 	history        historyState
@@ -163,6 +164,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if action.Kind == ActionNone {
+		return m, nil
+	}
 	m.noteRepositoryActivity()
 	return m, m.commandAfterAction(m.apply(action))
 }
@@ -213,6 +217,7 @@ func (m Model) View() tea.View {
 	}
 	presentation.Workspace = m.active
 	presentation.DividerDragging = m.layout.dragging
+	presentation.HelpOpen = m.helpOpen
 	presentation.Controls = m.presentationControls()
 	if presentation.Workspace == workspace.Files {
 		summary := m.files.snapshot.Summary()
