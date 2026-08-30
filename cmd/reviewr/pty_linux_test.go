@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/sys/unix"
 )
 
@@ -368,7 +369,7 @@ func (session *ptySession) waitFor(t *testing.T, value string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(session.output.String(), value) {
+		if containsPTYText(session.output.String(), value) {
 			return
 		}
 		select {
@@ -379,6 +380,17 @@ func (session *ptySession) waitFor(t *testing.T, value string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("PTY output never contained %q:\n%s", value, session.output.String())
+}
+
+func containsPTYText(output, value string) bool {
+	return strings.Contains(ansi.Strip(output), value)
+}
+
+func TestPTYTextAssertionsIgnoreANSIStyles(t *testing.T) {
+	output := "\x1b[2;3H\x1b[34mconst\x1b[m B\x1b[K"
+	if !containsPTYText(output, "const B") {
+		t.Fatalf("styled PTY output did not expose its visible text: %q", output)
+	}
 }
 
 func (session *ptySession) resetOutput() { session.output.Reset() }
