@@ -223,7 +223,7 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 	model.files.tree.Rebuild([]string{"file.go"})
 	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(filesFrame, "[files|git|notes]") || !strings.Contains(filesFrame, "\n1 files") {
+	if !strings.HasPrefix(filesFrame, "tab [files|git|notes]") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
 	}
 
@@ -233,7 +233,7 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "[files|git|notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "tab [files|git|notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
@@ -446,7 +446,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 		t.Fatalf("minimum-size recovery = geometry %+v command=%v", model.geometry.Screen, command != nil)
 	}
 	frame = ansi.Strip(model.View().Content)
-	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "[files|git|notes]") {
+	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "tab [files|git|notes]") {
 		t.Fatalf("recovered frame = %q", frame)
 	}
 }

@@ -138,7 +138,7 @@ func option(label string, active bool) string {
 }
 
 func topTabs(destination int) string {
-	return quiet.Render("[") + strings.Join([]string{
+	return title.Render("tab") + quiet.Render(" [") + strings.Join([]string{
 		option("files", destination == destinationFiles),
 		option("git", destination == destinationGit),
 		option("notes", destination == destinationNotes),

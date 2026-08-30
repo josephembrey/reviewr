@@ -95,7 +95,6 @@ func renderFooter(model Model) string {
 		if priorityStatus {
 			footer += renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
 		}
-		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "tab", label: "cycle"})
 		if model.NotesHasWorktree {
 			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
 		}
@@ -105,17 +104,14 @@ func renderFooter(model Model) string {
 		return fit(footer, width)
 	}
 
-	destinations := []footerEntry{
-		{key: "tab", label: "cycle"},
-	}
-	entries := append(destinations, []footerEntry{
+	entries := []footerEntry{
 		{key: "j/k or ↑/↓", label: "navigate"},
 		{key: "z", label: "swap"},
 		{key: "r", label: "refresh"},
 		{key: "q", label: "quit"},
-	}...)
+	}
 	if model.Workspace == workspace.Files {
-		entries = append(destinations,
+		entries = []footerEntry{
 			footerEntry{key: "j/k", label: "move"},
 			footerEntry{key: "h/l", label: "less/more"},
 			footerEntry{key: "z", label: "swap"},
@@ -124,7 +120,7 @@ func renderFooter(model Model) string {
 			footerEntry{key: "X", label: "next gap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
-		)
+		}
 	}
 	if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
 		stashEntries := []footerEntry{
@@ -139,14 +135,14 @@ func renderFooter(model Model) string {
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
 		)
-		entries = append(destinations, stashEntries...)
+		entries = stashEntries
 	} else if model.Workspace == workspace.Git {
-		entries = append(destinations,
+		entries = []footerEntry{
 			footerEntry{key: "j/k or ↑/↓", label: "navigate"},
 			footerEntry{key: "z", label: "swap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
-		)
+		}
 	}
 	return fit(renderFooterEntries(entries), width)
 }
@@ -249,7 +245,8 @@ func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
 		{workspace.Notes, "notes"},
 	}
 	var rendered strings.Builder
-	rendered.WriteString(chromeStyle.Render("["))
+	rendered.WriteString(headerStyle.Render("tab"))
+	rendered.WriteString(chromeStyle.Render(" ["))
 	for index, item := range labels {
 		if index > 0 {
 			rendered.WriteString(mutedStyle.Render("|"))

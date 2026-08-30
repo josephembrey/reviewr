@@ -232,7 +232,7 @@ func TestHitTestPrecedenceAndBoundaries(t *testing.T) {
 		{name: "files workspace", x: g.HeaderFiles.X, y: g.HeaderFiles.Y, want: Hit{Kind: HitFilesWorkspace}},
 		{name: "git workspace", x: g.HeaderGit.X, y: g.HeaderGit.Y, want: Hit{Kind: HitGitWorkspace}},
 		{name: "notes workspace", x: g.HeaderNotes.X, y: g.HeaderNotes.Y, want: Hit{Kind: HitNotesWorkspace}},
-		{name: "header punctuation", x: 6, y: g.Header.Y, want: Hit{Kind: HitNone}},
+		{name: "header punctuation", x: 10, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "header gap", x: 30, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "empty row is pane", x: g.NavigatorRows.X, y: g.NavigatorRows.Y + 4, want: Hit{Kind: HitNavigator}},
 		{name: "navigator title", x: g.NavigatorTitle.X, y: g.NavigatorTitle.Y, want: Hit{Kind: HitNavigator}},

@@ -22,8 +22,8 @@ func TestFooterSeparatesKeyLabelAndSeparatorStyles(t *testing.T) {
 	if !strings.Contains(footer, mutedStyle.Render(" • ")) {
 		t.Fatalf("footer separator does not use subdued treatment: %q", footer)
 	}
-	if !strings.Contains(footer, headerStyle.Render("tab")) || !strings.Contains(footer, chromeStyle.Render(" cycle")) {
-		t.Fatalf("footer does not describe tab cycling: %q", footer)
+	if strings.Contains(footer, "tab") || strings.Contains(footer, "cycle") {
+		t.Fatalf("footer repeats the header tab control: %q", footer)
 	}
 }
 
@@ -38,8 +38,8 @@ func TestNotesFooterUsesTruthfulHomeAndScopeKeys(t *testing.T) {
 	})
 	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
 	if !strings.Contains(footer, headerStyle.Render("Esc")) || !strings.Contains(footer, chromeStyle.Render(" Files")) ||
-		!strings.Contains(footer, headerStyle.Render("tab")) || !strings.Contains(footer, chromeStyle.Render(" cycle")) ||
 		!strings.Contains(footer, headerStyle.Render("ctrl+t")) || !strings.Contains(footer, chromeStyle.Render(" scope")) ||
+		strings.Contains(footer, "tab") || strings.Contains(footer, "cycle") ||
 		strings.Contains(footer, "1 files") {
 		t.Fatalf("Notes footer is not truthful: %q", footer)
 	}
