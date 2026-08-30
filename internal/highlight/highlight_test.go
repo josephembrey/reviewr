@@ -3,6 +3,8 @@ package highlight
 import (
 	"strings"
 	"testing"
+
+	"github.com/alecthomas/chroma/v2"
 )
 
 func TestLinesDetectsLexerAndPreservesSource(t *testing.T) {
@@ -64,6 +66,40 @@ func TestCacheReturnsIndependentDocuments(t *testing.T) {
 	second := highlighter.Lines("main.go", input)
 	if got := spanText(second[0]); got != input[0] {
 		t.Fatalf("cached source = %q, want %q", got, input[0])
+	}
+}
+
+func TestTokenStylesRetainTerminalColorSemantics(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		token chroma.TokenType
+		want  Style
+	}{
+		{token: chroma.Error, want: Style{Foreground: "1"}},
+		{token: chroma.NameException, want: Style{Foreground: "1"}},
+		{token: chroma.GenericDeleted, want: Style{Foreground: "1"}},
+		{token: chroma.GenericInserted, want: Style{Foreground: "2"}},
+		{token: chroma.LiteralNumberInteger, want: Style{Foreground: "3"}},
+		{token: chroma.LiteralStringInterpol, want: Style{Foreground: "3"}},
+		{token: chroma.NameFunction, want: Style{Foreground: "6"}},
+		{token: chroma.LiteralStringEscape, want: Style{Foreground: "6"}},
+		{token: chroma.LiteralStringDouble, want: Style{Foreground: "2"}},
+		{token: chroma.KeywordType, want: Style{Foreground: "2"}},
+		{token: chroma.NameClass, want: Style{Foreground: "2"}},
+		{token: chroma.Keyword, want: Style{Foreground: "4"}},
+		{token: chroma.NameDecorator, want: Style{Foreground: "4"}},
+		{token: chroma.CommentSingle, want: Style{Foreground: "5", Italic: true}},
+		{token: chroma.Operator, want: Style{Foreground: "8"}},
+		{token: chroma.GenericHeading, want: Style{Foreground: "4", Bold: true}},
+		{token: chroma.GenericStrong, want: Style{Bold: true}},
+		{token: chroma.GenericEmph, want: Style{Italic: true}},
+		{token: chroma.GenericUnderline, want: Style{Underline: true}},
+		{token: chroma.Text, want: Style{}},
+	}
+	for _, test := range tests {
+		if got := tokenStyle(test.token); got != test.want {
+			t.Errorf("tokenStyle(%v) = %+v, want %+v", test.token, got, test.want)
+		}
 	}
 }
 

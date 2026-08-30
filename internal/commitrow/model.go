@@ -3,7 +3,7 @@
 package commitrow
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -127,14 +127,15 @@ func AgeLabel(now time.Time, authoredUnix int64) string {
 	case seconds < 60:
 		return "now"
 	case seconds < 60*60:
-		return fmt.Sprintf("%dm", seconds/60)
+		return strconv.FormatInt(seconds/60, 10) + "m"
 	case seconds < 24*60*60:
-		return fmt.Sprintf("%dh", seconds/(60*60))
+		return strconv.FormatInt(seconds/(60*60), 10) + "h"
 	case seconds < 7*24*60*60:
-		return fmt.Sprintf("%dd", seconds/(24*60*60))
+		return strconv.FormatInt(seconds/(24*60*60), 10) + "d"
 	case seconds < 52*7*24*60*60:
-		return fmt.Sprintf("%dw", seconds/(7*24*60*60))
+		return strconv.FormatInt(seconds/(7*24*60*60), 10) + "w"
 	default:
-		return fmt.Sprintf("%dy", min(int64(99), seconds/(365*24*60*60)))
+		years := max(int64(1), min(int64(99), seconds/(365*24*60*60)))
+		return strconv.FormatInt(years, 10) + "y"
 	}
 }

@@ -51,10 +51,15 @@ func TestAgeLabelStaysCompact(t *testing.T) {
 		{seconds: 2 * 60 * 60, want: "2h"},
 		{seconds: 3 * 24 * 60 * 60, want: "3d"},
 		{seconds: 14 * 24 * 60 * 60, want: "2w"},
+		{seconds: 52 * 7 * 24 * 60 * 60, want: "1y"},
 		{seconds: 2 * 365 * 24 * 60 * 60, want: "2y"},
 	} {
 		if got := AgeLabel(now, now.Unix()-test.seconds); got != test.want {
 			t.Fatalf("AgeLabel(%d) = %q, want %q", test.seconds, got, test.want)
 		}
+	}
+	farFuture := time.Unix(200*365*24*60*60+1, 0)
+	if got := AgeLabel(farFuture, 1); got != "99y" {
+		t.Fatalf("capped AgeLabel() = %q, want %q", got, "99y")
 	}
 }

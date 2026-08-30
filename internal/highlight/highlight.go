@@ -78,10 +78,14 @@ func (h *Highlighter) store(key cacheKey, lines [][]Span) {
 	}
 	if len(h.order) == h.capacity {
 		delete(h.entries, h.order[0])
-		h.order = h.order[1:]
+		copy(h.order, h.order[1:])
+		h.order[len(h.order)-1] = key
+	} else {
+		h.order = append(h.order, key)
 	}
-	h.entries[key] = cloneLines(lines)
-	h.order = append(h.order, key)
+	// tokenize owns lines and callers only receive clones, so the cache can
+	// retain the original document without cloning it a second time.
+	h.entries[key] = lines
 }
 
 func tokenize(path, content string, sourceLines []string) (result [][]Span) {
@@ -139,34 +143,11 @@ func appendSpan(line *[]Span, span Span) {
 func tokenStyle(tokenType chroma.TokenType) Style {
 	// Chroma owns tokenization; presentation uses terminal ANSI roles so code
 	// follows the active palette instead of imposing an unrelated RGB theme.
-	style := Style{}
+	style := Style{Foreground: tokenForeground(tokenType)}
 	switch {
-	case tokenType == chroma.Error, tokenType == chroma.NameException,
-		tokenType == chroma.NameTag, tokenType == chroma.GenericError,
-		tokenType == chroma.GenericTraceback, tokenType == chroma.GenericDeleted:
-		style.Foreground = "1"
-	case tokenType == chroma.GenericInserted:
-		style.Foreground = "2"
-	case tokenType == chroma.NameConstant, tokenType == chroma.LiteralDate,
-		tokenType.InSubCategory(chroma.LiteralNumber), tokenType == chroma.LiteralStringInterpol:
-		style.Foreground = "3"
-	case tokenType == chroma.KeywordNamespace, tokenType == chroma.NameAttribute,
-		tokenType.InSubCategory(chroma.NameBuiltin), tokenType.InSubCategory(chroma.NameFunction),
-		tokenType == chroma.NameNamespace, tokenType == chroma.LiteralStringEscape:
-		style.Foreground = "6"
-	case tokenType.InSubCategory(chroma.LiteralString):
-		style.Foreground = "2"
-	case tokenType == chroma.KeywordType, tokenType == chroma.NameClass:
-		style.Foreground = "2"
-	case tokenType.InCategory(chroma.Keyword), tokenType == chroma.NameDecorator:
-		style.Foreground = "4"
 	case tokenType.InCategory(chroma.Comment):
-		style.Foreground = "5"
 		style.Italic = true
-	case tokenType.InCategory(chroma.Operator):
-		style.Foreground = "8"
 	case tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
-		style.Foreground = "4"
 		style.Bold = true
 	case tokenType == chroma.GenericStrong:
 		style.Bold = true
@@ -178,16 +159,50 @@ func tokenStyle(tokenType chroma.TokenType) Style {
 	return style
 }
 
+func tokenForeground(tokenType chroma.TokenType) string {
+	switch {
+	case tokenType == chroma.Error, tokenType == chroma.NameException,
+		tokenType == chroma.NameTag, tokenType == chroma.GenericError,
+		tokenType == chroma.GenericTraceback, tokenType == chroma.GenericDeleted:
+		return "1"
+	case tokenType == chroma.GenericInserted:
+		return "2"
+	case tokenType == chroma.NameConstant, tokenType == chroma.LiteralDate,
+		tokenType.InSubCategory(chroma.LiteralNumber), tokenType == chroma.LiteralStringInterpol:
+		return "3"
+	case tokenType == chroma.KeywordNamespace, tokenType == chroma.NameAttribute,
+		tokenType.InSubCategory(chroma.NameBuiltin), tokenType.InSubCategory(chroma.NameFunction),
+		tokenType == chroma.NameNamespace, tokenType == chroma.LiteralStringEscape:
+		return "6"
+	case tokenType.InSubCategory(chroma.LiteralString),
+		tokenType == chroma.KeywordType, tokenType == chroma.NameClass:
+		return "2"
+	case tokenType.InCategory(chroma.Keyword), tokenType == chroma.NameDecorator,
+		tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
+		return "4"
+	case tokenType.InCategory(chroma.Comment):
+		return "5"
+	case tokenType.InCategory(chroma.Operator):
+		return "8"
+	default:
+		return ""
+	}
+}
+
 func sameText(lines [][]Span, source []string) bool {
 	if len(lines) != len(source) {
 		return false
 	}
 	for index, spans := range lines {
-		var text strings.Builder
+		offset := 0
 		for _, span := range spans {
-			text.WriteString(span.Text)
+			end := offset + len(span.Text)
+			if end > len(source[index]) || source[index][offset:end] != span.Text {
+				return false
+			}
+			offset = end
 		}
-		if text.String() != source[index] {
+		if offset != len(source[index]) {
 			return false
 		}
 	}
