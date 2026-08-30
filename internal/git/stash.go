@@ -261,6 +261,7 @@ func (Client) DiffObjects(root, oldOID, newOID string, paths []string, maxBytes 
 		"--no-ext-diff",
 		"--no-textconv",
 		"--no-color",
+		expandableDiffContext,
 		oldOID,
 		newOID,
 		"--",

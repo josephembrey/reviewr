@@ -4,6 +4,11 @@ import (
 	"bytes"
 )
 
+// expandableDiffContext asks Git for the complete bounded file context. The
+// reader folds unchanged runs after parsing, then can reveal those exact rows
+// without another subprocess or a lossy synthetic reconstruction.
+const expandableDiffContext = "--unified=1000000"
+
 // ReadDiff returns a bounded no-color patch for one literal repository entry.
 // The old path participates when Git reported a rename. Untracked files are
 // compared to /dev/null and Git's expected exit status 1 is accepted.
@@ -17,6 +22,7 @@ func (Client) ReadDiff(root, path, previousPath string, untracked bool, maxBytes
 			"--no-index",
 			"--no-color",
 			"--no-ext-diff",
+			expandableDiffContext,
 			"--",
 			"/dev/null",
 			path,
@@ -34,6 +40,7 @@ func (Client) ReadDiff(root, path, previousPath string, untracked bool, maxBytes
 		"--no-color",
 		"--no-ext-diff",
 		"--find-renames",
+		expandableDiffContext,
 		string(bytes.TrimSpace(base)),
 		"--",
 	}
