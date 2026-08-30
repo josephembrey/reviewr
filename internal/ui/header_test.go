@@ -126,3 +126,25 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 		t.Fatalf("narrow header = %q", plain)
 	}
 }
+
+func TestHeaderKeepsChangeTotalsWhenFullSummaryCannotFit(t *testing.T) {
+	t.Parallel()
+	model := Model{
+		Geometry:  Calculate(72, 1),
+		Workspace: workspace.Files,
+		Controls: workspace.Controls{
+			Files:      workspace.ChangedFiles,
+			Reader:     workspace.DiffReader,
+			Comparison: workspace.LastTurn,
+		},
+		Changes: ChangeSummary{Files: 12, Additions: 345, Deletions: 67, Ready: true},
+	}
+	frame := Render(model)
+	plain := ansi.Strip(frame)
+	if !strings.HasSuffix(plain, "+345 -67") || strings.Contains(plain, "12 changes") {
+		t.Fatalf("compact header = %q, want right-aligned change totals", plain)
+	}
+	if !strings.Contains(frame, addedStyle.Render("+345")) || !strings.Contains(frame, errorStyle.Render("-67")) {
+		t.Fatalf("compact header stats lack semantic colors: %q", frame)
+	}
+}

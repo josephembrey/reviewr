@@ -90,13 +90,13 @@ func renderHeader(model Model) string {
 	if model.Workspace != workspace.Files || !model.Changes.Ready {
 		return fit(left, g.Header.Width)
 	}
-	summary := renderChangeSummary(model.Changes)
-	summaryWidth := lipgloss.Width(summary)
-	summaryX := g.Header.Width - summaryWidth
-	minimumSummaryX := lipgloss.Width(left) + 2
-	if summaryX >= minimumSummaryX {
-		padding := strings.Repeat(" ", max(0, summaryX-lipgloss.Width(left)))
-		return fit(left+padding+summary, g.Header.Width)
+	for _, summary := range []string{renderChangeSummary(model.Changes), renderChangeTotals(model.Changes)} {
+		summaryX := g.Header.Width - lipgloss.Width(summary)
+		minimumSummaryX := lipgloss.Width(left) + 2
+		if summaryX >= minimumSummaryX {
+			padding := strings.Repeat(" ", max(0, summaryX-lipgloss.Width(left)))
+			return fit(left+padding+summary, g.Header.Width)
+		}
 	}
 	return fit(left, g.Header.Width)
 }
@@ -117,8 +117,11 @@ func renderHeaderControl(control headerControl, wide bool) string {
 }
 
 func renderChangeSummary(summary ChangeSummary) string {
-	return quietTitleStyle.Render(fmt.Sprintf("%d changes ", summary.Files)) +
-		addedStyle.Render(fmt.Sprintf("+%d", summary.Additions)) + " " +
+	return quietTitleStyle.Render(fmt.Sprintf("%d changes ", summary.Files)) + renderChangeTotals(summary)
+}
+
+func renderChangeTotals(summary ChangeSummary) string {
+	return addedStyle.Render(fmt.Sprintf("+%d", summary.Additions)) + " " +
 		errorStyle.Render(fmt.Sprintf("-%d", summary.Deletions))
 }
 
