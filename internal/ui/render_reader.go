@@ -76,9 +76,9 @@ func renderReaderTitle(model Model, title string) string {
 	layout := layoutReaderPaneTitle(model.Geometry, title, model.ReaderContextFoldable, model.Workspace, model.Controls)
 	left := clip(renderTitle(title, focused), layout.titleWidth)
 	if layout.fold.Width > 0 {
-		label := "▸ all context"
+		label := "▸"
 		if model.ReaderContextExpanded {
-			label = "▾ all context"
+			label = "▾"
 		}
 		gap := max(0, layout.fold.X-model.Geometry.ReaderTitle.X-lipgloss.Width(left))
 		left += strings.Repeat(" ", gap) + readerFoldStyle.Render(label)

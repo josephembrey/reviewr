@@ -136,12 +136,12 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 	}
 
 	collapsed := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasPrefix(collapsed, model.ReaderTitle+" ▸ all context") || !strings.HasSuffix(collapsed, "2 [diff]") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
+	if !strings.HasPrefix(collapsed, model.ReaderTitle+" ▸") || strings.Contains(collapsed, "all context") || !strings.HasSuffix(collapsed, "2 [diff]") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
 		t.Fatalf("collapsed reader title = %q", collapsed)
 	}
 	model.ReaderContextExpanded = true
 	expanded := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasPrefix(expanded, model.ReaderTitle+" ▾ all context") || !strings.HasSuffix(expanded, "2 [diff]") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
+	if !strings.HasPrefix(expanded, model.ReaderTitle+" ▾") || strings.Contains(expanded, "all context") || !strings.HasSuffix(expanded, "2 [diff]") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
 		t.Fatalf("expanded reader title = %q", expanded)
 	}
 
@@ -155,7 +155,7 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 		t.Fatalf("global context target x=%d, want left-cluster position %d", target.X, wantX)
 	}
 	model.ReaderContextFoldable = false
-	if title := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); strings.Contains(title, "all context") {
+	if title := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); strings.Contains(title, "▸") || strings.Contains(title, "▾") {
 		t.Fatalf("non-foldable reader title exposed a global control: %q", title)
 	}
 }

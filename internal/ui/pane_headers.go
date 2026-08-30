@@ -8,7 +8,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-const readerContextFoldWidth = 13
+const readerContextFoldWidth = 1
 
 type readerPaneTitleLayout struct {
 	control    headerControl
