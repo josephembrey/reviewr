@@ -45,7 +45,7 @@ var helpRows = []helpRow{
 		entries: []footerEntry{
 			{key: "j/k/↑↓", label: "nav"},
 			{key: "h/l/←→", label: "fold"},
-			{key: "[]", label: "hunks"},
+			{key: hunkNavigationKey, label: "hunks"},
 			{key: "R", label: "bounds"},
 			{key: "X", label: "gap"},
 		},

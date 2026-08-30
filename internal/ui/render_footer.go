@@ -11,6 +11,8 @@ type footerEntry struct {
 	label string
 }
 
+const hunkNavigationKey = "[/]"
+
 var (
 	standardFooterEntries = []footerEntry{
 		{key: "tab", label: "focus"},
@@ -49,7 +51,7 @@ func fileFooterEntries(richDiff bool) []footerEntry {
 		{key: "h/l", label: "less/more"},
 	}
 	if richDiff {
-		entries = append(entries, footerEntry{key: "[]", label: "hunks"})
+		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})
 	}
 	return append(entries,
 		footerEntry{key: "z", label: "swap"},
@@ -101,7 +103,7 @@ func stashFooterEntries(richDiff, contextFoldable bool) []footerEntry {
 		{key: "f/F", label: "move files"},
 	}
 	if richDiff {
-		entries = append(entries, footerEntry{key: "[]", label: "hunks"})
+		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})
 	}
 	if contextFoldable {
 		entries = append(entries, footerEntry{key: "h/l", label: "context"})

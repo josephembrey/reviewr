@@ -48,12 +48,25 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	for _, expected := range []string{
 		"hotkeys · ?/esc close",
 		"Browser", "q/ctrl+c quit", "r refresh",
-		"Files", "x review", "R bounds", "X gap",
+		"Files", "[/] hunks", "x review", "R bounds", "X gap",
 		"Git", "f/F files", "h/l/←→ context",
 		"Notes", "ctrl+z/y undo/redo", "backspace/delete edit",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("help popup is missing %q", expected)
+		}
+	}
+}
+
+func TestHunkShortcutIsUnambiguousInFileAndStashFooters(t *testing.T) {
+	t.Parallel()
+	for name, entries := range map[string][]footerEntry{
+		"files":   fileFooterEntries(true),
+		"stashes": stashFooterEntries(true, true),
+	} {
+		plain := ansi.Strip(renderFooterEntries(entries))
+		if !strings.Contains(plain, "[/] hunks") || strings.Contains(plain, "[] hunks") {
+			t.Errorf("%s footer hunk shortcut = %q", name, plain)
 		}
 	}
 }
