@@ -17,6 +17,8 @@ type Source interface {
 	WorktreeSummary() (repository.ChangeSummary, error)
 	ListCommits() ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
+	ListRefSources() ([]repository.RefSource, error)
+	ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error)
 }
 
 // Model is the Bubble Tea root. Input routing and effects are delegated to
@@ -33,6 +35,7 @@ type Model struct {
 	geometry  ui.Geometry
 	files     filesState
 	history   historyState
+	refs      refsState
 	summary   summaryState
 }
 
@@ -45,6 +48,8 @@ const (
 	effectLoadSummary
 	effectLoadCommits
 	effectLoadCommit
+	effectLoadRefSources
+	effectLoadRefCommits
 	effectQuit
 )
 
@@ -52,6 +57,7 @@ type effect struct {
 	kind       effectKind
 	generation uint64
 	identity   string
+	refSource  repository.RefSource
 }
 
 type filesLoadedMsg struct {
@@ -85,6 +91,19 @@ type commitLoadedMsg struct {
 	err        error
 }
 
+type refSourcesLoadedMsg struct {
+	generation uint64
+	sources    []repository.RefSource
+	err        error
+}
+
+type refCommitsLoadedMsg struct {
+	generation uint64
+	sourceID   repository.RefSourceID
+	commits    []repository.RefCommit
+	err        error
+}
+
 // New creates a model with both primary workspaces ready for their tagged
 // startup loads. History is warmed while Files remains the visible workspace.
 func New(source Source, host herdr.Context) Model {
@@ -95,6 +114,7 @@ func New(source Source, host herdr.Context) Model {
 		lab:     newLabState(),
 		files:   newFilesState(),
 		history: newHistoryState(),
+		refs:    newRefsState(),
 		summary: newSummaryState(),
 	}
 }
@@ -143,6 +163,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commitLoadedMsg:
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
 		return m, nil
+	case refSourcesLoadedMsg:
+		m.refs, pending = m.refs.landSources(msg, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case refCommitsLoadedMsg:
+		m.refs = m.refs.landPreview(msg, m.geometry.ReaderRows.Height)
+		return m, nil
 	}
 
 	place := m.activePlace()
@@ -176,6 +202,8 @@ func (m Model) View() tea.View {
 	var presentation ui.Model
 	if m.scratch {
 		presentation = ui.Model{Geometry: m.geometry}
+	} else if m.gitRefsActive() {
+		presentation = m.refs.viewModel(m.geometry)
 	} else if m.active == workspace.Git {
 		presentation = m.history.viewModel(m.geometry)
 	} else {
@@ -229,7 +257,12 @@ func (m *Model) apply(action Action) effect {
 		m.layout.finishDrag()
 	case ToggleSecondary:
 		if m.active == workspace.Git {
+			m.scrollbar.finish()
 			m.controls.Git = m.controls.Git.Next()
+			if m.controls.Git == workspace.GitRefs {
+				preferredOID, _ := m.history.place.SelectedIdentity()
+				return m.refs.enter(preferredOID)
+			}
 		} else {
 			m.controls.Files = m.controls.Files.Toggle()
 			if m.controls.Files == workspace.AllFiles {
@@ -249,6 +282,9 @@ func (m *Model) apply(action Action) effect {
 			m.controls.Comparison = m.controls.Comparison.Next()
 		}
 	case Reload:
+		if m.gitRefsActive() {
+			return m.refs.reload()
+		}
 		if m.active == workspace.Git {
 			return m.history.reload()
 		}
@@ -287,12 +323,18 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Files {
 			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height)
 		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(1, m.geometry.NavigatorRows.Height)
+		}
 		if m.history.place.SelectDelta(1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
 		}
 	case SelectPrevious:
 		if m.active == workspace.Files {
 			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(-1, m.geometry.NavigatorRows.Height)
 		}
 		if m.history.place.SelectDelta(-1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
@@ -301,6 +343,10 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
 			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
@@ -312,6 +358,10 @@ func (m *Model) apply(action Action) effect {
 			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 			m.files.toggleSelected(m.geometry.NavigatorRows.Height)
 			return pending
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
@@ -338,6 +388,10 @@ func (m *Model) activate(next workspace.Kind) effect {
 	}
 	m.active = next
 	if next == workspace.Git {
+		if m.controls.Git == workspace.GitRefs {
+			preferredOID, _ := m.history.place.SelectedIdentity()
+			return m.refs.enter(preferredOID)
+		}
 		if !m.history.loaded && !m.history.listLoading {
 			return m.history.reload()
 		}
@@ -366,6 +420,9 @@ func allowedInScratch(kind ActionKind) bool {
 }
 
 func (m *Model) activePlace() *navigation.State {
+	if m.gitRefsActive() {
+		return &m.refs.place
+	}
 	if m.active == workspace.Git {
 		return &m.history.place
 	}
@@ -373,6 +430,9 @@ func (m *Model) activePlace() *navigation.State {
 }
 
 func (m Model) activeReaderLineCount() int {
+	if m.gitRefsActive() {
+		return len(m.refs.commits)
+	}
 	if m.active == workspace.Git {
 		return len(commitSummaryLines(m.history.summary))
 	}
@@ -382,12 +442,18 @@ func (m Model) activeReaderLineCount() int {
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	if m.files.reader.Kind != 0 {
 		m.files.place.ClampReader(len(fileReaderLines(m.files.reader)), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
+	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
+}
+
+func (m Model) gitRefsActive() bool {
+	return m.active == workspace.Git && m.controls.Git == workspace.GitRefs
 }
 
 func (m Model) command(pending effect) tea.Cmd {
@@ -427,6 +493,21 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			summary, err := source.ReadCommit(oid)
 			return commitLoadedMsg{generation: generation, oid: oid, summary: summary, err: err}
+		}
+	case effectLoadRefSources:
+		source := m.source
+		generation := pending.generation
+		return func() tea.Msg {
+			sources, err := source.ListRefSources()
+			return refSourcesLoadedMsg{generation: generation, sources: sources, err: err}
+		}
+	case effectLoadRefCommits:
+		source := m.source
+		generation := pending.generation
+		refSource := pending.refSource
+		return func() tea.Msg {
+			commits, err := source.ListRefCommits(refSource)
+			return refCommitsLoadedMsg{generation: generation, sourceID: refSource.ID, commits: commits, err: err}
 		}
 	case effectQuit:
 		return tea.Quit

@@ -246,6 +246,9 @@ const (
 )
 
 func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
+	if len(item.Prefix) != 0 || len(item.Suffix) != 0 {
+		return renderCompactNavigatorRow(item, width, selected, focused)
+	}
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}
@@ -270,23 +273,54 @@ func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focu
 	return selectionStyle(focused).Render(row)
 }
 
+func renderCompactNavigatorRow(item NavigatorRow, width int, selected, focused bool) string {
+	prefix := renderSegments(item.Prefix)
+	suffix := renderSegments(item.Suffix)
+	label := SafeSingleLine(item.Label)
+	row := prefix
+	available := max(0, width-lipgloss.Width(prefix))
+	labelWidth := lipgloss.Width(label)
+	row += clip(label, available)
+	if labelWidth <= available && suffix != "" {
+		remaining := available - labelWidth
+		if remaining >= 2 {
+			row += clip(suffix, remaining)
+		}
+	}
+	row = fit(row, width)
+	if !selected {
+		return row
+	}
+	return selectionStyle(focused).Render(row)
+}
+
 func renderReader(model Model) string {
 	g := model.Geometry
 	title := SafeSingleLine(model.ReaderTitle)
 	rows := make([]string, 0, g.ReaderRows.Height)
 	content := model.ReaderLines
-	if len(content) == 0 && model.ReaderEmpty.Text != "" {
+	commitRows := model.ReaderCommitRows
+	if len(content) == 0 && len(commitRows) == 0 && model.ReaderEmpty.Text != "" {
 		content = []Line{model.ReaderEmpty}
 	}
-	scrollbar := verticalScrollbar(g.ReaderRows.Height, len(content), model.ReaderOffset, model.Focus == navigation.FocusReader)
+	total := len(content)
+	if len(commitRows) != 0 {
+		total = len(commitRows)
+	}
+	scrollbar := verticalScrollbar(g.ReaderRows.Height, total, model.ReaderOffset, model.Focus == navigation.FocusReader)
 	contentWidth := g.ReaderRows.Width
 	if scrollbar != nil {
 		contentWidth--
 	}
 	for row := 0; row < g.ReaderRows.Height; row++ {
 		index := model.ReaderOffset + row
-		if index < len(content) {
-			line := fit(renderLine(content[index]), contentWidth)
+		if index < total {
+			line := ""
+			if len(commitRows) != 0 {
+				line = renderCommitRow(commitRows[index], contentWidth)
+			} else {
+				line = fit(renderLine(content[index]), contentWidth)
+			}
 			if scrollbar != nil {
 				line += scrollbar[row]
 			}
@@ -308,13 +342,76 @@ func renderReader(model Model) string {
 	)
 }
 
+func renderCommitRow(row CommitRow, width int) string {
+	lane := renderSegments(row.Lane)
+	if lane == "" {
+		lane = yellowStyle.Render("○")
+	}
+	prefix := " " + lane + " " + headerStyle.Render(SafeSingleLine(row.ShortOID)) + "  "
+	if lipgloss.Width(prefix) >= width {
+		return fit(prefix, width)
+	}
+	available := width - lipgloss.Width(prefix)
+	subject := SafeSingleLine(row.Subject)
+	subjectWidth := lipgloss.Width(subject)
+	if subjectWidth >= available {
+		return fit(prefix+clip(subject, available), width)
+	}
+
+	value := prefix + subject
+	remaining := available - subjectWidth
+	trail := renderCommitTrail(row)
+	if trail != "" && remaining >= 3 {
+		value += clip("  "+trail, remaining)
+	}
+	return fit(value, width)
+}
+
+func renderCommitTrail(row CommitRow) string {
+	parts := make([]string, 0, len(row.Decorations)+2)
+	for _, decoration := range row.Decorations {
+		if decoration.Text != "" {
+			parts = append(parts, renderToneText(SafeSingleLine(decoration.Text), decoration.Tone))
+		}
+	}
+	if row.Author != "" {
+		parts = append(parts, dimStyle.Render(SafeSingleLine(row.Author)))
+	}
+	if row.Age != "" {
+		parts = append(parts, dimStyle.Render(SafeSingleLine(row.Age)))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderSegments(segments []Segment) string {
+	var value strings.Builder
+	for _, segment := range segments {
+		value.WriteString(renderToneText(SafeSingleLine(segment.Text), segment.Tone))
+	}
+	return value.String()
+}
+
 func renderLine(line Line) string {
 	text := SafeSingleLine(line.Text)
-	switch line.Tone {
+	return renderToneText(text, line.Tone)
+}
+
+func renderToneText(text string, tone Tone) string {
+	switch tone {
 	case ToneQuiet:
 		return dimStyle.Render(text)
 	case ToneError:
 		return errorStyle.Render(text)
+	case ToneAccent:
+		return purpleStyle.Render(text)
+	case ToneAdded:
+		return addedStyle.Render(text)
+	case ToneRemoved:
+		return errorStyle.Render(text)
+	case ToneInfo:
+		return headerStyle.Render(text)
+	case ToneWarning:
+		return yellowStyle.Render(text)
 	default:
 		return text
 	}
@@ -376,8 +473,15 @@ func fit(value string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	value = lipgloss.NewStyle().MaxWidth(width).Render(value)
+	value = clip(value, width)
 	return value + strings.Repeat(" ", max(0, width-lipgloss.Width(value)))
+}
+
+func clip(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(value)
 }
 
 func blankBlock(width, height int) string {

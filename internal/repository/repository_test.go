@@ -164,6 +164,16 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if _, err := repo.ReadCommit(commits[0].OID); err != nil {
 		t.Fatal(err)
 	}
+	refSources, err := repo.ListRefSources()
+	if err != nil || len(refSources) < 2 {
+		t.Fatalf("ListRefSources() = (%#v, %v)", refSources, err)
+	}
+	for _, source := range refSources {
+		preview, previewErr := repo.ListRefCommits(source)
+		if previewErr != nil || len(preview) != 1 || preview[0].OID != commits[0].OID {
+			t.Fatalf("ListRefCommits(%+v) = (%#v, %v)", source.ID, preview, previewErr)
+		}
+	}
 	summary, err := repo.WorktreeSummary()
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +184,40 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	after := captureGitState(t, root)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("repository operations changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+func TestRefRepositoryBoundaryPreservesTypedSameTipSources(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "root.txt", "root\n")
+	runGit(t, root, "add", "root.txt")
+	runGit(t, root, "commit", "-q", "-m", "root")
+	oid := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
+	runGit(t, root, "branch", "same-tip")
+	runGit(t, root, "tag", "same-tip")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := repo.ListRefSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := slices.IndexFunc(sources, func(source RefSource) bool {
+		return source.ID == (RefSourceID{Kind: RefSourceLocalBranch, Name: "refs/heads/same-tip"})
+	})
+	tag := slices.IndexFunc(sources, func(source RefSource) bool {
+		return source.ID == (RefSourceID{Kind: RefSourceTag, Name: "refs/tags/same-tip"})
+	})
+	if branch < 0 || tag < 0 || sources[branch].OID != oid || sources[tag].OID != oid || sources[branch].ID == sources[tag].ID {
+		t.Fatalf("same-tip sources lost type identity: %#v", sources)
+	}
+	for _, index := range []int{branch, tag} {
+		preview, previewErr := repo.ListRefCommits(sources[index])
+		if previewErr != nil || len(preview) != 1 || preview[0].OID != oid {
+			t.Fatalf("preview for %+v = (%#v, %v)", sources[index].ID, preview, previewErr)
+		}
 	}
 }
 

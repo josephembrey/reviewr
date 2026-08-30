@@ -15,15 +15,19 @@ import (
 )
 
 type fakeSource struct {
-	files       []string
-	listErr     error
-	contents    map[string]repository.File
-	summary     repository.ChangeSummary
-	summaryErr  error
-	commits     []repository.Commit
-	commitErr   error
-	summaries   map[string]repository.CommitSummary
-	summaryErrs map[string]error
+	files         []string
+	listErr       error
+	contents      map[string]repository.File
+	summary       repository.ChangeSummary
+	summaryErr    error
+	commits       []repository.Commit
+	commitErr     error
+	summaries     map[string]repository.CommitSummary
+	summaryErrs   map[string]error
+	refSources    []repository.RefSource
+	refErr        error
+	refCommits    map[repository.RefSourceID][]repository.RefCommit
+	refCommitErrs map[repository.RefSourceID]error
 }
 
 func (s *fakeSource) ListFiles() ([]string, error) {
@@ -53,6 +57,17 @@ func (s *fakeSource) ReadCommit(oid string) (repository.CommitSummary, error) {
 		return summary, nil
 	}
 	return repository.CommitSummary{}, errors.New("missing commit")
+}
+
+func (s *fakeSource) ListRefSources() ([]repository.RefSource, error) {
+	return append([]repository.RefSource(nil), s.refSources...), s.refErr
+}
+
+func (s *fakeSource) ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error) {
+	if err := s.refCommitErrs[source.ID]; err != nil {
+		return nil, err
+	}
+	return append([]repository.RefCommit(nil), s.refCommits[source.ID]...), nil
 }
 
 func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {

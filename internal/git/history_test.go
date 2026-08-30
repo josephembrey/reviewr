@@ -95,6 +95,8 @@ func initGitTestRepository(t *testing.T) string {
 	runGitTest(t, root, "init", "-q")
 	runGitTest(t, root, "config", "user.name", "Reviewr Tests")
 	runGitTest(t, root, "config", "user.email", "reviewr@example.invalid")
+	runGitTest(t, root, "config", "gc.auto", "0")
+	runGitTest(t, root, "config", "maintenance.auto", "false")
 	return root
 }
 
