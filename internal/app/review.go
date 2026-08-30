@@ -86,10 +86,17 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
+	state.readerLoadedKey = state.readerRequestKey
 	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
 	if !msg.document.Exact && msg.document.Reason != "" {
 		state.comparisonWarning = msg.document.Reason
+	}
+	if msg.document.Exact {
+		state.rememberReader(readerCacheEntry{
+			key:      readerCacheKey{kind: effectLoadReviewDocument, entry: msg.entry},
+			document: msg.document, presentation: msg.presentation,
+		})
 	}
 	return state
 }
@@ -125,11 +132,18 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
+	state.readerLoadedKey = state.readerRequestKey
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
 	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"
+	}
+	if msg.content.Endpoint == comparison.New && msg.document.Exact {
+		state.rememberReader(readerCacheEntry{
+			key:     readerCacheKey{kind: effectLoadReviewFile, entry: msg.entry},
+			content: msg.content, document: msg.document, presentation: msg.presentation,
+		})
 	}
 	return state
 }

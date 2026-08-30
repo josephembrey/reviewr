@@ -26,9 +26,16 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
+	state.readerLoadedKey = state.readerRequestKey
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
 	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
+	if msg.entry.State != repository.FileIgnored && msg.file.Kind != repository.FileUnreadable && msg.file.Kind != 0 {
+		state.rememberReader(readerCacheEntry{
+			key:  readerCacheKey{kind: effectLoadFile, entry: msg.entry},
+			file: msg.file, presentation: msg.presentation,
+		})
+	}
 	return state
 }
 
@@ -51,9 +58,16 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
+	state.readerLoadedKey = state.readerRequestKey
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
 	state.restoredReaderRows = nil
 	state.place.ClampReaderSource(len(state.readerRows()))
+	if msg.diff.Kind == repository.DiffReady || msg.diff.Kind == repository.DiffTooLarge {
+		state.rememberReader(readerCacheEntry{
+			key:  readerCacheKey{kind: effectLoadDiff, entry: msg.entry},
+			diff: msg.diff, presentation: msg.presentation,
+		})
+	}
 	return state
 }
 
@@ -84,19 +98,26 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 	state.readerLoading = loading
 	state.requestedComparison = nil
 	state.requestedBounds = nil
-	kind := effectLoadFile
+	pending := effect{
+		kind: effectLoadFile, generation: state.contentGeneration, entry: entry,
+		fileComparison: state.snapshot.Comparison(),
+	}
+	var reviewComparison review.FileComparison
+	var bounds review.Bounds
 	if mode == workspace.FileReader {
 		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
 			comparisonCopy := comparison
 			boundsCopy := review.Bounds{Old: comparison.Old, New: comparison.New}
 			state.requestedComparison = &comparisonCopy
 			state.requestedBounds = &boundsCopy
-			return effect{kind: effectLoadReviewFile, generation: state.contentGeneration, entry: entry, comparison: comparison}
+			reviewComparison = comparison
+			bounds = boundsCopy
+			pending = effect{kind: effectLoadReviewFile, generation: state.contentGeneration, entry: entry, comparison: comparison}
 		}
 	} else {
 		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
 			assessment := state.reviewAssessment(entry.Path, comparison)
-			bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
+			bounds = review.Bounds{Old: comparison.Old, New: comparison.New}
 			var retained *string
 			if assessment.State == review.Updated && !state.reviewFull[entry.Path] && assessment.Frontier != nil && assessment.Retained != nil {
 				bounds.Old = *assessment.Frontier
@@ -105,14 +126,18 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 			comparisonCopy, boundsCopy := comparison, bounds
 			state.requestedComparison = &comparisonCopy
 			state.requestedBounds = &boundsCopy
-			return effect{kind: effectLoadReviewDocument, generation: state.contentGeneration, entry: entry, comparison: comparison, bounds: bounds, retained: retained}
+			reviewComparison = comparison
+			pending = effect{kind: effectLoadReviewDocument, generation: state.contentGeneration, entry: entry, comparison: comparison, bounds: bounds, retained: retained}
+		} else {
+			pending.kind = effectLoadDiff
 		}
-		kind = effectLoadDiff
 	}
-	return effect{
-		kind: kind, generation: state.contentGeneration, entry: entry,
-		fileComparison: state.snapshot.Comparison(),
+	key := state.readerKey(pending.kind, entry, reviewComparison, bounds)
+	state.readerRequestKey = key
+	if state.restoreReader(key) {
+		return effect{}
 	}
+	return pending
 }
 
 func (state *filesState) requestMode(mode workspace.ReaderMode) effect {
@@ -139,6 +164,8 @@ func (state *filesState) clearReader() {
 	state.restoredReaderRows = nil
 	state.requestedComparison = nil
 	state.requestedBounds = nil
+	state.readerRequestKey = readerCacheKey{}
+	state.readerLoadedKey = readerCacheKey{}
 	state.readerLoading = false
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0

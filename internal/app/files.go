@@ -53,6 +53,10 @@ type filesState struct {
 	reviewSelectionAnchor   int
 	reviewAssessments       map[string]review.Assessment
 	reviewProgress          map[string]reviewRollup
+	comparisonCache         map[string]comparisonCacheEntry
+	readerCache             map[readerCacheSlot]readerCacheEntry
+	readerRequestKey        readerCacheKey
+	readerLoadedKey         readerCacheKey
 
 	listGeneration    uint64
 	contentGeneration uint64
@@ -72,10 +76,13 @@ func newFilesState() filesState {
 		reviewGeneration: 1,
 		listLoading:      true,
 		reviewFull:       make(map[string]bool),
+		comparisonCache:  make(map[string]comparisonCacheEntry),
+		readerCache:      make(map[readerCacheSlot]readerCacheEntry),
 	}
 }
 
 func (state *filesState) reload(scope string) effect {
+	state.invalidateComparison(scope)
 	state.listGeneration++
 	state.reviewGeneration++
 	state.listLoading = true
@@ -122,12 +129,16 @@ func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.File
 	}
 	state.listError = nil
 	state.snapshot = msg.snapshot
+	state.reviewScope = msg.snapshot.Comparison().Scope
+	state.reviewSnapshot = review.Snapshot{Scope: state.reviewScope, Comparisons: make(map[string]review.FileComparison)}
+	state.comparisonWarning = ""
 	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration {
 		state.reviewSnapshot = msg.reviewSnapshot
 		state.reviewScope = msg.reviewSnapshot.Scope
 		state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
-		state.rederiveReviews()
 	}
+	state.rederiveReviews()
+	state.rememberComparison(msg)
 	pending := state.project(scope, mode, visibleRows, firstLoad, true, msg.background)
 	return state, pending
 }

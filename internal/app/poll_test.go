@@ -3,6 +3,7 @@ package app
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/filetree"
@@ -27,6 +28,13 @@ func TestRepositoryPollDefersAfterUserActivity(t *testing.T) {
 	}
 	if model.poll.running || model.poll.generation != 0 || model.poll.deferNext {
 		t.Fatalf("deferred poll started work: %+v", model.poll)
+	}
+}
+
+func TestRepositoryPollRunsAtAResponsiveBoundedRate(t *testing.T) {
+	t.Parallel()
+	if repositoryPollInterval != 750*time.Millisecond {
+		t.Fatalf("repository poll interval = %v", repositoryPollInterval)
 	}
 }
 

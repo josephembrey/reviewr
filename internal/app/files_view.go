@@ -72,6 +72,12 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 		readerEmpty = ui.Line{Text: "Loading comparison…", Tone: ui.ToneQuiet}
 		readerOffset = 0
 		readerColumn = 0
+	} else if state.readerComparisonPending() {
+		document = ui.ReaderDocument{}
+		contextFoldable = false
+		readerEmpty = ui.Line{Text: "Loading comparison…", Tone: ui.ToneQuiet}
+		readerOffset = 0
+		readerColumn = 0
 	}
 	return ui.Model{
 		Geometry:              geometry,

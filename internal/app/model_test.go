@@ -638,6 +638,18 @@ func TestComparisonControlReloadsTheMatchingRepositorySnapshot(t *testing.T) {
 	if !reflect.DeepEqual(source.snapshotScopes, wantScopes) {
 		t.Fatalf("snapshot scopes = %#v, want %#v", source.snapshotScopes, wantScopes)
 	}
+
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
+	model = next.(Model)
+	if model.controls.Comparison != workspace.Branch || command == nil {
+		t.Fatalf("cached branch toggle = %v command=%v", model.controls.Comparison, command != nil)
+	}
+	if message := command(); reflect.TypeOf(message) == reflect.TypeOf(snapshotLoadedMsg{}) {
+		t.Fatalf("cached branch toggle started another snapshot: %#v", message)
+	}
+	if !reflect.DeepEqual(source.snapshotScopes, wantScopes) {
+		t.Fatalf("cached branch requested snapshots %#v, want %#v", source.snapshotScopes, wantScopes)
+	}
 }
 
 func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {

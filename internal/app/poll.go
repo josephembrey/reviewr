@@ -8,7 +8,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-const repositoryPollInterval = time.Second
+const repositoryPollInterval = 750 * time.Millisecond
 
 type repositoryPoller interface {
 	PollState() (repository.StateFingerprint, error)
@@ -84,6 +84,16 @@ func (m *Model) landRepositoryPoll(msg repositoryPolledMsg) tea.Cmd {
 	refsChanged := !m.poll.ready || msg.state.Refs != m.poll.fingerprint.Refs
 	m.poll.ready = true
 	m.poll.fingerprint = msg.state
+	if worktreeChanged {
+		m.files.invalidateComparisons()
+	} else {
+		if refsChanged {
+			m.files.invalidateComparison(repository.ComparisonBranch)
+		}
+		if m.poll.turnBaselineDirty {
+			m.files.invalidateComparison(repository.ComparisonLastTurn)
+		}
+	}
 	comparisonChanged := (refsChanged && m.controls.Comparison == workspace.Branch) ||
 		(m.poll.turnBaselineDirty && m.controls.Comparison == workspace.LastTurn)
 	if worktreeChanged || comparisonChanged {
