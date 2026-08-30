@@ -1,0 +1,81 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must match vX.Y.Z: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: go test -mod=readonly ./...
+
+      - name: Build release archives
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          mkdir -p dist
+
+          targets=(
+            "linux amd64"
+            "darwin arm64"
+          )
+
+          for target in "${targets[@]}"; do
+            read -r goos goarch <<<"$target"
+            archive="reviewr_${version}_${goos}_${goarch}"
+            staging="$RUNNER_TEMP/$archive"
+            mkdir -p "$staging"
+
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -mod=readonly -trimpath -ldflags="-s -w" \
+              -o "$staging/reviewr" ./cmd/reviewr
+
+            cp LICENSE README.md "$staging/"
+            tar -C "$staging" -czf "dist/$archive.tar.gz" .
+          done
+
+          cd dist
+          sha256sum ./*.tar.gz >checksums.txt
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --verify-tag \
+              --generate-notes \
+              --title "$RELEASE_TAG"
+          fi
