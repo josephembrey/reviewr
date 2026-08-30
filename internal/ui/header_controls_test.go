@@ -85,15 +85,15 @@ func TestHeaderControlHitsUsePaintedLayout(t *testing.T) {
 	}
 }
 
-func TestDiffHighlightControlAndFooterShareEligibilityAndCompleteShedding(t *testing.T) {
+func TestDiffHighlightControlStaysInHeaderAndShedsCompletely(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(120, 12)
 	controls := workspace.Controls{Reader: workspace.DiffReader, RichDiff: true}
 	frame := ansi.Strip(Render(Model{
 		Geometry: geometry, Workspace: workspace.Files, Controls: controls,
 	}))
-	if !strings.Contains(strings.Split(frame, "\n")[0], "4 [sidebar]") || !strings.Contains(strings.Split(frame, "\n")[geometry.Footer.Y], "4 diff highlight") {
-		t.Fatalf("eligible Files controls/footer = %q", frame)
+	if !strings.Contains(strings.Split(frame, "\n")[0], "4 [sidebar]") || strings.Contains(strings.Split(frame, "\n")[geometry.Footer.Y], "4 diff highlight") {
+		t.Fatalf("diff highlight control was not confined to the header: %q", frame)
 	}
 	visible := layoutHeaderControls(geometry, workspace.Files, controls)
 	if len(visible) != 4 || visible[3].hit != HitDiffHighlightControl {

@@ -95,7 +95,7 @@ func renderFooter(model Model) string {
 		if priorityStatus {
 			footer += renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
 		}
-		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Tab/Shift+Tab", label: "cycle"})
+		footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "tab", label: "cycle"})
 		if model.NotesHasWorktree {
 			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
 		}
@@ -106,7 +106,7 @@ func renderFooter(model Model) string {
 	}
 
 	destinations := []footerEntry{
-		{key: "Tab/Shift+Tab", label: "cycle"},
+		{key: "tab", label: "cycle"},
 	}
 	entries := append(destinations, []footerEntry{
 		{key: "j/k or ↑/↓", label: "navigate"},
@@ -115,15 +115,7 @@ func renderFooter(model Model) string {
 		{key: "q", label: "quit"},
 	}...)
 	if model.Workspace == workspace.Files {
-		local := []footerEntry{
-			{key: workspace.SecondaryControlKey, label: model.Controls.Files.Label()},
-			{key: workspace.TertiaryControlKey, label: model.Controls.Reader.Label()},
-			{key: workspace.ComparisonControlKey, label: model.Controls.Comparison.Label()},
-		}
-		if model.Controls.RichDiff {
-			local = append(local, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
-		}
-		entries = append(destinations, append(local,
+		entries = append(destinations,
 			footerEntry{key: "j/k", label: "move"},
 			footerEntry{key: "h/l", label: "less/more"},
 			footerEntry{key: "z", label: "swap"},
@@ -132,18 +124,12 @@ func renderFooter(model Model) string {
 			footerEntry{key: "X", label: "next gap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
-		)...)
+		)
 	}
 	if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
-		local := []footerEntry{
-			{key: workspace.SecondaryControlKey, label: model.Controls.Git.Label()},
-		}
-		if model.Controls.RichDiff {
-			local = append(local, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
-		}
 		stashEntries := []footerEntry{
-			footerEntry{key: "j/k", label: "move stashes"},
-			footerEntry{key: "f/F", label: "move files"},
+			{key: "j/k", label: "move stashes"},
+			{key: "f/F", label: "move files"},
 		}
 		if model.ReaderContextFoldable {
 			stashEntries = append(stashEntries, footerEntry{key: "h/l", label: "context"})
@@ -153,18 +139,14 @@ func renderFooter(model Model) string {
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
 		)
-		entries = append(destinations, append(local, stashEntries...)...)
+		entries = append(destinations, stashEntries...)
 	} else if model.Workspace == workspace.Git {
-		local := []footerEntry{{key: workspace.SecondaryControlKey, label: model.Controls.Git.Label()}}
-		if model.Controls.Git == workspace.GitLog {
-			local = append(local, footerEntry{key: workspace.TertiaryControlKey, label: model.Controls.Traversal.Label()})
-		}
-		entries = append(destinations, append(local,
+		entries = append(destinations,
 			footerEntry{key: "j/k or ↑/↓", label: "navigate"},
 			footerEntry{key: "z", label: "swap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
-		)...)
+		)
 	}
 	return fit(renderFooterEntries(entries), width)
 }
