@@ -3,9 +3,11 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"charm.land/lipgloss/v2"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -206,6 +208,14 @@ func renderNavigator(model Model) string {
 	if scrollbar != nil {
 		contentWidth--
 	}
+	commitRows := make([]commitrow.Row, 0, len(model.NavigatorRows))
+	for _, row := range model.NavigatorRows {
+		if row.Commit != nil {
+			commitRows = append(commitRows, *row.Commit)
+		}
+	}
+	commitColumns := commitrow.Measure(commitRows, contentWidth)
+	now := time.Now()
 	for row := 0; row < visibleRows; row++ {
 		index := model.Top + row
 		if index >= len(model.NavigatorRows) {
@@ -224,6 +234,8 @@ func renderNavigator(model Model) string {
 			contentWidth,
 			index == model.Selected,
 			model.Focus == navigation.FocusNavigator,
+			commitColumns,
+			now,
 		)
 		if scrollbar != nil {
 			line += scrollbar[row]
@@ -245,7 +257,10 @@ const (
 	fileIcon         = ""
 )
 
-func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
+func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool, columns commitrow.Columns, now time.Time) string {
+	if item.Commit != nil {
+		return renderCommitRow(*item.Commit, columns, width, selected, focused, now)
+	}
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}

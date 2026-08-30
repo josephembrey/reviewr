@@ -15,7 +15,7 @@ type Source interface {
 	ListFiles() ([]string, error)
 	ReadFile(path string) repository.File
 	WorktreeSummary() (repository.ChangeSummary, error)
-	ListCommits() ([]repository.Commit, error)
+	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
 }
 
@@ -52,6 +52,7 @@ type effect struct {
 	kind       effectKind
 	generation uint64
 	identity   string
+	query      repository.CommitQuery
 }
 
 type filesLoadedMsg struct {
@@ -76,6 +77,7 @@ type commitsLoadedMsg struct {
 	generation uint64
 	commits    []repository.Commit
 	err        error
+	query      repository.CommitQuery
 }
 
 type commitLoadedMsg struct {
@@ -104,7 +106,11 @@ func New(source Source, host herdr.Context) Model {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.command(effect{kind: effectLoadFiles, generation: m.files.listGeneration}),
-		m.command(effect{kind: effectLoadCommits, generation: m.history.listGeneration}),
+		m.command(effect{
+			kind:       effectLoadCommits,
+			generation: m.history.listGeneration,
+			query:      commitQuery(workspace.GitGraph, ""),
+		}),
 		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
 	)
 }
@@ -240,6 +246,7 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Git {
 			if m.controls.Git == workspace.GitLog {
 				m.controls.Traversal = m.controls.Traversal.Toggle()
+				return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 			}
 		} else {
 			m.controls.Reader = m.controls.Reader.Toggle()
@@ -250,7 +257,7 @@ func (m *Model) apply(action Action) effect {
 		}
 	case Reload:
 		if m.active == workspace.Git {
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		return m.files.reload()
 	case Resize:
@@ -339,7 +346,7 @@ func (m *Model) activate(next workspace.Kind) effect {
 	m.active = next
 	if next == workspace.Git {
 		if !m.history.loaded && !m.history.listLoading {
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		return effect{}
 	}
@@ -379,6 +386,11 @@ func (m Model) activeReaderLineCount() int {
 	return len(fileReaderLines(m.files.reader))
 }
 
+func (m Model) selectedHistoryOID() string {
+	oid, _ := m.history.place.SelectedIdentity()
+	return oid
+}
+
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
@@ -416,9 +428,10 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectLoadCommits:
 		source := m.source
 		generation := pending.generation
+		query := pending.query
 		return func() tea.Msg {
-			commits, err := source.ListCommits()
-			return commitsLoadedMsg{generation: generation, commits: commits, err: err}
+			commits, err := source.ListCommits(query)
+			return commitsLoadedMsg{generation: generation, commits: commits, err: err, query: query}
 		}
 	case effectLoadCommit:
 		source := m.source

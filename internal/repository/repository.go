@@ -37,11 +37,47 @@ type File struct {
 	Err     error
 }
 
-// Commit is one recent current-HEAD history row.
+// CommitTraversal selects the Git Log universe.
+type CommitTraversal uint8
+
+const (
+	CommitGraph CommitTraversal = iota
+	CommitFirstParent
+)
+
+// CommitQuery describes one bounded history load. StartOID applies to the
+// first-parent lineage; graph traversal always uses public refs.
+type CommitQuery struct {
+	Traversal CommitTraversal
+	StartOID  string
+}
+
+// CommitRefKind gives a displayed ref its semantic role.
+type CommitRefKind uint8
+
+const (
+	CommitBranchRef CommitRefKind = iota
+	CommitRemoteRef
+	CommitTagRef
+)
+
+// CommitRef is one public ref pointing at a commit.
+type CommitRef struct {
+	Kind CommitRefKind
+	Name string
+}
+
+// Commit is one structured Git Log row.
 type Commit struct {
-	OID      string
-	ShortOID string
-	Subject  string
+	OID          string
+	ShortOID     string
+	Parents      []string
+	Subject      string
+	Author       string
+	AuthoredUnix int64
+	Refs         []CommitRef
+	Merge        bool
+	Head         bool
 }
 
 // CommitSummary is bounded metadata and changed-file stat for one commit.
@@ -101,15 +137,36 @@ func (r *Repository) WorktreeSummary() (ChangeSummary, error) {
 	}, nil
 }
 
-// ListCommits returns bounded current-HEAD history ordered newest first.
-func (r *Repository) ListCommits() ([]Commit, error) {
-	commits, err := r.git.ListCommits(r.root)
+// ListCommits returns a bounded structured history traversal.
+func (r *Repository) ListCommits(query CommitQuery) ([]Commit, error) {
+	traversal := gitadapter.GraphTraversal
+	if query.Traversal == CommitFirstParent {
+		traversal = gitadapter.FirstParentTraversal
+	}
+	commits, err := r.git.ListCommits(r.root, gitadapter.HistoryQuery{
+		Traversal: traversal,
+		StartOID:  query.StartOID,
+	})
 	if err != nil {
 		return nil, err
 	}
 	result := make([]Commit, len(commits))
 	for index, commit := range commits {
-		result[index] = Commit{OID: commit.OID, ShortOID: commit.ShortOID, Subject: commit.Subject}
+		refs := make([]CommitRef, len(commit.Refs))
+		for refIndex, reference := range commit.Refs {
+			refs[refIndex] = CommitRef{Kind: CommitRefKind(reference.Kind), Name: reference.Name}
+		}
+		result[index] = Commit{
+			OID:          commit.OID,
+			ShortOID:     commit.ShortOID,
+			Parents:      append([]string(nil), commit.Parents...),
+			Subject:      commit.Subject,
+			Author:       commit.Author,
+			AuthoredUnix: commit.AuthoredUnix,
+			Refs:         refs,
+			Merge:        commit.Merge,
+			Head:         commit.Head,
+		}
 	}
 	return result, nil
 }

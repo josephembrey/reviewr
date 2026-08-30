@@ -3,9 +3,11 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -188,7 +190,7 @@ func TestTreeRowsRenderStructureSafelyWithinFixedWidth(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			for _, focused := range []bool{true, false} {
-				got := renderNavigatorPresentationRow(test.row, 18, true, focused)
+				got := renderNavigatorPresentationRow(test.row, 18, true, focused, commitrow.Columns{}, time.Time{})
 				if width := lipgloss.Width(got); width != 18 {
 					t.Fatalf("row width = %d, want 18: %q", width, got)
 				}
@@ -204,6 +206,8 @@ func TestTreeRowsRenderStructureSafelyWithinFixedWidth(t *testing.T) {
 		7,
 		false,
 		false,
+		commitrow.Columns{},
+		time.Time{},
 	)); got != 7 {
 		t.Fatalf("narrow clipped tree row width = %d, want 7", got)
 	}

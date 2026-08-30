@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -24,6 +25,7 @@ type Line struct {
 type NavigatorRow struct {
 	Identity  string
 	Label     string
+	Commit    *commitrow.Row
 	Tree      bool
 	Depth     int
 	Directory bool

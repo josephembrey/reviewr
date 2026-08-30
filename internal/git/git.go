@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,9 +94,14 @@ func run(root string, args ...string) ([]byte, error) {
 }
 
 func runBounded(root string, maxBytes int64, args ...string) ([]byte, error) {
+	return runBoundedInput(root, maxBytes, nil, args...)
+}
+
+func runBoundedInput(root string, maxBytes int64, input io.Reader, args ...string) ([]byte, error) {
 	commandArgs := append([]string{"-C", root}, args...)
 	cmd := exec.Command("git", commandArgs...)
 	cmd.Env = withOptionalLocksDisabled(os.Environ())
+	cmd.Stdin = input
 	stdout := boundedBuffer{limit: max(0, maxBytes)}
 	stderr := boundedBuffer{limit: 64 << 10}
 	cmd.Stdout = &stdout

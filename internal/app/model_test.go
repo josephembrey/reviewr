@@ -15,15 +15,16 @@ import (
 )
 
 type fakeSource struct {
-	files       []string
-	listErr     error
-	contents    map[string]repository.File
-	summary     repository.ChangeSummary
-	summaryErr  error
-	commits     []repository.Commit
-	commitErr   error
-	summaries   map[string]repository.CommitSummary
-	summaryErrs map[string]error
+	files         []string
+	listErr       error
+	contents      map[string]repository.File
+	summary       repository.ChangeSummary
+	summaryErr    error
+	commits       []repository.Commit
+	commitErr     error
+	commitQueries []repository.CommitQuery
+	summaries     map[string]repository.CommitSummary
+	summaryErrs   map[string]error
 }
 
 func (s *fakeSource) ListFiles() ([]string, error) {
@@ -41,7 +42,8 @@ func (s *fakeSource) WorktreeSummary() (repository.ChangeSummary, error) {
 	return s.summary, s.summaryErr
 }
 
-func (s *fakeSource) ListCommits() ([]repository.Commit, error) {
+func (s *fakeSource) ListCommits(query repository.CommitQuery) ([]repository.Commit, error) {
+	s.commitQueries = append(s.commitQueries, query)
 	return append([]repository.Commit(nil), s.commits...), s.commitErr
 }
 
@@ -179,7 +181,7 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 		t.Fatalf("workspace toggle = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\n0 commits") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "1  files [git] | esc  scratch") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
@@ -501,7 +503,7 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	model.history.place.Top = 1
 	model.history.place.Focus = navigation.FocusReader
 	model.history.place.ReaderOffset = 3
-	refresh := model.history.reload()
+	refresh := model.history.reload(workspace.GitGraph, "")
 	model.history, _ = model.history.landCommits(commitsLoadedMsg{
 		generation: refresh.generation,
 		commits: []repository.Commit{
@@ -511,6 +513,101 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	}, model.geometry.NavigatorRows.Height)
 	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB || model.history.place.Focus != navigation.FocusReader || model.history.place.ReaderOffset != 3 {
 		t.Fatalf("history refresh reset place: selected=%q state=%+v", selected, model.history.place)
+	}
+}
+
+func TestHistoryTraversalSwitchesUniversesAndKeepsFullOID(t *testing.T) {
+	t.Parallel()
+	const (
+		oidHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidSide = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		oidRoot = "cccccccccccccccccccccccccccccccccccccccc"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history.listLoading = true
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{Traversal: repository.CommitGraph},
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidHead {
+		t.Fatalf("initial graph selection = %q, want HEAD", selected)
+	}
+	model.history.place.SelectIndex(0, model.geometry.NavigatorRows.Height)
+
+	firstParent := model.apply(Action{Kind: ToggleTertiary})
+	if model.controls.Traversal != workspace.GitFirstParent || firstParent.query != (repository.CommitQuery{Traversal: repository.CommitFirstParent, StartOID: oidSide}) {
+		t.Fatalf("first-parent switch = controls %+v effect %+v", model.controls, firstParent)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: firstParent.generation,
+		query:      firstParent.query,
+		commits: []repository.Commit{
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("first-parent selection = %q", selected)
+	}
+
+	refresh := model.apply(Action{Kind: Reload})
+	if refresh.query.StartOID != oidSide || refresh.query.Traversal != repository.CommitFirstParent {
+		t.Fatalf("first-parent refresh query = %+v", refresh.query)
+	}
+	graph := model.apply(Action{Kind: ToggleTertiary})
+	if graph.query != (repository.CommitQuery{Traversal: repository.CommitGraph}) {
+		t.Fatalf("graph switch query = %+v", graph.query)
+	}
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: graph.generation,
+		query:      graph.query,
+		commits: []repository.Commit{
+			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
+			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
+			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
+		t.Fatalf("graph return selection = %q", selected)
+	}
+}
+
+func TestHistoryMouseRowsUseSharedNavigatorGeometry(t *testing.T) {
+	t.Parallel()
+	const (
+		oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	model := newTestModel(&fakeSource{})
+	model.active = workspace.Git
+	model.geometry = ui.Calculate(80, 20)
+	model.history, _ = model.history.landCommits(commitsLoadedMsg{
+		generation: model.history.listGeneration,
+		query:      repository.CommitQuery{},
+		commits: []repository.Commit{
+			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first", Head: true},
+			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second"},
+		},
+	}, model.geometry.NavigatorRows.Height)
+	click := tea.MouseClickMsg(tea.Mouse{
+		X:      model.geometry.NavigatorRows.X,
+		Y:      model.geometry.NavigatorRows.Y + 1,
+		Button: tea.MouseLeft,
+	})
+	next, command := model.Update(click)
+	model = next.(Model)
+	if command == nil {
+		t.Fatal("commit-row click did not request selected summary")
+	}
+	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB {
+		t.Fatalf("commit-row click selected %q, want %q", selected, oidB)
 	}
 }
 

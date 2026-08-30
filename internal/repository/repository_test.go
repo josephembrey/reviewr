@@ -157,12 +157,15 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 			t.Fatalf("ReadFile(%q) = %+v", path, result)
 		}
 	}
-	commits, err := repo.ListCommits()
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil || len(commits) != 1 {
 		t.Fatalf("ListCommits() = (%#v, %v)", commits, err)
 	}
 	if _, err := repo.ReadCommit(commits[0].OID); err != nil {
 		t.Fatal(err)
+	}
+	if lineage, err := repo.ListCommits(CommitQuery{Traversal: CommitFirstParent, StartOID: commits[0].OID}); err != nil || len(lineage) != 1 {
+		t.Fatalf("first-parent ListCommits() = (%#v, %v)", lineage, err)
 	}
 	summary, err := repo.WorktreeSummary()
 	if err != nil {
@@ -189,6 +192,7 @@ func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 	writeFile(t, root, "feature.txt", "feature\n")
 	runGit(t, root, "add", "feature.txt")
 	runGit(t, root, "commit", "-q", "-m", "feature subject")
+	featureOID := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
 	runGit(t, root, "checkout", "-q", mainBranch)
 	writeFile(t, root, "main.txt", "main\n")
 	runGit(t, root, "add", "main.txt")
@@ -200,15 +204,29 @@ func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err := repo.ListCommits()
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(commits) != 4 || commits[0].OID != mergeOID {
 		t.Fatalf("ListCommits() = %#v", commits)
 	}
+	if !commits[0].Head || !commits[0].Merge || len(commits[0].Parents) != 2 || commits[0].Author != "Reviewr Tests" || commits[0].AuthoredUnix <= 0 {
+		t.Fatalf("merge row metadata = %+v", commits[0])
+	}
+	if !slices.ContainsFunc(commits, func(commit Commit) bool {
+		return commit.OID == featureOID && slices.ContainsFunc(commit.Refs, func(reference CommitRef) bool {
+			return reference.Kind == CommitBranchRef && reference.Name == "feature"
+		})
+	}) {
+		t.Fatalf("history omitted semantic feature ref: %#v", commits)
+	}
 	if !slices.ContainsFunc(commits, func(commit Commit) bool { return commit.OID == rootOID }) {
 		t.Fatalf("history omitted root commit %s: %#v", rootOID, commits)
+	}
+	lineage, err := repo.ListCommits(CommitQuery{Traversal: CommitFirstParent, StartOID: featureOID})
+	if err != nil || len(lineage) != 2 || lineage[0].OID != featureOID || lineage[1].OID != rootOID {
+		t.Fatalf("selected first-parent lineage = (%#v, %v)", lineage, err)
 	}
 
 	rootSummary, err := repo.ReadCommit(rootOID)
@@ -235,7 +253,7 @@ func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err := repo.ListCommits()
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil || len(commits) != 0 {
 		t.Fatalf("unborn ListCommits() = (%#v, %v)", commits, err)
 	}
