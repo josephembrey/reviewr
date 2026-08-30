@@ -29,8 +29,8 @@ func TestLinesDetectsLexerAndPreservesSource(t *testing.T) {
 		t.Fatalf("package color = %q, want terminal cyan", got)
 	}
 	comment := styleForText(lines[2], "comment")
-	if comment.Foreground != "5" || !comment.Italic {
-		t.Fatalf("comment style = %+v, want italic terminal magenta", comment)
+	if comment.Foreground != "8" || comment.Italic {
+		t.Fatalf("comment style = %+v, want plain terminal BrightBlack", comment)
 	}
 	if got := styleForText(lines[3], "42").Foreground; got != "3" {
 		t.Fatalf("number color = %q, want terminal yellow", got)
@@ -88,7 +88,7 @@ func TestTokenStylesRetainTerminalColorSemantics(t *testing.T) {
 		{token: chroma.NameClass, want: Style{Foreground: "2"}},
 		{token: chroma.Keyword, want: Style{Foreground: "4"}},
 		{token: chroma.NameDecorator, want: Style{Foreground: "4"}},
-		{token: chroma.CommentSingle, want: Style{Foreground: "5", Italic: true}},
+		{token: chroma.CommentSingle, want: Style{Foreground: "8"}},
 		{token: chroma.Operator, want: Style{Foreground: "8"}},
 		{token: chroma.GenericHeading, want: Style{Foreground: "4", Bold: true}},
 		{token: chroma.GenericStrong, want: Style{Bold: true}},

@@ -145,8 +145,6 @@ func tokenStyle(tokenType chroma.TokenType) Style {
 	// follows the active palette instead of imposing an unrelated RGB theme.
 	style := Style{Foreground: tokenForeground(tokenType)}
 	switch {
-	case tokenType.InCategory(chroma.Comment):
-		style.Italic = true
 	case tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
 		style.Bold = true
 	case tokenType == chroma.GenericStrong:
@@ -181,7 +179,7 @@ func tokenForeground(tokenType chroma.TokenType) string {
 		tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
 		return "4"
 	case tokenType.InCategory(chroma.Comment):
-		return "5"
+		return "8"
 	case tokenType.InCategory(chroma.Operator):
 		return "8"
 	default:

@@ -175,11 +175,11 @@ var (
 	fileIconCyanColor   = lipgloss.Color("#56B6C2")
 	nixIconBlueColor    = lipgloss.Color("#7EBAE4")
 	// File-type icons above intentionally punch through the terminal palette.
-	// Match the legacy terminal palette: directories carry a bright-blue
-	// identity accent, neutral icons and ignored rows use readable ANSI white,
-	// and only truly quiet metadata falls through to BrightBlack.
+	// Directories carry a bright-blue identity accent. Ignored rows use the
+	// terminal's secondary BrightBlack role, while neutral file icons remain
+	// readable ANSI white.
 	directoryTreeColor = lipgloss.BrightBlue
-	ignoredTreeColor   = lipgloss.White
+	ignoredTreeColor   = mutedColor
 	ignoredTreeStyle   = lipgloss.NewStyle().Foreground(ignoredTreeColor)
 )
 

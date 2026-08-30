@@ -189,7 +189,7 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 				assertSameColor(t, styles.filename.GetForeground(), test.wantFilename)
 			}
 			if test.layers.ignored && (styles.marker.GetFaint() || styles.icon.GetFaint() || styles.filename.GetFaint()) {
-				t.Fatal("ignored content uses faint rendering instead of legacy ANSI white")
+				t.Fatal("ignored content adds faint rendering on top of BrightBlack")
 			}
 			if styles.row.GetReverse() || styles.row.GetBold() != test.wantFocusedBold {
 				t.Fatalf("row reverse=%v bold=%v, want reverse=false bold=%v", styles.row.GetReverse(), styles.row.GetBold(), test.wantFocusedBold)
