@@ -17,6 +17,7 @@ import (
 
 // Source is the exact read-only repository contract consumed by the TUI.
 type Source interface {
+	Root() string
 	Snapshot(scope string) (repository.Snapshot, error)
 	ReadFile(entry repository.Entry) repository.File
 	ReadDiff(comparison repository.Comparison, entry repository.Entry) repository.Diff

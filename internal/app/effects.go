@@ -36,6 +36,7 @@ const (
 	effectSaveNotes
 	effectSaveSession
 	effectAnimateReaderContext
+	effectOpenEditor
 	effectQuit
 )
 
@@ -57,6 +58,8 @@ type effect struct {
 	activity           uint64
 	notesScope         notes.Scope
 	readerContextOwner readerContextOwner
+	path               string
+	line               uint64
 
 	scope            string
 	reviewGeneration uint64
@@ -255,7 +258,7 @@ func (m Model) command(pending effect) tea.Cmd {
 		return m.gitCommand(pending)
 	case effectLoadNotes, effectDebounceNotes, effectSaveNotes:
 		return m.notesCommand(pending)
-	case effectSaveSession, effectAnimateReaderContext, effectQuit:
+	case effectSaveSession, effectAnimateReaderContext, effectOpenEditor, effectQuit:
 		return m.rootCommand(pending)
 	default:
 		return nil
@@ -505,6 +508,8 @@ func (m Model) rootCommand(pending effect) tea.Cmd {
 		return tea.Tick(readerContextFrameDelay, func(time.Time) tea.Msg {
 			return readerContextFrameMsg{owner: owner, generation: generation}
 		})
+	case effectOpenEditor:
+		return m.editorCommand(pending)
 	case effectQuit:
 		return tea.Quit
 	default:

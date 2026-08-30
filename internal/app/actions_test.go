@@ -39,6 +39,7 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "reader page up moves page", key: tea.Key{Code: tea.KeyPgUp}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: -1}},
 		{name: "reader page down moves page", key: tea.Key{Code: tea.KeyPgDown}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: 1}},
 		{name: "n opens Notes", key: tea.Key{Code: 'n', Text: "n"}, want: Action{Kind: ShowNotes}},
+		{name: "e opens selected file in editor", key: tea.Key{Code: 'e', Text: "e"}, want: Action{Kind: OpenEditor}},
 		{name: "z swaps panes", key: tea.Key{Code: 'z', Text: "z"}, want: Action{Kind: SwapPanes}},
 		{name: "one toggles secondary", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleSecondary}},
 		{name: "two toggles tertiary", key: tea.Key{Code: '2', Text: "2"}, want: Action{Kind: ToggleTertiary}},
@@ -122,6 +123,9 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	}
 	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), navigation.FocusNavigator, ui.Geometry{}, workspace.Git, workspace.Controls{}, false, false, 0, 0, 0, 0); !ok || got.Kind != ShowFiles {
 		t.Fatalf("Git Escape = (%+v, %v), want ShowFiles", got, ok)
+	}
+	if got, ok := routeMessage(tea.KeyPressMsg(tea.Key{Code: 'e', Text: "e"}), navigation.FocusNavigator, ui.Geometry{}, workspace.Git, workspace.Controls{}, false, false, 0, 0, 0, 0); ok {
+		t.Fatalf("Git e routed as (%+v, true)", got)
 	}
 	for _, test := range []struct {
 		name   string

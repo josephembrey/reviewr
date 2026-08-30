@@ -23,6 +23,7 @@ const (
 	ToggleComparison
 	ToggleDiffHighlight
 	ToggleMarkdownPreview
+	OpenEditor
 	ToggleReview
 	ToggleReviewBounds
 	NextReviewGap
@@ -371,6 +372,10 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 	case "m":
 		if context.active == workspace.Files && context.controls.MarkdownPreviewEligible {
 			return Action{Kind: ToggleMarkdownPreview}, true
+		}
+	case "e":
+		if context.active == workspace.Files {
+			return Action{Kind: OpenEditor}, true
 		}
 	case "esc":
 		if context.active == workspace.Git {

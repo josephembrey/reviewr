@@ -64,6 +64,7 @@ type filesState struct {
 	listLoading       bool
 	readerLoading     bool
 	listError         error
+	editorError       string
 }
 
 func newFilesState() filesState {

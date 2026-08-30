@@ -49,6 +49,7 @@ func fileFooterEntries(controls workspace.Controls) []footerEntry {
 		{key: "tab", label: "focus"},
 		{key: "j/k", label: "move"},
 		{key: "h/l", label: "less/more"},
+		{key: "e", label: "edit"},
 	}
 	if controls.RichDiff {
 		entries = append(entries, footerEntry{key: hunkNavigationKey, label: "hunks"})

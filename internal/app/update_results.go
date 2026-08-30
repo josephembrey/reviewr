@@ -28,6 +28,14 @@ func (m *Model) handleRootMessage(msg tea.Msg) (bool, tea.Cmd) {
 		return true, m.beginRepositoryPoll()
 	case repositoryPolledMsg:
 		return true, m.landRepositoryPoll(msg)
+	case editorFinishedMsg:
+		m.noteRepositoryActivity()
+		m.files.editorError = ""
+		if msg.err != nil {
+			m.files.editorError = "Editor: " + msg.err.Error()
+		}
+		m.files.invalidateComparisons()
+		return true, m.command(m.files.reload(m.controls.Comparison.Label()))
 	default:
 		return false, nil
 	}

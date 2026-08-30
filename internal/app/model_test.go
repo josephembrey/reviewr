@@ -16,6 +16,7 @@ import (
 )
 
 type fakeSource struct {
+	root           string
 	files          []string
 	listErr        error
 	snapshot       repository.Snapshot
@@ -38,6 +39,8 @@ type fakeSource struct {
 	stashFileErrs  map[string]error
 	stashDocuments map[string]repository.ChangeDocument
 }
+
+func (s *fakeSource) Root() string { return s.root }
 
 func (s *fakeSource) Snapshot(scope string) (repository.Snapshot, error) {
 	s.snapshots++

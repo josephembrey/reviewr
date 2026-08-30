@@ -54,7 +54,10 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 }
 
 func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.ReaderDocument, contextFoldable bool) ui.Model {
-	footerWarning := state.reviewWarning
+	footerWarning := state.editorError
+	if footerWarning == "" {
+		footerWarning = state.reviewWarning
+	}
 	if footerWarning == "" {
 		footerWarning = state.comparisonWarning
 	}

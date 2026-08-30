@@ -21,6 +21,8 @@ func (m *Model) apply(action Action) effect {
 		return m.applyDestinationAction(action)
 	case ToggleSecondary, ToggleTertiary, ToggleComparison, ToggleDiffHighlight, ToggleMarkdownPreview:
 		return m.applyViewControl(action)
+	case OpenEditor:
+		return m.openEditor()
 	case ToggleReview, ActivateReviewBadge, ToggleReviewBounds, NextReviewGap:
 		return m.applyReviewAction(action)
 	case ToggleHelp:
