@@ -112,7 +112,7 @@ func contextFoldRow(hidden []ReaderRow) ReaderRow {
 	return ReaderRow{
 		Identity: fmt.Sprintf("fold:%d:%d:%d:%d", first.OldLine, first.NewLine, last.OldLine, last.NewLine),
 		Kind:     ReaderFold,
-		Text:     fmt.Sprintf("… %d unchanged lines …", len(hidden)),
+		Text:     fmt.Sprintf("%d unchanged lines", len(hidden)),
 		Tone:     ToneDefault,
 	}
 }

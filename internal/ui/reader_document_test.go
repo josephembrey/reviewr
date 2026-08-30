@@ -32,7 +32,11 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 	}
 	for _, row := range document.Rows {
 		plain := ansi.Strip(renderReaderRow(row, geometry, workspace.DiffHighlightSidebar))
-		byteIndex := strings.Index(plain, row.Text)
+		payload := row.Text
+		if row.Kind == ReaderFold {
+			payload = "── ▸ folded"
+		}
+		byteIndex := strings.Index(plain, payload)
 		codeX := lipgloss.Width(plain[:byteIndex])
 		if codeX != geometry.Prefix {
 			t.Fatalf("kind %d code x = %d, want %d: %q", row.Kind, codeX, geometry.Prefix, plain)

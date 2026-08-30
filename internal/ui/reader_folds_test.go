@@ -5,6 +5,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
@@ -73,8 +76,14 @@ func TestReaderContextFoldsLeaveSmallRunsAlone(t *testing.T) {
 
 func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	t.Parallel()
-	row := ReaderRow{Kind: ReaderFold, Text: "… 12 unchanged lines …"}
-	if got, want := renderReaderPayload(row, nil), readerFoldStyle.Render(row.Text); got != want {
-		t.Fatalf("fold payload = %q, want normal-weight accent %q", got, want)
+	const width = 44
+	row := ReaderRow{Kind: ReaderFold, Text: "12 unchanged lines"}
+	rendered := renderReaderFoldPayload(row.Text, width)
+	plain := ansi.Strip(rendered)
+	if !strings.HasPrefix(plain, "── ▸ folded · 12 unchanged lines ") || !strings.HasSuffix(plain, "─") || lipgloss.Width(plain) != width {
+		t.Fatalf("fold payload = %q, want full-width structural control", plain)
+	}
+	if rendered != readerFoldStyle.Render(plain) {
+		t.Fatalf("fold payload = %q, want normal-weight accent %q", rendered, readerFoldStyle.Render(plain))
 	}
 }

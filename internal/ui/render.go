@@ -710,8 +710,24 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 		return line
 	}
 
-	line := barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
+	payload := renderReaderPayload(row, nil)
+	if row.Kind == ReaderFold {
+		payload = renderReaderFoldPayload(row.Text, geometry.Code.Width)
+	}
+	line := barStyle.Render(bar) + mutedStyle.Render(number) + payload
 	return fit(line, width)
+}
+
+func renderReaderFoldPayload(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	label := "── ▸ folded · " + SafeSingleLine(text) + " "
+	label = clip(label, width)
+	if remaining := width - lipgloss.Width(label); remaining > 0 {
+		label += strings.Repeat("─", remaining)
+	}
+	return readerFoldStyle.Render(label)
 }
 
 func renderReaderPayload(row ReaderRow, background color.Color) string {
@@ -719,9 +735,6 @@ func renderReaderPayload(row ReaderRow, background color.Color) string {
 		text := SafeSingleLine(row.Text)
 		if background != nil {
 			return lipgloss.NewStyle().Background(background).Foreground(lipgloss.Black).Render(text)
-		}
-		if row.Kind == ReaderFold {
-			return readerFoldStyle.Render(text)
 		}
 		return renderToneText(text, row.Tone)
 	}
