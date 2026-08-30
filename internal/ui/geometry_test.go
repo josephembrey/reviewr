@@ -198,17 +198,17 @@ func TestHeaderSwitcherGeometryAndHits(t *testing.T) {
 	t.Parallel()
 	for width := 0; width <= 34; width++ {
 		g := Calculate(width, 6)
-		wantSwitcherWidth := min(width, 23)
+		wantSwitcherWidth := min(width, len(workspaceSwitcher))
 		if g.HeaderSwitcher != (Rect{Width: wantSwitcherWidth, Height: 1}) {
 			t.Fatalf("Calculate(%d) switcher = %+v, want width %d", width, g.HeaderSwitcher, wantSwitcherWidth)
 		}
 		for x := 0; x < width; x++ {
 			want := HitNone
-			if x >= 2 && x < 7 {
+			if g.HeaderFiles.Contains(x, 0) {
 				want = HitFilesWorkspace
-			} else if x >= 10 && x < 13 {
+			} else if g.HeaderGit.Contains(x, 0) {
 				want = HitGitWorkspace
-			} else if x >= 16 && x < 21 {
+			} else if g.HeaderNotes.Contains(x, 0) {
 				want = HitNotesWorkspace
 			}
 			if got := g.HitTest(x, 0, workspace.Notes, workspace.Controls{}, 0, 0, 0, 0).Kind; got != want {
@@ -232,7 +232,7 @@ func TestHitTestPrecedenceAndBoundaries(t *testing.T) {
 		{name: "files workspace", x: g.HeaderFiles.X, y: g.HeaderFiles.Y, want: Hit{Kind: HitFilesWorkspace}},
 		{name: "git workspace", x: g.HeaderGit.X, y: g.HeaderGit.Y, want: Hit{Kind: HitGitWorkspace}},
 		{name: "notes workspace", x: g.HeaderNotes.X, y: g.HeaderNotes.Y, want: Hit{Kind: HitNotesWorkspace}},
-		{name: "header punctuation", x: 15, y: g.Header.Y, want: Hit{Kind: HitNone}},
+		{name: "header punctuation", x: 6, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "header gap", x: 30, y: g.Header.Y, want: Hit{Kind: HitNone}},
 		{name: "empty row is pane", x: g.NavigatorRows.X, y: g.NavigatorRows.Y + 4, want: Hit{Kind: HitNavigator}},
 		{name: "navigator title", x: g.NavigatorTitle.X, y: g.NavigatorTitle.Y, want: Hit{Kind: HitNavigator}},

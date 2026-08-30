@@ -11,7 +11,7 @@ import (
 
 func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	t.Parallel()
-	const switcher = "[ files | git | notes ]"
+	const switcher = workspaceSwitcher
 	for width := 0; width <= 54; width++ {
 		for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Notes} {
 			frame := Render(Model{Geometry: Calculate(width, 1), Workspace: active})
@@ -37,13 +37,13 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	if !strings.HasPrefix(plain, switcher) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
 		t.Fatalf("normal header = %q", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(23, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(19, 1), Workspace: workspace.Files}))
 	if plain != switcher {
-		t.Fatalf("23-column header = %q, want switcher only", plain)
+		t.Fatalf("19-column header = %q, want switcher only", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(24, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(20, 1), Workspace: workspace.Files}))
 	if plain != switcher+" " {
-		t.Fatalf("24-column header = %q, want switcher only", plain)
+		t.Fatalf("20-column header = %q, want switcher only", plain)
 	}
 }
 
@@ -68,18 +68,21 @@ func TestHeaderOmitsEachZeroChangeTotal(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSwitcherHighlightsOnlyTheActiveLabel(t *testing.T) {
+func TestWorkspaceSwitcherAccentsOnlyTheActiveLabel(t *testing.T) {
 	t.Parallel()
 	for _, active := range []workspace.Kind{workspace.Files, workspace.Git, workspace.Notes} {
-		frame := renderWorkspaceSwitcher(23, active)
+		frame := renderWorkspaceSwitcher(len(workspaceSwitcher), active)
 		labels := map[workspace.Kind]string{workspace.Files: "files", workspace.Git: "git", workspace.Notes: "notes"}
 		for kind, label := range labels {
-			styled := selectionStyle(true).Render(label)
+			styled := headerStyle.Render(label)
 			if got := strings.Contains(frame, styled); got != (kind == active) {
 				t.Fatalf("active %v label %q selected=%v frame=%q", active, label, got, frame)
 			}
 		}
-		if plain := ansi.Strip(frame); plain != "[ files | git | notes ]" {
+		if strings.Contains(frame, "\x1b[7m") {
+			t.Fatalf("active %v uses a reverse-video background: %q", active, frame)
+		}
+		if plain := ansi.Strip(frame); plain != workspaceSwitcher {
 			t.Fatalf("active %v changed stable group: %q", active, plain)
 		}
 	}
@@ -116,7 +119,7 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 		Changes:   ChangeSummary{Files: 12, Additions: 345, Deletions: 67, Ready: true},
 	}
 	plain := ansi.Strip(Render(model))
-	if !strings.HasPrefix(plain, "[ files | git | notes ]") || strings.Contains(plain, "12 changes") {
+	if !strings.HasPrefix(plain, workspaceSwitcher) || strings.Contains(plain, "12 changes") {
 		t.Fatalf("narrow header = %q", plain)
 	}
 }
@@ -124,7 +127,7 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 func TestHeaderKeepsChangeTotalsWhenFullSummaryCannotFit(t *testing.T) {
 	t.Parallel()
 	model := Model{
-		Geometry:  Calculate(72, 1),
+		Geometry:  Calculate(68, 1),
 		Workspace: workspace.Files,
 		Controls: workspace.Controls{
 			Files:      workspace.ChangedFiles,

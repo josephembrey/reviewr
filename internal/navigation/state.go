@@ -71,15 +71,6 @@ func (s *State) SelectIndex(index int, visibleRows int) bool {
 	return true
 }
 
-// ToggleFocus moves keyboard navigation intent to the other pane.
-func (s *State) ToggleFocus() {
-	if s.Focus == FocusNavigator {
-		s.Focus = FocusReader
-	} else {
-		s.Focus = FocusNavigator
-	}
-}
-
 // EnsureSelectionVisible reconciles the Navigator offset to its viewport.
 func (s *State) EnsureSelectionVisible(visibleRows int) {
 	if len(s.Items) == 0 {

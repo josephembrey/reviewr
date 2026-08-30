@@ -223,7 +223,7 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 	model.files.tree.Rebuild([]string{"file.go"})
 	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(filesFrame, "[ files | git | notes ]") || !strings.Contains(filesFrame, "\n1 files") {
+	if !strings.HasPrefix(filesFrame, "files | git | notes") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
 	}
 
@@ -233,8 +233,22 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "[ files | git | notes ]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "files | git | notes") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
+	}
+}
+
+func TestCycleDestinationUsesVisibleTabOrder(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Git || pending.kind != effectNone {
+		t.Fatalf("Files -> Git = active %v effect %+v", model.active, pending)
+	}
+	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Notes || pending.kind != effectLoadNotes {
+		t.Fatalf("Git -> Notes = active %v effect %+v", model.active, pending)
+	}
+	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Files || pending.kind != effectNone {
+		t.Fatalf("Notes -> Files = active %v effect %+v", model.active, pending)
 	}
 }
 
@@ -418,7 +432,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 		t.Fatalf("minimum-size recovery = geometry %+v command=%v", model.geometry.Screen, command != nil)
 	}
 	frame = ansi.Strip(model.View().Content)
-	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "[ files") {
+	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "files | git | notes") {
 		t.Fatalf("recovered frame = %q", frame)
 	}
 }
@@ -622,7 +636,11 @@ func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {
 		t.Fatalf("keyboard scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())
 	}
 
-	next, _ = model.Update(tea.MouseClickMsg(tea.Mouse{X: 31, Y: model.geometry.Header.Y, Button: tea.MouseLeft}))
+	next, _ = model.Update(tea.MouseClickMsg(tea.Mouse{
+		X:      model.geometry.HeaderSwitcher.X + model.geometry.HeaderSwitcher.Width + 1,
+		Y:      model.geometry.Header.Y,
+		Button: tea.MouseLeft,
+	}))
 	model = next.(Model)
 	if source.snapshots != 1 || model.controls.Files != workspace.AllFiles || model.files.tree.FileCount() != 3 {
 		t.Fatalf("mouse scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())
@@ -796,7 +814,7 @@ func TestWorkspacesKeepIndependentPlace(t *testing.T) {
 
 	model.apply(Action{Kind: ShowGit})
 	model.apply(Action{Kind: SelectNext})
-	model.apply(Action{Kind: ToggleFocus})
+	model.apply(Action{Kind: FocusReader})
 	model.apply(Action{Kind: ShowFiles})
 	if model.files.place.Selected != 1 || model.files.place.Top != 1 || model.files.place.Focus != navigation.FocusReader || model.files.place.ReaderOffset != 4 {
 		t.Fatalf("Git input changed Files place: %+v", model.files.place)

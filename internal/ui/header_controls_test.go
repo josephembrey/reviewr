@@ -14,33 +14,33 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	changes := ChangeSummary{Ready: true}
 
 	files := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Changes: changes}))
-	if !strings.HasPrefix(files, "[ files | git | notes ] [all] [file] [uncommitted]") {
+	if !strings.HasPrefix(files, "files | git | notes [all] [file] [uncommitted]") {
 		t.Fatalf("Files header = %q", files)
 	}
 
 	controls := workspace.Controls{Files: workspace.ChangedFiles, Reader: workspace.DiffReader, Comparison: workspace.LastTurn}
 	files = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(files, "[ files | git | notes ] [changed] [diff] [last-turn]") {
+	if !strings.HasPrefix(files, "files | git | notes [changed] [diff] [last-turn]") {
 		t.Fatalf("cycled Files header = %q", files)
 	}
 
 	git := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Changes: changes}))
-	if !strings.HasPrefix(git, "[ files | git | notes ] [log] [graph]") {
+	if !strings.HasPrefix(git, "files | git | notes [log] [graph]") {
 		t.Fatalf("Git Log header = %q", git)
 	}
 	controls.Git = workspace.GitRefs
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "[ files | git | notes ] [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "files | git | notes [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Refs header = %q", git)
 	}
 	controls.Git = workspace.GitStashes
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "[ files | git | notes ] [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
+	if !strings.HasPrefix(git, "files | git | notes [stashes]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
 		t.Fatalf("Git Stashes header = %q", git)
 	}
 
 	notes := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Notes, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(notes, "[ files | git | notes ]") || strings.Contains(notes, "[refs]") || strings.Contains(notes, "[changed]") {
+	if !strings.HasPrefix(notes, workspaceSwitcher) || strings.Contains(notes, "[refs]") || strings.Contains(notes, "[changed]") {
 		t.Fatalf("Notes header = %q", notes)
 	}
 }
@@ -48,7 +48,7 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 func TestWideHeaderControlsExposeNumberKeys(t *testing.T) {
 	t.Parallel()
 	plain := ansi.Strip(Render(Model{Geometry: Calculate(120, 1), Workspace: workspace.Files}))
-	if !strings.HasPrefix(plain, "[ files | git | notes ]  4 [all]  5 [file]  6 [uncommitted]") {
+	if !strings.HasPrefix(plain, "files | git | notes  4 [all]  5 [file]  6 [uncommitted]") {
 		t.Fatalf("wide Files header = %q", plain)
 	}
 }
@@ -119,7 +119,7 @@ func TestDiffHighlightControlAndFooterShareEligibilityAndCompleteShedding(t *tes
 		t.Fatalf("ineligible reader exposed control: %q", ineligible)
 	}
 
-	narrowGeometry := Calculate(60, 12)
+	narrowGeometry := Calculate(56, 12)
 	controls.RichDiff = true
 	narrow := ansi.Strip(Render(Model{Geometry: narrowGeometry, Workspace: workspace.Files, Controls: controls}))
 	if strings.Contains(strings.Split(narrow, "\n")[0], "sidebar") || strings.Contains(strings.Split(narrow, "\n")[0], "background") {

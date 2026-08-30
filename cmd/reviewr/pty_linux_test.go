@@ -99,7 +99,8 @@ func TestPTYAutomaticallyRefreshesChangedFileWithoutMovingTheUser(t *testing.T) 
 	session := startPTYReviewr(t, repository, t.TempDir(), 80, 16)
 	t.Cleanup(session.stop)
 	session.waitFor(t, "poll-first")
-	session.write(t, "\t")
+	// Click the reader title to focus it without changing the active destination.
+	session.write(t, "\x1b[<0;28;2M")
 	session.resetOutput()
 	mustWriteFixture(t, repository, "main.go", []byte("package main\nconst Value = \"poll-other\"\n"))
 	// Bubble Tea emits only the changed cell run ("other"); the existing
@@ -179,7 +180,8 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	first.resetOutput()
 	first.write(t, "5")
 	first.waitFor(t, "since reviewed")
-	first.write(t, "\t")
+	// Click the reader title to focus it without changing the active destination.
+	first.write(t, "\x1b[<0;28;2M")
 	first.resetOutput()
 	first.write(t, "R")
 	first.waitFor(t, "full comparison")

@@ -575,6 +575,15 @@ func (m *Model) apply(action Action) effect {
 		return m.activate(workspace.Git)
 	case ShowNotes:
 		return m.activate(workspace.Notes)
+	case CycleDestination:
+		switch m.active {
+		case workspace.Files:
+			return m.activate(workspace.Git)
+		case workspace.Git:
+			return m.activate(workspace.Notes)
+		default:
+			return m.requestNotesExit(notesExitFiles)
+		}
 	case ToggleNotesScope:
 		return m.note.toggleScope()
 	case SelectProjectNotes:
@@ -683,8 +692,6 @@ func (m *Model) apply(action Action) effect {
 		m.dragScrollbarTo(action.Position)
 	case FinishScrollbarDrag:
 		m.scrollbar.finish()
-	case ToggleFocus:
-		m.activePlace().ToggleFocus()
 	case FocusNavigator:
 		m.activePlace().Focus = navigation.FocusNavigator
 	case FocusReader:

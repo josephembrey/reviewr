@@ -44,6 +44,8 @@ type Geometry struct {
 // only relaxes it for tiny component-test surfaces below the app minimum.
 const MinimumPaneWidth = 16
 
+const workspaceSwitcher = "files | git | notes"
+
 // Calculate returns responsive pane geometry with the default split.
 func Calculate(width, height int) Geometry {
 	return calculate(width, height, 0, false)
@@ -113,7 +115,7 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 		},
 		Footer: Rect{Y: body.Y + body.Height, Width: width, Height: footerHeight},
 	}
-	g.HeaderSwitcher = clipTo(g.Header, Rect{Width: 23, Height: 1})
+	g.HeaderSwitcher = clipTo(g.Header, Rect{Width: len(workspaceSwitcher), Height: 1})
 	g.HeaderFiles = clipTo(g.Header, workspaceSwitcherRect(workspace.Files))
 	g.HeaderGit = clipTo(g.Header, workspaceSwitcherRect(workspace.Git))
 	g.HeaderNotes = clipTo(g.Header, workspaceSwitcherRect(workspace.Notes))
@@ -130,15 +132,15 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 }
 
 // workspaceSwitcherRect is the exact label-only paint and hit target inside
-// the stable "[ files | git | notes ]" tab group.
+// the stable "files | git | notes" tab group.
 func workspaceSwitcherRect(kind workspace.Kind) Rect {
 	switch kind {
 	case workspace.Git:
-		return Rect{X: 10, Width: 3, Height: 1}
+		return Rect{X: 8, Width: 3, Height: 1}
 	case workspace.Notes:
-		return Rect{X: 16, Width: 5, Height: 1}
+		return Rect{X: 14, Width: 5, Height: 1}
 	default:
-		return Rect{X: 2, Width: 5, Height: 1}
+		return Rect{Width: 5, Height: 1}
 	}
 }
 

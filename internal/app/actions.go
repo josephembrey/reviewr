@@ -16,6 +16,7 @@ const (
 	ShowFiles
 	ShowGit
 	ShowNotes
+	CycleDestination
 	ToggleNotesScope
 	SelectProjectNotes
 	SelectWorktreeNotes
@@ -39,7 +40,6 @@ const (
 	CollapseReaderContext
 	FocusNavigator
 	FocusReader
-	ToggleFocus
 	SwapPanes
 	ScrollReader
 	StartPaneResize
@@ -150,9 +150,7 @@ func routeNotesMessage(msg tea.Msg, geometry ui.Geometry, presentation notes.Pre
 		case tea.KeyEnter:
 			return Action{Kind: NotesInsert, Text: "\n"}, true
 		case tea.KeyTab:
-			if !selecting {
-				return Action{Kind: NotesInsert, Text: "\t"}, true
-			}
+			return Action{Kind: CycleDestination}, true
 		}
 		if key.Text != "" && key.Mod&(tea.ModAlt|tea.ModMeta|tea.ModSuper|tea.ModHyper) == 0 {
 			return Action{Kind: NotesInsert, Text: key.Text}, true
@@ -257,7 +255,7 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 				return Action{Kind: NextReviewGap}, true
 			}
 		case "tab":
-			return Action{Kind: ToggleFocus}, true
+			return Action{Kind: CycleDestination}, true
 		case "z":
 			return Action{Kind: SwapPanes}, true
 		case "r":

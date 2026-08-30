@@ -88,7 +88,9 @@ func renderFooter(model Model) string {
 		if model.NotesError {
 			style = errorStyle
 		}
-		footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"}) + renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus))
+		footer := renderFooterEntry(footerEntry{key: "Esc", label: "Files"}) +
+			renderFooterSeparator() + style.Render(SafeSingleLine(model.NotesStatus)) +
+			renderFooterSeparator() + renderFooterEntry(footerEntry{key: "Tab", label: "next"})
 		if model.NotesHasWorktree {
 			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
 		}
@@ -99,10 +101,10 @@ func renderFooter(model Model) string {
 		{key: "1", label: "files"},
 		{key: "2", label: "git"},
 		{key: "3", label: "notes"},
+		{key: "tab", label: "next"},
 	}
 	entries := append(destinations, []footerEntry{
 		{key: "j/k or ↑/↓", label: "navigate"},
-		{key: "tab", label: "focus"},
 		{key: "z", label: "swap"},
 		{key: "r", label: "refresh"},
 		{key: "q", label: "quit"},
@@ -142,7 +144,6 @@ func renderFooter(model Model) string {
 			stashEntries = append(stashEntries, footerEntry{key: "h/l", label: "context"})
 		}
 		stashEntries = append(stashEntries,
-			footerEntry{key: "tab", label: "focus"},
 			footerEntry{key: "z", label: "swap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
@@ -155,7 +156,6 @@ func renderFooter(model Model) string {
 		}
 		entries = append(destinations, append(local,
 			footerEntry{key: "j/k or ↑/↓", label: "navigate"},
-			footerEntry{key: "tab", label: "focus"},
 			footerEntry{key: "z", label: "swap"},
 			footerEntry{key: "r", label: "refresh"},
 			footerEntry{key: "q", label: "quit"},
@@ -253,25 +253,26 @@ func renderChangeTotals(summary ChangeSummary) string {
 }
 
 func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
-	value := "[ files | git | notes ]"
-	active := workspaceSwitcherRect(activeWorkspace)
-	width = min(max(0, width), len(value))
-	var rendered strings.Builder
-	for index := 0; index < width; {
-		selected := active.Contains(index, 0)
-		end := index + 1
-		for end < width && active.Contains(end, 0) == selected {
-			end++
-		}
-		segment := string(value[index:end])
-		if selected {
-			rendered.WriteString(selectionStyle(true).Render(segment))
-		} else {
-			rendered.WriteString(chromeStyle.Render(segment))
-		}
-		index = end
+	labels := []struct {
+		kind  workspace.Kind
+		label string
+	}{
+		{workspace.Files, "files"},
+		{workspace.Git, "git"},
+		{workspace.Notes, "notes"},
 	}
-	return fit(rendered.String(), width)
+	var rendered strings.Builder
+	for index, item := range labels {
+		if index > 0 {
+			rendered.WriteString(mutedStyle.Render(" | "))
+		}
+		if item.kind == activeWorkspace {
+			rendered.WriteString(headerStyle.Render(item.label))
+		} else {
+			rendered.WriteString(chromeStyle.Render(item.label))
+		}
+	}
+	return fit(rendered.String(), min(max(0, width), len(workspaceSwitcher)))
 }
 
 func renderNotes(model Model) string {

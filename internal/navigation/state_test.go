@@ -79,7 +79,7 @@ func TestReconcileEmpty(t *testing.T) {
 	}
 }
 
-func TestUserSelectionFocusAndScroll(t *testing.T) {
+func TestUserSelectionAndScroll(t *testing.T) {
 	t.Parallel()
 	state := State{Items: []string{"a", "b", "c", "d"}, ReaderOffset: 5}
 	if !state.SelectIndex(3, 2) {
@@ -90,10 +90,6 @@ func TestUserSelectionFocusAndScroll(t *testing.T) {
 	}
 	if state.SelectDelta(1, 2) {
 		t.Fatal("clamped selection reported a change")
-	}
-	state.ToggleFocus()
-	if state.Focus != FocusReader {
-		t.Fatalf("focus = %v, want reader", state.Focus)
 	}
 	state.ScrollReader(8, 10, 3)
 	state.ScrollReader(8, 10, 3)
