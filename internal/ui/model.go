@@ -68,6 +68,10 @@ type ReaderRow struct {
 	Spans    []TextSpan
 	OldLine  uint64
 	NewLine  uint64
+	// RemovedBefore/After anchor deleted source lines at a surviving full-file
+	// row without inserting fake document content.
+	RemovedBefore uint64
+	RemovedAfter  uint64
 	// FoldExpanded keeps a fold control visible while its context rows are shown.
 	FoldExpanded bool
 }

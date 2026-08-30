@@ -44,7 +44,7 @@ func (state *filesState) requestComparison(scope string) effect {
 	state.rederiveReviews()
 	state.comparisonWarning = ""
 	state.readerContextExpanded = false
-	if state.readerMode == workspace.DiffReader && state.readerEntry.Path != "" {
+	if state.readerEntry.Path != "" {
 		state.readerLoading = true
 	}
 	return effect{
@@ -67,7 +67,7 @@ func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode wor
 		state.reviewSnapshot = msg.snapshot
 	}
 	state.rederiveReviews()
-	if state.readerEntry.Path == "" || mode != workspace.DiffReader {
+	if state.readerEntry.Path == "" {
 		state.readerLoading = false
 		return state, effect{}
 	}
@@ -120,6 +120,7 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, _ int) f
 	state.diff = repository.Diff{}
 	state.reader = repository.File{}
 	state.reviewFile = review.Content{}
+	state.reviewFileDiff = review.Document{}
 	state.readerLoading = false
 	newIdentities := state.reviewDocument.LineIdentities()
 	state.place.ReaderOffset = reconcileLogicalLine(oldIdentities, oldOffset, newIdentities)
@@ -152,6 +153,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, _ int) filesStat
 	oldOffset := state.place.ReaderOffset
 	state.reviewFile = msg.content
 	state.reviewDocument = review.Document{}
+	state.reviewFileDiff = msg.document
 	comparison := msg.comparison
 	bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
 	state.displayedComparison = &comparison
@@ -475,6 +477,59 @@ func reviewFileReaderDocument(content review.Content, entry repository.Entry) ui
 		document.Rows = noticeRows("File is unavailable: "+detail, ui.ToneError)
 	}
 	return document
+}
+
+// annotatedReviewFileReaderDocument keeps File mode a complete rendering of the
+// current endpoint while projecting exact comparison metadata into its gutter.
+// It never inserts a synthetic source row: additions decorate their current
+// line and removed runs attach to the next surviving line, or the final line at
+// EOF.
+func annotatedReviewFileReaderDocument(content review.Content, entry repository.Entry, comparison review.FileComparison, diff review.Document) ui.ReaderDocument {
+	if content.Endpoint != comparison.New {
+		return ui.ReaderDocument{
+			Kind: ui.ReaderFileDocument,
+			Rows: noticeRows("File changed; refresh before marking reviewed.", ui.ToneError),
+		}
+	}
+	document := reviewFileReaderDocument(content, entry)
+	bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
+	if !diff.Exact || diff.Bounds != bounds {
+		return document
+	}
+	annotateReviewFileChanges(document.Rows, diff)
+	return document
+}
+
+func annotateReviewFileChanges(rows []ui.ReaderRow, diff review.Document) {
+	removed := uint64(0)
+	lastCurrent := -1
+	for _, line := range diff.Lines {
+		switch line.Kind {
+		case review.RemovedLine:
+			removed++
+		case review.AddedLine, review.ContextLine:
+			if line.NewLine <= 0 || line.NewLine > len(rows) {
+				continue
+			}
+			lastCurrent = line.NewLine - 1
+			row := &rows[lastCurrent]
+			if removed > 0 {
+				row.RemovedBefore += removed
+				removed = 0
+			}
+			if line.Kind == review.AddedLine {
+				row.Kind = ui.ReaderInsertion
+			}
+		}
+	}
+	if removed == 0 || len(rows) == 0 {
+		return
+	}
+	if lastCurrent < 0 {
+		rows[0].RemovedBefore += removed
+		return
+	}
+	rows[lastCurrent].RemovedAfter += removed
 }
 
 func reviewLoadWarning(err error) string {

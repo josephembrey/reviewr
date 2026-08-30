@@ -154,6 +154,7 @@ type reviewFileLoadedMsg struct {
 	entry        repository.Entry
 	comparison   review.FileComparison
 	content      review.Content
+	document     review.Document
 	presentation ui.ReaderDocument
 	background   bool
 	activity     uint64
@@ -1135,10 +1136,13 @@ func (m Model) command(pending effect) tea.Cmd {
 		generation, entry, comparison := pending.generation, pending.entry, pending.comparison
 		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
+			bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
+			oldContent := provider.ReadReviewContent(comparison.OldSource, comparison.Old)
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
+			document := review.BuildDocument(bounds, oldContent, content)
 			return reviewFileLoadedMsg{
-				generation: generation, entry: entry, comparison: comparison, content: content,
-				presentation: reviewFileReaderDocument(content, entry), background: background, activity: activity,
+				generation: generation, entry: entry, comparison: comparison, content: content, document: document,
+				presentation: annotatedReviewFileReaderDocument(content, entry, comparison, document), background: background, activity: activity,
 			}
 		}
 	case effectVerifyReview:

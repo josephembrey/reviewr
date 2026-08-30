@@ -32,6 +32,7 @@ type filesState struct {
 	store                 *review.Store
 	reviewDocument        review.Document
 	reviewFile            review.Content
+	reviewFileDiff        review.Document
 	displayedComparison   *review.FileComparison
 	displayedBounds       *review.Bounds
 	requestedComparison   *review.FileComparison
@@ -127,6 +128,7 @@ func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
 	state.reviewFile = review.Content{}
+	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
@@ -151,6 +153,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, _ int) filesState {
 	state.reader = repository.File{}
 	state.reviewDocument = review.Document{}
 	state.reviewFile = review.Content{}
+	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
@@ -240,6 +243,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.diff = repository.Diff{}
 		state.reviewDocument = review.Document{}
 		state.reviewFile = review.Content{}
+		state.reviewFileDiff = review.Document{}
 		state.displayedComparison = nil
 		state.displayedBounds = nil
 		state.readerPresentation = nil
@@ -413,6 +417,7 @@ func (state *filesState) clearReader() {
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
 	state.reviewFile = review.Content{}
+	state.reviewFileDiff = review.Document{}
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerPresentation = nil
@@ -579,7 +584,12 @@ func (state filesState) deriveReaderDocument() ui.ReaderDocument {
 		if state.reviewFile.Endpoint != state.displayedComparison.New {
 			return ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: noticeRows("File changed; refresh before marking reviewed.", ui.ToneError)}
 		}
-		return reviewFileReaderDocument(state.reviewFile, state.readerEntry)
+		return annotatedReviewFileReaderDocument(
+			state.reviewFile,
+			state.readerEntry,
+			*state.displayedComparison,
+			state.reviewFileDiff,
+		)
 	}
 	return (readerDocument{
 		File: state.reader, Entry: state.readerEntry, Diff: state.diff, Mode: state.readerMode,

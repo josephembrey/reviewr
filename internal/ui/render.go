@@ -631,6 +631,7 @@ func renderReader(model Model) string {
 		readerGeometry = readerLayout.Geometry
 	}
 	commitColumns := commitrow.Measure(commitRows, contentWidth)
+	highlight := readerDiffHighlight(document, model.Controls.DiffHighlight)
 	now := time.Now()
 	for row := 0; row < g.ReaderRows.Height; row++ {
 		index := readerOffset + row
@@ -640,7 +641,7 @@ func renderReader(model Model) string {
 				line = renderCommitRow(commitRows[index], commitColumns, contentWidth, false, false, now)
 			} else if document.Kind != ReaderDocumentNone {
 				wrapped, continuation := readerLayout.Row(index)
-				line = renderReaderRowPart(wrapped, readerGeometry, model.Controls.DiffHighlight, continuation)
+				line = renderReaderRowPart(wrapped, readerGeometry, highlight, continuation)
 			} else {
 				line = fit(renderLine(content[index]), contentWidth)
 			}
@@ -665,6 +666,13 @@ func renderReader(model Model) string {
 	)
 }
 
+func readerDiffHighlight(document ReaderDocument, requested workspace.DiffHighlight) workspace.DiffHighlight {
+	if document.Kind == ReaderFileDocument {
+		return workspace.DiffHighlightSidebar
+	}
+	return requested
+}
+
 func renderReaderRow(row ReaderRow, geometry ReaderGeometry, highlight workspace.DiffHighlight) string {
 	return renderReaderRowPart(row, geometry, highlight, false)
 }
@@ -682,11 +690,25 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 
 	bar := " "
 	barStyle := lipgloss.NewStyle()
-	switch row.Kind {
-	case ReaderInsertion:
+	removedBoundary := !continuation && (row.RemovedBefore > 0 || row.RemovedAfter > 0)
+	switch {
+	case removedBoundary && row.Kind == ReaderInsertion:
+		// One terminal cell carries both halves of a replacement boundary:
+		// removed above in red, current addition below in green.
+		bar = "▀"
+		barStyle = barStyle.Foreground(errorColor).Background(addedColor).Bold(true)
+	case removedBoundary:
+		bar = "▴"
+		if row.RemovedBefore > 0 && row.RemovedAfter > 0 {
+			bar = "◆"
+		} else if row.RemovedAfter > 0 {
+			bar = "▾"
+		}
+		barStyle = barStyle.Foreground(errorColor).Bold(true)
+	case row.Kind == ReaderInsertion:
 		bar = "▌"
 		barStyle = barStyle.Foreground(addedColor).Bold(true)
-	case ReaderDeletion:
+	case row.Kind == ReaderDeletion:
 		bar = "▌"
 		barStyle = barStyle.Foreground(errorColor).Bold(true)
 	}

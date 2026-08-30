@@ -561,12 +561,16 @@ func TestReviewSnapshotsAreGenerationScopedAndRefreshNeverMutatesLedger(t *testi
 	if state.reviewScope != "last-turn" || len(state.reviewSnapshot.Comparisons) != 0 {
 		t.Fatal("stale comparison scope landed")
 	}
-	state, _ = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
+	var pending effect
+	state, pending = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
 		listGeneration: lastTurn.generation, reviewGeneration: lastTurn.reviewGeneration, scope: "last-turn",
 		snapshot: reviewdomain.Snapshot{Scope: "last-turn", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
 	}, workspace.FileReader, 10)
 	if state.reviewSnapshot.Comparisons["changed.go"] != two || !reflect.DeepEqual(state.ledger, before) {
 		t.Fatal("current scope failed to land or mutated receipts")
+	}
+	if pending.kind != effectLoadReviewFile || pending.comparison != two {
+		t.Fatalf("File view did not refresh annotations for the new comparison: %+v", pending)
 	}
 
 	refresh := state.reload()

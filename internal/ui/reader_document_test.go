@@ -215,6 +215,56 @@ func TestSidebarAndBackgroundDiffTreatmentsUseTerminalANSIRoles(t *testing.T) {
 	}
 }
 
+func TestFileDocumentChangeGutterStaysSidebarAndShowsDeletionBoundaries(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument}
+	if got := readerDiffHighlight(document, workspace.DiffHighlightBackground); got != workspace.DiffHighlightSidebar {
+		t.Fatalf("file highlight = %v, want sidebar", got)
+	}
+	if got := readerDiffHighlight(ReaderDocument{Kind: ReaderDiffDocument}, workspace.DiffHighlightBackground); got != workspace.DiffHighlightBackground {
+		t.Fatalf("diff highlight = %v, want requested background", got)
+	}
+
+	geometry := CalculateReaderGeometry(Rect{Width: 24, Height: 1}, document, false)
+	tests := []struct {
+		name string
+		row  ReaderRow
+		bar  string
+	}{
+		{name: "removed before", row: ReaderRow{Kind: ReaderFile, Text: "keep", NewLine: 2, RemovedBefore: 3}, bar: "▴"},
+		{name: "removed after", row: ReaderRow{Kind: ReaderFile, Text: "keep", NewLine: 2, RemovedAfter: 3}, bar: "▾"},
+		{name: "removed around", row: ReaderRow{Kind: ReaderFile, Text: "keep", NewLine: 2, RemovedBefore: 1, RemovedAfter: 1}, bar: "◆"},
+		{name: "replacement", row: ReaderRow{Kind: ReaderInsertion, Text: "new", NewLine: 2, RemovedBefore: 1}, bar: "▀"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rendered := renderReaderRow(test.row, geometry, readerDiffHighlight(document, workspace.DiffHighlightBackground))
+			if plain := ansi.Strip(rendered); !strings.HasPrefix(plain, test.bar) {
+				t.Fatalf("rendered boundary = %q, want %q", plain, test.bar)
+			}
+			if !strings.Contains(rendered, "31") {
+				t.Fatalf("deletion boundary is not ANSI red: %q", rendered)
+			}
+			if test.row.Kind == ReaderInsertion && !strings.Contains(rendered, "42") {
+				t.Fatalf("replacement boundary does not retain ANSI green: %q", rendered)
+			}
+			if strings.Contains(rendered, "48;2") || strings.Contains(rendered, "48;5") {
+				t.Fatalf("file marker used a fixed/indexed background: %q", rendered)
+			}
+		})
+	}
+
+	wrapped := renderReaderRowPart(
+		ReaderRow{Kind: ReaderInsertion, Text: "continued", NewLine: 2, RemovedBefore: 1},
+		geometry,
+		workspace.DiffHighlightSidebar,
+		true,
+	)
+	if strings.HasPrefix(ansi.Strip(wrapped), "▀") || strings.HasPrefix(ansi.Strip(wrapped), "▴") {
+		t.Fatalf("wrapped continuation repeated deletion boundary: %q", wrapped)
+	}
+}
+
 func TestRichReaderRenderMatrixAndScrollbarCoexistWithoutPanics(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument}
