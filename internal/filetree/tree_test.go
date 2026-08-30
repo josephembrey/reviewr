@@ -67,8 +67,11 @@ func TestTreeCollapseExpandToggleAndRebuild(t *testing.T) {
 	if !tree.Expand(src) || tree.Expand(src) {
 		t.Fatal("expand transition did not change exactly once")
 	}
-	if !tree.Toggle(src) || !tree.Toggle(src) {
-		t.Fatal("toggle failed to reverse directory state")
+	if !tree.Toggle(src) {
+		t.Fatal("toggle did not collapse expanded directory")
+	}
+	if !tree.Toggle(src) {
+		t.Fatal("toggle did not expand collapsed directory")
 	}
 
 	tree.Collapse(src)
