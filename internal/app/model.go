@@ -131,6 +131,7 @@ type reviewDocumentLoadedMsg struct {
 	comparison review.FileComparison
 	bounds     review.Bounds
 	document   review.Document
+	lines      []ui.Line
 }
 
 type reviewFileLoadedMsg struct {
@@ -138,6 +139,7 @@ type reviewFileLoadedMsg struct {
 	entry      repository.Entry
 	comparison review.FileComparison
 	content    review.Content
+	lines      []ui.Line
 }
 
 type reviewVerifiedMsg struct {
@@ -158,12 +160,14 @@ type fileLoadedMsg struct {
 	generation uint64
 	entry      repository.Entry
 	file       repository.File
+	lines      []ui.Line
 }
 
 type diffLoadedMsg struct {
 	generation uint64
 	entry      repository.Entry
 	diff       repository.Diff
+	lines      []ui.Line
 }
 
 type summaryLoadedMsg struct {
@@ -231,6 +235,7 @@ type stashFileLoadedMsg struct {
 	oid          string
 	fileIdentity string
 	document     repository.ChangeDocument
+	lines        []ui.Line
 }
 
 // New creates a model with both primary workspaces ready for their tagged
@@ -848,7 +853,10 @@ func (m Model) command(pending effect) tea.Cmd {
 			}
 			newContent := provider.ReadReviewContent(comparison.NewSource, bounds.New)
 			document := review.BuildDocument(bounds, oldContent, newContent)
-			return reviewDocumentLoadedMsg{generation: generation, entry: entry, comparison: comparison, bounds: bounds, document: document}
+			return reviewDocumentLoadedMsg{
+				generation: generation, entry: entry, comparison: comparison, bounds: bounds,
+				document: document, lines: reviewReaderLines(entry.Path, document),
+			}
 		}
 	case effectLoadReviewFile:
 		provider, ok := m.source.(review.Provider)
@@ -858,7 +866,10 @@ func (m Model) command(pending effect) tea.Cmd {
 		generation, entry, comparison := pending.generation, pending.entry, pending.comparison
 		return func() tea.Msg {
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
-			return reviewFileLoadedMsg{generation: generation, entry: entry, comparison: comparison, content: content}
+			return reviewFileLoadedMsg{
+				generation: generation, entry: entry, comparison: comparison, content: content,
+				lines: reviewFileReaderLines(content, entry),
+			}
 		}
 	case effectVerifyReview:
 		provider, ok := m.source.(review.Provider)
@@ -885,14 +896,16 @@ func (m Model) command(pending effect) tea.Cmd {
 		generation := pending.generation
 		entry := pending.entry
 		return func() tea.Msg {
-			return fileLoadedMsg{generation: generation, entry: entry, file: source.ReadFile(entry)}
+			file := source.ReadFile(entry)
+			return fileLoadedMsg{generation: generation, entry: entry, file: file, lines: fileReaderLines(file, entry)}
 		}
 	case effectLoadDiff:
 		source := m.source
 		generation := pending.generation
 		entry := pending.entry
 		return func() tea.Msg {
-			return diffLoadedMsg{generation: generation, entry: entry, diff: source.ReadDiff(entry)}
+			diff := source.ReadDiff(entry)
+			return diffLoadedMsg{generation: generation, entry: entry, diff: diff, lines: diffReaderLines(diff)}
 		}
 	case effectLoadSummary:
 		source := m.source
@@ -974,9 +987,10 @@ func (m Model) command(pending effect) tea.Cmd {
 		stashSource := pending.stashSource
 		file := pending.changedFile
 		return func() tea.Msg {
+			document := source.ReadStashFile(stashSource, file)
 			return stashFileLoadedMsg{
 				generation: generation, oid: oid, fileIdentity: file.Identity(),
-				document: source.ReadStashFile(stashSource, file),
+				document: document, lines: changeDiffLines(document),
 			}
 		}
 	case effectQuit:

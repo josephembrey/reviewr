@@ -38,12 +38,11 @@ func fileReaderLines(file repository.File, entry repository.Entry) []ui.Line {
 		if file.Symlink {
 			return []ui.Line{{Text: "symlink → " + file.Content}}
 		}
-		rawLines := ui.SafeContentLines(file.Content)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
+		path := file.Path
+		if path == "" {
+			path = entry.Path
 		}
-		return lines
+		return highlightedSourceLines(path, file.Content)
 	case repository.FileMissing:
 		if entry.State == repository.FileDeleted {
 			return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
@@ -92,22 +91,7 @@ func changeDiffLines(document repository.ChangeDocument) []ui.Line {
 	if document.Old.Kind == repository.FileTooLarge || document.New.Kind == repository.FileTooLarge {
 		lines = append(lines, ui.Line{Text: "Stored file content exceeds the plain-reader limit; showing its bounded diff.", Tone: ui.ToneQuiet}, ui.Line{})
 	}
-	patch := fileReaderLines(document.Patch, repository.Entry{})
-	for _, line := range patch {
-		switch {
-		case strings.HasPrefix(line.Text, "@@"):
-			line.Tone = ui.ToneAccent
-		case strings.HasPrefix(line.Text, "+") && !strings.HasPrefix(line.Text, "+++"):
-			line.Tone = ui.ToneAdded
-		case strings.HasPrefix(line.Text, "-") && !strings.HasPrefix(line.Text, "---"):
-			line.Tone = ui.ToneRemoved
-		case strings.HasPrefix(line.Text, "diff "), strings.HasPrefix(line.Text, "index "),
-			strings.HasPrefix(line.Text, "---"), strings.HasPrefix(line.Text, "+++"):
-			line.Tone = ui.ToneQuiet
-		}
-		lines = append(lines, line)
-	}
-	return lines
+	return append(lines, unifiedDiffLines(document.Change.Path, document.Patch.Content)...)
 }
 
 func diffReaderLines(diff repository.Diff) []ui.Line {
@@ -116,12 +100,7 @@ func diffReaderLines(diff repository.Diff) []ui.Line {
 		if diff.Content == "" {
 			return []ui.Line{{Text: "No uncommitted diff for this file.", Tone: ui.ToneQuiet}}
 		}
-		rawLines := ui.SafeContentLines(diff.Content)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
-		}
-		return lines
+		return unifiedDiffLines(diff.Entry.Path, diff.Content)
 	case repository.DiffTooLarge:
 		return []ui.Line{{Text: fmt.Sprintf("Diff is too large (limit %d bytes).", repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
 	case repository.DiffUnavailable:
@@ -133,6 +112,41 @@ func diffReaderLines(diff repository.Diff) []ui.Line {
 	default:
 		return nil
 	}
+}
+
+func unifiedDiffLines(path, content string) []ui.Line {
+	rawLines := ui.SafeContentLines(content)
+	lines := make([]ui.Line, len(rawLines))
+	group := make([]diffCodeRow, 0, len(rawLines))
+	flush := func() {
+		decorateDiffGroup(path, lines, group)
+		group = group[:0]
+	}
+	for index, text := range rawLines {
+		lines[index].Text = text
+		switch {
+		case strings.HasPrefix(text, "@@"):
+			flush()
+			lines[index].Tone = ui.ToneAccent
+		case strings.HasPrefix(text, "+") && !strings.HasPrefix(text, "+++"):
+			lines[index].Tone = ui.ToneAdded
+			group = append(group, diffCodeRow{index: index, marker: "+", payload: text[1:], kind: diffAdded})
+		case strings.HasPrefix(text, "-") && !strings.HasPrefix(text, "---"):
+			lines[index].Tone = ui.ToneRemoved
+			group = append(group, diffCodeRow{index: index, marker: "-", payload: text[1:], kind: diffRemoved})
+		case strings.HasPrefix(text, " "):
+			group = append(group, diffCodeRow{index: index, marker: " ", payload: text[1:], kind: diffContext})
+		case strings.HasPrefix(text, "\\ No newline at end of file"):
+			lines[index].Tone = ui.ToneQuiet
+		default:
+			flush()
+			if text != "" {
+				lines[index].Tone = ui.ToneQuiet
+			}
+		}
+	}
+	flush()
+	return lines
 }
 
 func changeNotice(change repository.ChangedFile) []ui.Line {

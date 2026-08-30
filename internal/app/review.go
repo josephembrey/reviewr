@@ -121,6 +121,10 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, visibleR
 	state.place.ReaderOffset = reconcileLogicalLine(oldIdentities, oldOffset, newIdentities)
 	state.reviewCursor = reconcileLogicalLine(oldIdentities, oldCursor, newIdentities)
 	state.reviewSelectionAnchor = reconcileLogicalLine(oldIdentities, oldAnchor, newIdentities)
+	state.readerPresentation = msg.lines
+	if state.readerPresentation == nil {
+		state.readerPresentation = state.deriveReaderLines()
+	}
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	if !msg.document.Exact && msg.document.Reason != "" {
 		state.comparisonWarning = msg.document.Reason
@@ -147,6 +151,10 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	state.reader = repository.File{}
 	state.diff = repository.Diff{}
 	state.readerLoading = false
+	state.readerPresentation = msg.lines
+	if state.readerPresentation == nil {
+		state.readerPresentation = state.deriveReaderLines()
+	}
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"
@@ -381,15 +389,22 @@ func (state *filesState) rederiveReviews() {
 	}
 }
 
-func reviewReaderLines(document review.Document) []ui.Line {
+func reviewReaderLines(path string, document review.Document) []ui.Line {
 	lines := make([]ui.Line, len(document.Lines))
+	group := make([]diffCodeRow, 0, len(document.Lines))
 	for index, line := range document.Lines {
 		tone := ui.ToneDefault
+		kind := diffContext
+		marker := "  "
 		switch line.Kind {
 		case review.AddedLine:
 			tone = ui.ToneAdded
+			kind = diffAdded
+			marker = "+ "
 		case review.RemovedLine:
 			tone = ui.ToneRemoved
+			kind = diffRemoved
+			marker = "- "
 		case review.NoticeLine:
 			if !document.Exact {
 				tone = ui.ToneError
@@ -398,7 +413,11 @@ func reviewReaderLines(document review.Document) []ui.Line {
 			}
 		}
 		lines[index] = ui.Line{Text: line.Text, Tone: tone}
+		if line.Kind != review.NoticeLine && len(line.Text) >= len(marker) {
+			group = append(group, diffCodeRow{index: index, marker: marker, payload: line.Text[len(marker):], kind: kind})
+		}
 	}
+	decorateDiffGroup(path, lines, group)
 	return lines
 }
 
@@ -414,12 +433,7 @@ func reviewFileReaderLines(content review.Content, entry repository.Entry) []ui.
 		if content.Endpoint.Kind == review.Submodule {
 			return []ui.Line{{Text: "submodule → " + content.Text}}
 		}
-		rawLines := ui.SafeContentLines(content.Text)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
-		}
-		return lines
+		return highlightedSourceLines(entry.Path, content.Text)
 	case review.ContentAbsent:
 		return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
 	case review.ContentBinary:

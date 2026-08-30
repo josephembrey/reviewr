@@ -21,6 +21,7 @@ type filesState struct {
 	readerMode            workspace.ReaderMode
 	reader                repository.File
 	diff                  repository.Diff
+	readerPresentation    []ui.Line
 	reviewSnapshot        review.Snapshot
 	ledger                review.Ledger
 	store                 *review.Store
@@ -107,6 +108,10 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
+	state.readerPresentation = msg.lines
+	if state.readerPresentation == nil {
+		state.readerPresentation = state.deriveReaderLines()
+	}
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
 }
@@ -122,6 +127,10 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerLoading = false
+	state.readerPresentation = msg.lines
+	if state.readerPresentation == nil {
+		state.readerPresentation = state.deriveReaderLines()
+	}
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
 }
@@ -187,6 +196,7 @@ func (state *filesState) requestReader(entry repository.Entry, mode workspace.Re
 		state.reviewFile = review.Content{}
 		state.displayedComparison = nil
 		state.displayedBounds = nil
+		state.readerPresentation = nil
 	}
 	state.readerEntry = entry
 	state.readerMode = mode
@@ -330,6 +340,7 @@ func (state *filesState) clearReader() {
 	state.reviewFile = review.Content{}
 	state.displayedComparison = nil
 	state.displayedBounds = nil
+	state.readerPresentation = nil
 	state.requestedComparison = nil
 	state.requestedBounds = nil
 	state.readerLoading = false
@@ -436,9 +447,16 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 }
 
 func (state filesState) readerLines() []ui.Line {
+	if state.readerPresentation != nil {
+		return state.readerPresentation
+	}
+	return state.deriveReaderLines()
+}
+
+func (state filesState) deriveReaderLines() []ui.Line {
 	if state.readerMode == workspace.DiffReader {
 		if state.displayedBounds != nil {
-			return reviewReaderLines(state.reviewDocument)
+			return reviewReaderLines(state.readerEntry.Path, state.reviewDocument)
 		}
 		return (readerDocument{Diff: state.diff, Mode: state.readerMode}).lines()
 	}

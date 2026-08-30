@@ -20,14 +20,15 @@ type stashReaderPlace struct {
 type stashState struct {
 	place navigation.State
 
-	stashes      []repository.Stash
-	files        []repository.ChangedFile
-	fileSelected int
-	filesOID     string
-	reader       repository.ChangeDocument
-	readerOID    string
-	readerFileID string
-	readerPlaces map[string]stashReaderPlace
+	stashes            []repository.Stash
+	files              []repository.ChangedFile
+	fileSelected       int
+	filesOID           string
+	reader             repository.ChangeDocument
+	readerPresentation []ui.Line
+	readerOID          string
+	readerFileID       string
+	readerPlaces       map[string]stashReaderPlace
 
 	listGeneration   uint64
 	filesGeneration  uint64
@@ -128,6 +129,10 @@ func (state stashState) landReader(msg stashFileLoadedMsg, visibleRows int) stas
 	}
 	state.reader = msg.document
 	state.readerLoading = false
+	state.readerPresentation = msg.lines
+	if state.readerPresentation == nil {
+		state.readerPresentation = state.deriveReaderLines()
+	}
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	state.saveReaderPlace()
 	return state
@@ -195,6 +200,7 @@ func (state *stashState) requestSelectedFile(visibleRows int) effect {
 	state.readerLoading = true
 	if state.readerOID != stash.OID || state.readerFileID != fileIdentity {
 		state.reader = repository.ChangeDocument{}
+		state.readerPresentation = nil
 	}
 	state.readerOID = stash.OID
 	state.readerFileID = fileIdentity
@@ -231,6 +237,7 @@ func (state *stashState) clearFiles() {
 func (state *stashState) clearReader() {
 	state.readerGeneration++
 	state.reader = repository.ChangeDocument{}
+	state.readerPresentation = nil
 	state.readerOID = ""
 	state.readerFileID = ""
 	state.readerLoading = false
@@ -257,6 +264,13 @@ func (state stashState) selectedFileIdentity() string {
 }
 
 func (state stashState) readerLines() []ui.Line {
+	if state.readerPresentation != nil {
+		return state.readerPresentation
+	}
+	return state.deriveReaderLines()
+}
+
+func (state stashState) deriveReaderLines() []ui.Line {
 	if state.readerFileID == "" || state.reader.Change.Path == "" {
 		return nil
 	}

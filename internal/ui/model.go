@@ -24,8 +24,25 @@ const (
 
 // Line is one logical reader or empty-state line.
 type Line struct {
-	Text string
-	Tone Tone
+	Text  string
+	Tone  Tone
+	Spans []TextSpan
+}
+
+// TextStyle is a foreground-only token style. Backgrounds deliberately remain
+// owned by selection and diff presentation.
+type TextStyle struct {
+	Foreground string
+	Bold       bool
+	Italic     bool
+	Underline  bool
+}
+
+// TextSpan is one styled fragment within a reader line.
+type TextSpan struct {
+	Text  string
+	Tone  Tone
+	Style TextStyle
 }
 
 // Segment is one styled, single-line fragment in a compact row.
