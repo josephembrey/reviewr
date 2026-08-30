@@ -43,6 +43,29 @@ func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 	}
 }
 
+func TestFullyIgnoredDirectoriesAreDimmed(t *testing.T) {
+	t.Parallel()
+	state := loadedFilesState(t,
+		repository.Entry{Path: "ignored/cache/one.bin", State: repository.FileIgnored},
+		repository.Entry{Path: "ignored/cache/two.bin", State: repository.FileIgnored},
+		repository.Entry{Path: "mixed/ignored.log", State: repository.FileIgnored},
+		repository.Entry{Path: "mixed/tracked.go", State: repository.FileUnchanged},
+	)
+
+	rows := make(map[string]ui.NavigatorRow)
+	for _, row := range state.navigatorRows() {
+		rows[row.Identity] = row
+	}
+	ignored := rows[filetree.DirectoryIdentity("ignored/cache")]
+	if !ignored.Directory || ignored.Status != ui.StatusIgnored || !ignored.Dimmed {
+		t.Fatalf("fully ignored directory = %#v, want ignored presentation", ignored)
+	}
+	mixed := rows[filetree.DirectoryIdentity("mixed")]
+	if !mixed.Directory || mixed.Status == ui.StatusIgnored || mixed.Dimmed {
+		t.Fatalf("mixed directory = %#v, want ordinary presentation", mixed)
+	}
+}
+
 func TestFileTreeDefaultsMatchExplorerAndSourceControlScopes(t *testing.T) {
 	t.Parallel()
 	state := newFilesState()

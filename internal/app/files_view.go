@@ -32,7 +32,12 @@ func (state filesState) navigatorRows() []ui.NavigatorRow {
 				presentation.Reviewable = true
 				presentation.Review = state.reviewAssessment(row.Path, comparison).State
 			}
-		} else if row.Kind == filetree.Directory {
+		}
+		if row.Kind == filetree.Directory {
+			if state.directoryIgnored[row.Path] {
+				presentation.Status = ui.StatusIgnored
+				presentation.Dimmed = true
+			}
 			reviewed, changed := state.directoryReviewProgress(row.Path)
 			if changed > 0 {
 				presentation.Progress = fmt.Sprintf("%d/%d", reviewed, changed)

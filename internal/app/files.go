@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
@@ -10,14 +12,15 @@ import (
 )
 
 type filesState struct {
-	place          navigation.State
-	tree           filetree.Tree
-	folds          map[workspace.FileSet]filetree.FoldState
-	treeScope      workspace.FileSet
-	treeScopeReady bool
-	snapshot       repository.Snapshot
-	entries        []repository.Entry
-	entriesByPath  map[string]repository.Entry
+	place            navigation.State
+	tree             filetree.Tree
+	folds            map[workspace.FileSet]filetree.FoldState
+	treeScope        workspace.FileSet
+	treeScopeReady   bool
+	snapshot         repository.Snapshot
+	entries          []repository.Entry
+	entriesByPath    map[string]repository.Entry
+	directoryIgnored map[string]bool
 
 	readerEntry             repository.Entry
 	readerMode              workspace.ReaderMode
@@ -149,6 +152,7 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	state.folds[scope] = state.tree.Folds()
 	state.reconcileCursor(oldRows)
 	state.entries, state.entriesByPath = orderEntries(entries, state.tree.Files())
+	state.directoryIgnored = ignoredDirectories(state.entries)
 	if firstLoad && !hadSelection {
 		state.selectFirstVisibleFile()
 	}
@@ -326,6 +330,24 @@ func orderEntries(entries []repository.Entry, paths []string) ([]repository.Entr
 		}
 	}
 	return ordered, byPath
+}
+
+func ignoredDirectories(entries []repository.Entry) map[string]bool {
+	directories := make(map[string]bool)
+	for _, entry := range entries {
+		ignored := entry.State == repository.FileIgnored
+		parent := entry.Path
+		for {
+			separator := strings.LastIndexByte(parent, '/')
+			if separator < 0 {
+				break
+			}
+			parent = parent[:separator]
+			allIgnored, seen := directories[parent]
+			directories[parent] = ignored && (!seen || allIgnored)
+		}
+	}
+	return directories
 }
 
 func reconcileReaderEntry(old []repository.Entry, entry repository.Entry, current []repository.Entry) (repository.Entry, bool) {
