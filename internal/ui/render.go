@@ -32,6 +32,7 @@ var (
 	focusedTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	chromeStyle       = lipgloss.NewStyle().Foreground(secondaryColor)
 	mutedStyle        = lipgloss.NewStyle().Foreground(mutedColor)
+	readerFoldStyle   = lipgloss.NewStyle().Foreground(accentColor)
 	// Scrollbars follow Herdr's restrained three-level hierarchy while staying
 	// within reviewr's terminal ANSI roles.
 	scrollbarTrackStyle          = mutedStyle.Faint(true)
@@ -718,6 +719,9 @@ func renderReaderPayload(row ReaderRow, background color.Color) string {
 		text := SafeSingleLine(row.Text)
 		if background != nil {
 			return lipgloss.NewStyle().Background(background).Foreground(lipgloss.Black).Render(text)
+		}
+		if row.Kind == ReaderFold {
+			return readerFoldStyle.Render(text)
 		}
 		return renderToneText(text, row.Tone)
 	}

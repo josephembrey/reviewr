@@ -70,3 +70,11 @@ func TestReaderContextFoldsLeaveSmallRunsAlone(t *testing.T) {
 		t.Fatal("small context run was folded")
 	}
 }
+
+func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
+	t.Parallel()
+	row := ReaderRow{Kind: ReaderFold, Text: "… 12 unchanged lines …"}
+	if got, want := renderReaderPayload(row, nil), readerFoldStyle.Render(row.Text); got != want {
+		t.Fatalf("fold payload = %q, want normal-weight accent %q", got, want)
+	}
+}
