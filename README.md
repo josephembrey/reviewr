@@ -35,11 +35,7 @@ just check
 cmd/reviewr/       executable wiring
 internal/          Go application packages
 openspec/          active product specifications and changes
-legacy/            frozen Rust behavioral oracle and historical documentation
 ```
-
-The Rust oracle remains runnable with `just legacy build`, `just legacy dev`, and
-`just legacy run`. It is not the default location for new work.
 
 The file tree uses Nerd Font file and folder glyphs; terminals should use a Nerd Font for the
 intended one-cell alignment and filetype silhouettes.

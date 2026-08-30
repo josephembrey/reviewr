@@ -1,8 +1,6 @@
 # AGENTS.md
 
-reviewr is being rebuilt in Go as a Bubble Tea TUI. The Go application is the primary development
-target. The previous Rust application is frozen under `legacy/` as the behavioral oracle and remains
-the packaged implementation until packaging migrates separately.
+reviewr is a Go Bubble Tea TUI for reviewing repository changes beside coding agents.
 
 ## Commands
 
@@ -12,7 +10,6 @@ the packaged implementation until packaging migrates separately.
 - `just build` — build the Go application to `dist/reviewr`.
 - `just test` — run the Go tests and race detector.
 - `just check` — run all repository hooks, then the tests. This is the only CI command.
-- `just legacy build|dev|run [repository-path]` — build, develop, or run the frozen Rust oracle.
 
 Run a single Go test with `go test ./internal/<package> -run <name>`. The Nix development shell
 contains every command used by the Justfile and hooks.
@@ -47,17 +44,5 @@ Keyboard and mouse input become semantic actions before they mutate state. Rende
 testing consume one shared geometry calculation. Do not add placeholder packages for unimplemented
 features or recreate the Rust structure mechanically.
 
-## Legacy oracle
-
-`legacy/` is a self-contained Cargo project containing the Rust source, tests, syntax assets,
-toolchain, historical documentation, and Nix package derivation. It is read-only product history:
-integrate only important correctness fixes or behavior needed as a migration oracle. Do not
-reorganize or extend it.
-
-The legacy runtime remains useful for parity checks. Its architecture and detailed behavioral
-contracts are recorded in the existing change specs and tests. Preserve **No writes**, **Comments
-survive**, and **Continuity** whenever a legacy correctness fix is unavoidable.
-
-The default Nix package still launches the legacy binary until the Go implementation reaches
-packaging parity. Herdr is an optional runtime host for the standalone application; do not
-reintroduce plugin manifests, plugin-owned installation, or pane-lifecycle scripts.
+Herdr is an optional runtime host for the standalone application; do not reintroduce plugin
+manifests, plugin-owned installation, or pane-lifecycle scripts.

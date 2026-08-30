@@ -7,11 +7,6 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
-    crane.url = "github:ipetkov/crane";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs = inputs @ {flake-parts, ...}:
@@ -22,15 +17,8 @@
         "x86_64-linux"
       ];
 
-      perSystem = {system, ...}: let
-        pkgs = import inputs.nixpkgs {
-          inherit system;
-          overlays = [inputs.rust-overlay.overlays.default];
-        };
-        rustToolchainFor = p: p.rust-bin.fromRustupToolchainFile ./legacy/rust-toolchain.toml;
-        rustToolchain = rustToolchainFor pkgs;
-        craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchainFor;
-        reviewr = pkgs.callPackage ./legacy/package.nix {inherit craneLib;};
+      perSystem = {pkgs, ...}: let
+        reviewr = pkgs.callPackage ./package.nix {};
       in {
         packages = {
           default = reviewr;
@@ -48,7 +36,6 @@
             actionlint
             alejandra
             deadnix
-            rustToolchain
             go
             git
             just
