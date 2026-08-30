@@ -14,13 +14,13 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	changes := ChangeSummary{Ready: true}
 
 	files := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Changes: changes}))
-	if !strings.HasPrefix(files, "[files | g git | n notes] [uncommitted]") || strings.Contains(files, "[all]") || strings.Contains(files, "[file]") {
+	if !strings.HasPrefix(files, workspaceSwitcher) || !strings.HasSuffix(files, "[uncommitted]") || strings.Contains(files, "[all]") || strings.Contains(files, "[file]") {
 		t.Fatalf("Files header = %q", files)
 	}
 
 	controls := workspace.Controls{Files: workspace.ChangedFiles, Reader: workspace.DiffReader, Comparison: workspace.LastTurn}
 	files = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(files, "[files | g git | n notes] [last-turn]") || strings.Contains(files, "[changed]") || strings.Contains(files, "[diff]") {
+	if !strings.HasPrefix(files, workspaceSwitcher) || !strings.HasSuffix(files, "[last-turn]") || strings.Contains(files, "[changed]") || strings.Contains(files, "[diff]") {
 		t.Fatalf("cycled Files header = %q", files)
 	}
 
@@ -48,7 +48,7 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 func TestWideHeaderControlsExposeNumberKeys(t *testing.T) {
 	t.Parallel()
 	plain := ansi.Strip(Render(Model{Geometry: Calculate(120, 1), Workspace: workspace.Files}))
-	if !strings.HasPrefix(plain, "[files | g git | n notes]  3 [uncommitted]") || strings.Contains(plain, "1 [all]") || strings.Contains(plain, "2 [file]") {
+	if !strings.HasPrefix(plain, workspaceSwitcher) || !strings.HasSuffix(plain, "3 [uncommitted]") || strings.Contains(plain, "1 [all]") || strings.Contains(plain, "2 [file]") {
 		t.Fatalf("wide Files header = %q", plain)
 	}
 }
@@ -158,6 +158,9 @@ func TestHeaderControlHitsUsePaintedLayout(t *testing.T) {
 	if len(visible) != 1 || visible[0].hit != HitComparisonControl {
 		t.Fatalf("Files controls = %+v", visible)
 	}
+	if control := visible[0]; control.rect.X+control.rect.Width != geometry.Header.X+geometry.Header.Width {
+		t.Fatalf("comparison control is not right-aligned: %+v", control)
+	}
 	for _, control := range visible {
 		if got := geometry.HitTest(control.rect.X, 0, workspace.Files, controls, 0, 0, 0, 0).Kind; got != control.hit {
 			t.Fatalf("Files header x=%d hit %v, want %v", control.rect.X, got, control.hit)
@@ -183,11 +186,14 @@ func TestDiffHighlightControlStaysInHeaderAndShedsCompletely(t *testing.T) {
 		t.Fatalf("diff highlight control was not confined to the header: %q", frame)
 	}
 	visible := layoutHeaderControls(geometry, workspace.Files, controls)
-	if len(visible) != 2 || visible[1].hit != HitDiffHighlightControl {
+	if len(visible) != 2 || visible[0].hit != HitDiffHighlightControl || visible[1].hit != HitComparisonControl {
 		t.Fatalf("eligible controls = %+v", visible)
 	}
-	if hit := geometry.HitTest(visible[1].rect.X, visible[1].rect.Y, workspace.Files, controls, 0, 0, 0, 0); hit.Kind != HitDiffHighlightControl {
+	if hit := geometry.HitTest(visible[0].rect.X, visible[0].rect.Y, workspace.Files, controls, 0, 0, 0, 0); hit.Kind != HitDiffHighlightControl {
 		t.Fatalf("diff highlight hit = %+v", hit)
+	}
+	if control := visible[1]; control.rect.X+control.rect.Width != geometry.Header.X+geometry.Header.Width {
+		t.Fatalf("comparison control is not right-aligned: %+v", control)
 	}
 	controls.DiffHighlight = workspace.DiffHighlightBackground
 	if plain := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Files, Controls: controls})); !strings.Contains(strings.Split(plain, "\n")[0], "4 [background]") {
