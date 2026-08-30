@@ -58,6 +58,12 @@ const (
 	ReaderFold
 	ReaderFoldEnd
 	ReaderMarkdown
+	ReaderCommentHeader
+	ReaderCommentBody
+	ReaderCommentEnd
+	ReaderCommentComposerHeader
+	ReaderCommentComposerBody
+	ReaderCommentComposerEnd
 )
 
 // ReaderRow is one logical rich-reader row. Text and Spans contain code or
@@ -81,6 +87,56 @@ type ReaderRow struct {
 	FoldExpanded bool
 	// FoldTarget links a secondary fold control to the stable leading fold.
 	FoldTarget string
+	// VisualSelected is semantic linewise selection authored by the app. It is
+	// independent from the keyboard cursor and survives wrapping unchanged.
+	VisualSelected bool
+	// CommentHover replaces this source row's line number with the gutter [+]
+	// affordance. Only the first wrapped segment paints it.
+	CommentHover bool
+	// CommentID links all rows in one inline card or composer. The header is the
+	// card's only selectable row and its stable reader landmark.
+	CommentID string
+	// Comment anchor metadata is canonical-source information copied onto the
+	// header for disposable hunk intersection/ownership derivation only.
+	CommentOldSide bool
+	CommentStart   uint64
+	CommentEnd     uint64
+	CommentStale   bool
+	// ComposerCursor marks the insertion point within a pre-wrapped composer
+	// body row. ComposerCursorColumn is a terminal-cell boundary.
+	ComposerCursor       bool
+	ComposerCursorColumn int
+}
+
+// Commentable reports whether a row names an unambiguous source side/line.
+func (row ReaderRow) Commentable() bool {
+	switch row.Kind {
+	case ReaderFile, ReaderInsertion:
+		return row.NewLine > 0
+	case ReaderDeletion:
+		return row.OldLine > 0
+	case ReaderContext:
+		return row.NewLine > 0 || row.OldLine > 0
+	default:
+		return false
+	}
+}
+
+// Selectable reports whether ordinary reader motion may land on this row.
+// Comment bodies and framing belong to their first-class header row.
+func (row ReaderRow) Selectable() bool {
+	switch row.Kind {
+	case ReaderCommentBody, ReaderCommentEnd,
+		ReaderCommentComposerHeader, ReaderCommentComposerBody, ReaderCommentComposerEnd:
+		return false
+	default:
+		return true
+	}
+}
+
+// CommentHeaderIdentity returns the saved comment controlled by this row.
+func (row ReaderRow) CommentHeaderIdentity() (string, bool) {
+	return row.CommentID, row.Kind == ReaderCommentHeader && row.CommentID != ""
 }
 
 // ContextFoldIdentity returns the independently authored fold controlled by
@@ -140,6 +196,25 @@ func (document ReaderDocument) DiffEligible() bool {
 		}
 	}
 	return false
+}
+
+// SelectionTarget maps a painted auxiliary comment row back to its selectable
+// header. Other rows remain their own target.
+func (document ReaderDocument) SelectionTarget(index int) int {
+	if len(document.Rows) == 0 {
+		return 0
+	}
+	index = max(0, min(index, len(document.Rows)-1))
+	row := document.Rows[index]
+	if row.Selectable() || row.CommentID == "" {
+		return index
+	}
+	for candidate := index; candidate >= 0; candidate-- {
+		if document.Rows[candidate].Kind == ReaderCommentHeader && document.Rows[candidate].CommentID == row.CommentID {
+			return candidate
+		}
+	}
+	return index
 }
 
 // GutterDigits is stable for the whole document and includes hidden/future
@@ -277,8 +352,13 @@ type Model struct {
 	// ReaderOffset's stable logical row.
 	ReaderColumn int
 	// ReaderCursor is the selected logical row in a structured file reader.
-	ReaderCursor  int
-	FooterWarning string
+	ReaderCursor           int
+	FooterWarning          string
+	ReaderVisualSelection  bool
+	ReaderComposingComment bool
+	ReaderCommentHeader    bool
+	ReaderCommentExpanded  bool
+	ReaderCommentable      bool
 
 	Notes       notes.Presentation
 	NotesStatus string

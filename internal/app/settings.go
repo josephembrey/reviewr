@@ -80,11 +80,36 @@ const (
 )
 
 // readerNavigationLandmark is the policy boundary between reader features and
-// [/]. Current readers produce hunk landmarks; inline comment headers can join
-// the same ordered stream once that feature lands.
+// [/]. Hunk starts and stable inline-comment headers share this ordered stream.
 type readerNavigationLandmark struct {
-	row  int
-	kind readerNavigationLandmarkKind
+	row      int
+	kind     readerNavigationLandmarkKind
+	identity string
+}
+
+// readerNavigationLandmarks turns disposable reader positions into the one
+// ordered policy stream consumed by Settings. Comment entries retain their
+// stable card identity so their selectable header remains the landmark even
+// when wrapping, folding, or refresh changes rendered row positions.
+func readerNavigationLandmarks(document ui.ReaderDocument) []readerNavigationLandmark {
+	hunks := document.HunkNavigationTargets()
+	landmarks := make([]readerNavigationLandmark, 0, len(hunks))
+	for _, row := range hunks {
+		landmarks = append(landmarks, readerNavigationLandmark{row: row, kind: readerHunkLandmark})
+	}
+	for row, candidate := range document.Rows {
+		if identity, ok := candidate.CommentHeaderIdentity(); ok && candidate.Selectable() {
+			landmarks = append(landmarks, readerNavigationLandmark{
+				row:      row,
+				kind:     readerCommentLandmark,
+				identity: identity,
+			})
+		}
+	}
+	sort.SliceStable(landmarks, func(left, right int) bool {
+		return landmarks[left].row < landmarks[right].row
+	})
+	return landmarks
 }
 
 func (state settingsState) hunkNavigationTargets(landmarks []readerNavigationLandmark) []int {

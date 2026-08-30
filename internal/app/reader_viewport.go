@@ -14,6 +14,7 @@ type readerViewportKey struct {
 	rows            ui.Rect
 	source          *ui.ReaderDocument
 	contextRevision uint64
+	readerRevision  uint64
 }
 
 // readerViewport keeps input routing and painting on one wrapped geometry.
@@ -35,6 +36,7 @@ func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
 	case m.active == workspace.Files:
 		key.source = m.files.activeReaderPresentation()
 		key.contextRevision = m.files.readerContext.revision
+		key.readerRevision = m.files.readerRevision
 	default:
 		return readerViewportKey{}, false
 	}
@@ -166,7 +168,7 @@ func (m *Model) moveActiveReaderPage(delta int) {
 	targetVisual := max(0, min(visualCursor+delta, layout.Total-1))
 	target, _ := layout.SourceOffset(targetVisual)
 	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
-	place.ReaderCursor = target
+	m.selectActiveReaderLine(target)
 }
 
 func (m *Model) selectActiveReaderBoundary(end bool) {
@@ -195,7 +197,7 @@ func (m *Model) selectActiveReaderViewport(position int) {
 		targetVisual = bottom
 	}
 	target, _ := layout.SourceOffset(targetVisual)
-	m.activePlace().ReaderCursor = target
+	m.selectActiveReaderLine(target)
 }
 
 func (m *Model) selectActiveReaderLine(index int) {
@@ -204,7 +206,90 @@ func (m *Model) selectActiveReaderLine(index int) {
 		return
 	}
 	place := m.activePlace()
-	place.ReaderCursor = max(0, min(index, len(document.Rows)-1))
+	index = max(0, min(index, len(document.Rows)-1))
+	if m.active == workspace.Files && m.files.visualSelection != nil {
+		m.selectFilesVisualLine(document, index)
+		return
+	}
+	place.ReaderCursor = selectableReaderTarget(document, place.ReaderCursor, index)
+	m.ensureActiveReaderSelectionVisible()
+}
+
+func selectableReaderTarget(document ui.ReaderDocument, current, target int) int {
+	if len(document.Rows) == 0 {
+		return 0
+	}
+	current = max(0, min(current, len(document.Rows)-1))
+	target = max(0, min(target, len(document.Rows)-1))
+	if document.Rows[target].Selectable() {
+		return target
+	}
+	direction := 1
+	if target < current {
+		direction = -1
+	}
+	for index := target; index >= 0 && index < len(document.Rows); index += direction {
+		if document.Rows[index].Selectable() {
+			return index
+		}
+	}
+	return document.SelectionTarget(target)
+}
+
+// selectFilesVisualLine moves only the active source endpoint. A diff-side
+// selection fixes its side from the anchor; presentation rows are skipped and
+// motion stops before the first real source row that lacks that side. This is
+// the intentionally simple mixed deletion/addition boundary rule.
+func (m *Model) selectFilesVisualLine(document ui.ReaderDocument, target int) {
+	selection := m.files.visualSelection
+	if selection == nil || len(document.Rows) == 0 {
+		return
+	}
+	current, ok := findReaderSource(document, selection.Side, selection.Active)
+	if !ok {
+		return
+	}
+	target = max(0, min(target, len(document.Rows)-1))
+	direction := 1
+	if target < current {
+		direction = -1
+	} else if target == current {
+		m.files.place.ReaderCursor = current
+		return
+	}
+	last := current
+	advance := func(index int) (stop bool) {
+		row := document.Rows[index]
+		if !row.Commentable() {
+			return false
+		}
+		_, line, compatible := readerSourceAt(document, index, &selection.Side)
+		if !compatible {
+			return true
+		}
+		last = index
+		selection.Active = line
+		return false
+	}
+	for index := current + direction; ; index += direction {
+		if index < 0 || index >= len(document.Rows) || advance(index) {
+			break
+		}
+		if index == target {
+			break
+		}
+	}
+	// A hunk target or inline card is presentation-only. When no source row was
+	// reached, continue to the nearest source in the requested direction.
+	if last == current && !document.Rows[target].Commentable() {
+		for index := target + direction; index >= 0 && index < len(document.Rows); index += direction {
+			if advance(index) || document.Rows[index].Commentable() {
+				break
+			}
+		}
+	}
+	m.files.place.ReaderCursor = last
+	m.files.readerRevision++
 	m.ensureActiveReaderSelectionVisible()
 }
 
@@ -224,17 +309,15 @@ func (m *Model) ensureActiveReaderSelectionVisible() {
 	}
 }
 
-func (m *Model) selectActiveReaderHunk(delta int) {
+func (m *Model) selectActiveReaderLandmark(delta int) {
 	document, ok := m.activeReaderDocument()
 	if !ok || delta == 0 {
 		return
 	}
-	hunks := document.HunkNavigationTargets()
-	landmarks := make([]readerNavigationLandmark, len(hunks))
-	for index, row := range hunks {
-		landmarks[index] = readerNavigationLandmark{row: row, kind: readerHunkLandmark}
+	targets := m.settings.hunkNavigationTargets(readerNavigationLandmarks(document))
+	if m.active == workspace.Files && m.files.visualSelection != nil {
+		targets = visualHunkTargets(document)
 	}
-	targets := m.settings.hunkNavigationTargets(landmarks)
 	if len(targets) == 0 {
 		return
 	}
@@ -259,6 +342,24 @@ func (m *Model) selectActiveReaderHunk(delta int) {
 		return
 	}
 	m.selectActiveReaderLine(target)
+}
+
+func visualHunkTargets(document ui.ReaderDocument) []int {
+	starts := document.HunkStarts()
+	targets := make([]int, 0, len(starts))
+	for index, start := range starts {
+		end := len(document.Rows)
+		if index+1 < len(starts) {
+			end = starts[index+1]
+		}
+		for row := start; row < end; row++ {
+			if document.Rows[row].Commentable() {
+				targets = append(targets, row)
+				break
+			}
+		}
+	}
+	return targets
 }
 
 func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {

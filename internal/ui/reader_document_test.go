@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -139,6 +140,24 @@ func TestSelectedSidebarDiffBarsKeepTheirSemanticColor(t *testing.T) {
 	}
 }
 
+func TestVisualLineSelectionPreservesBackgroundDiffStatusColor(t *testing.T) {
+	t.Parallel()
+	geometry := CalculateReaderGeometry(Rect{Width: 30, Height: 1}, ReaderDocument{Kind: ReaderDiffDocument}, false)
+	for _, row := range []ReaderRow{
+		{Kind: ReaderInsertion, Text: "added", NewLine: 2, VisualSelected: true},
+		{Kind: ReaderDeletion, Text: "removed", OldLine: 2, VisualSelected: true},
+	} {
+		rendered := renderReaderRowPartSelected(row, geometry, workspace.DiffHighlightBackground, false, true, true)
+		if plain := ansi.Strip(rendered); plain != ansi.Strip(renderReaderRow(row, geometry, workspace.DiffHighlightBackground)) {
+			t.Fatalf("Visual treatment changed diff content: %q", plain)
+		}
+		assertEveryPrintableHasChangeBackground(t, rendered, row.Kind)
+		if !strings.Contains(rendered, "[1;4;") && !strings.Contains(rendered, "[4;1;") {
+			t.Fatalf("Visual treatment is not clearly emphasized: %q", rendered)
+		}
+	}
+}
+
 func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
@@ -212,6 +231,108 @@ func TestReaderLayoutMapsWrappedVisualScrollToLogicalPlace(t *testing.T) {
 		if source == 0 && continued && row.NewLine != 10 {
 			t.Fatalf("continuation lost source identity: %+v", row)
 		}
+	}
+}
+
+func TestCommentGutterHoverRendersAndHitsOnlyFirstCommentableSegment(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{
+		{Identity: "source", Kind: ReaderFile, Text: "a very long commentable source line", NewLine: 7, CommentHover: true},
+		{Identity: "fold", Kind: ReaderFold, Text: "folded"},
+		{Identity: "comment", Kind: ReaderCommentHeader, Text: "a.go:7", CommentID: "comment:1"},
+		{Identity: "notice", Kind: ReaderNotice, Text: "notice"},
+	}}
+	layout := CalculateReaderLayout(Rect{X: 11, Y: 4, Width: 12, Height: 8}, document)
+	if layout.starts[1]-layout.starts[0] < 2 {
+		t.Fatalf("source did not wrap: %+v", layout)
+	}
+	x := layout.Geometry.LineNumber.X
+	y := layout.Geometry.Rows.Y
+	if source, ok := layout.CommentGutterSourceAt(x, y, 0); !ok || source != 0 {
+		t.Fatalf("first source gutter hit = (%d,%v)", source, ok)
+	}
+	if source, ok := layout.CommentGutterSourceAt(x, y+1, 0); ok {
+		t.Fatalf("wrapped continuation hit source %d", source)
+	}
+	first, _, continuation := layout.RowWithSource(0)
+	if continuation || !strings.Contains(ansi.Strip(renderReaderRowPart(first, layout.Geometry, workspace.DiffHighlightSidebar, false)), "[+]") {
+		t.Fatal("first hovered source segment did not render [+]")
+	}
+	continued, _, continuation := layout.RowWithSource(1)
+	if !continuation || strings.Contains(ansi.Strip(renderReaderRowPart(continued, layout.Geometry, workspace.DiffHighlightSidebar, true)), "[+]") {
+		t.Fatal("wrapped continuation repeated [+]")
+	}
+	for source := 1; source < len(document.Rows); source++ {
+		visual := layout.VisualOffset(source, 0)
+		if hit, ok := layout.CommentGutterSourceAt(x, y+visual, 0); ok {
+			t.Fatalf("presentation row %d produced gutter source %d", source, hit)
+		}
+	}
+}
+
+func TestHoveredBackgroundDiffGutterKeepsFillAndAffordanceEmphasis(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{{
+		Kind: ReaderDeletion, Text: "removed", OldLine: 12, CommentHover: true,
+	}}}
+	geometry := CalculateReaderGeometry(Rect{Width: 24, Height: 1}, document, false)
+	rendered := renderReaderRow(document.Rows[0], geometry, workspace.DiffHighlightBackground)
+	if !strings.Contains(ansi.Strip(rendered), "[+]") {
+		t.Fatalf("hovered deletion lacks [+]: %q", rendered)
+	}
+	assertEveryPrintableHasChangeBackground(t, rendered, ReaderDeletion)
+	if !strings.Contains(rendered, "[1;4;") && !strings.Contains(rendered, "[4;1;") {
+		t.Fatalf("background affordance is not bold/underlined: %q", rendered)
+	}
+}
+
+func TestInlineCommentCardIsSelectableRoundedAndWrapsWithoutLoss(t *testing.T) {
+	t.Parallel()
+	body := "a comment body that must wrap without losing cells"
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{
+		{Identity: "comment:1:header", Kind: ReaderCommentHeader, Text: "src/a.go:4-6", CommentID: "comment:1", FoldExpanded: true},
+		{Identity: "comment:1:body:0", Kind: ReaderCommentBody, Text: body, CommentID: "comment:1"},
+		{Identity: "comment:1:end", Kind: ReaderCommentEnd, CommentID: "comment:1"},
+	}}
+	layout := CalculateReaderLayout(Rect{Width: 22, Height: 8}, document)
+	if !document.Rows[0].Selectable() || document.Rows[1].Selectable() || document.Rows[2].Selectable() {
+		t.Fatalf("comment row selectability = %v/%v/%v", document.Rows[0].Selectable(), document.Rows[1].Selectable(), document.Rows[2].Selectable())
+	}
+	var joined strings.Builder
+	for visual := layout.starts[1]; visual < layout.starts[2]; visual++ {
+		row, _, _ := layout.RowWithSource(visual)
+		joined.WriteString(row.Text)
+	}
+	if joined.String() != body {
+		t.Fatalf("wrapped card body = %q, want %q", joined.String(), body)
+	}
+	header := ansi.Strip(renderReaderRowPartSelected(document.Rows[0], layout.Geometry, workspace.DiffHighlightSidebar, false, true, true))
+	cardBody := ansi.Strip(renderReaderRowPart(document.Rows[1], layout.Geometry, workspace.DiffHighlightSidebar, false))
+	end := ansi.Strip(renderReaderRowPart(document.Rows[2], layout.Geometry, workspace.DiffHighlightSidebar, false))
+	if !strings.Contains(header, "╭─") || !strings.Contains(header, "comment · src/") ||
+		!strings.Contains(cardBody, "│ ") || !strings.Contains(end, "╰") {
+		t.Fatalf("rounded card = %q / %q / %q", header, cardBody, end)
+	}
+}
+
+func TestCommentHunkOwnershipIsDerivedAndAllowsZeroIntersections(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
+		{Identity: "hunk:1", Kind: ReaderMetadata, Text: "@@ -10 +10 @@"},
+		{Identity: "add:10", Kind: ReaderInsertion, Text: "changed", NewLine: 10},
+		{Identity: "context:20", Kind: ReaderContext, Text: "outside", OldLine: 20, NewLine: 20},
+		{Identity: "comment:outside", Kind: ReaderCommentHeader, CommentID: "outside", CommentStart: 20, CommentEnd: 20},
+		{Identity: "hunk:2", Kind: ReaderMetadata, Text: "@@ -30 +30 @@"},
+		{Identity: "add:30", Kind: ReaderInsertion, Text: "changed", NewLine: 30},
+		{Identity: "comment:inside", Kind: ReaderCommentHeader, CommentID: "inside", CommentStart: 30, CommentEnd: 30},
+	}}
+	outside := document.CommentHunkOwnership(3)
+	if outside.Owner != 1 || len(outside.Intersections) != 0 {
+		t.Fatalf("outside comment must have disposable owner and zero intersections: %+v", outside)
+	}
+	inside := document.CommentHunkOwnership(6)
+	if inside.Owner != 1 || !reflect.DeepEqual(inside.Intersections, []int{1}) {
+		t.Fatalf("inside ownership = %+v", inside)
 	}
 }
 

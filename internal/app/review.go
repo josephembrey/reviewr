@@ -61,6 +61,7 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	if !state.acceptsReviewDocument(msg) {
 		return state
 	}
+	oldDocument := state.rawReaderDocument()
 	oldRows := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	oldCursor := state.place.ReaderCursor
@@ -80,6 +81,7 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
+	state.reconcileCommentInteraction(oldDocument)
 	state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
 	if !msg.document.Exact && msg.document.Reason != "" {
@@ -108,6 +110,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	if !state.acceptsReviewFile(msg) {
 		return state
 	}
+	oldDocument := state.rawReaderDocument()
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	oldCursor := state.place.ReaderCursor
@@ -129,6 +132,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	state.rebuildMarkdownPreview(state.markdownRows)
 	state.readerContext.reconcile(state.rawReaderDocument())
 	state.readerLoadedKey = state.readerRequestKey
+	state.reconcileCommentInteraction(oldDocument)
 	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
 	if msg.content.Endpoint != comparison.New {

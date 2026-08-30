@@ -137,6 +137,72 @@ func (document ReaderDocument) HunkNavigationTargets() []int {
 	return starts
 }
 
+// HunkOwnership is disposable presentation metadata for one comment header.
+// Intersections indexes hunks whose changed source lines overlap the comment;
+// Owner is the nearest hunk landmark even when Intersections is empty.
+type HunkOwnership struct {
+	Intersections []int
+	Owner         int
+}
+
+// CommentHunkOwnership derives hunk relationships without putting a hunk id
+// into canonical comment state. Unchanged-context and File-mode comments are
+// therefore valid first-class anchors with zero intersections.
+func (document ReaderDocument) CommentHunkOwnership(header int) HunkOwnership {
+	relation := HunkOwnership{Owner: -1}
+	if header < 0 || header >= len(document.Rows) || document.Rows[header].Kind != ReaderCommentHeader {
+		return relation
+	}
+	targets := document.HunkNavigationTargets()
+	if len(targets) == 0 {
+		return relation
+	}
+	bestDistance := len(document.Rows) + 1
+	for index, target := range targets {
+		distance := target - header
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			bestDistance = distance
+			relation.Owner = index
+		}
+		end := len(document.Rows)
+		if index+1 < len(targets) {
+			end = targets[index+1]
+		}
+		if commentIntersectsChangedRows(document.Rows[header], document.Rows[target:end]) {
+			relation.Intersections = append(relation.Intersections, index)
+		}
+	}
+	return relation
+}
+
+func commentIntersectsChangedRows(comment ReaderRow, rows []ReaderRow) bool {
+	low, high := comment.CommentStart, comment.CommentEnd
+	if low > high {
+		low, high = high, low
+	}
+	for _, row := range rows {
+		var line uint64
+		if comment.CommentOldSide {
+			if row.Kind != ReaderDeletion {
+				continue
+			}
+			line = row.OldLine
+		} else {
+			if row.Kind != ReaderInsertion {
+				continue
+			}
+			line = row.NewLine
+		}
+		if line >= low && line <= high {
+			return true
+		}
+	}
+	return false
+}
+
 func (document ReaderDocument) contextFoldRows(progresses map[string]int, defaultProgress, steps int) []ReaderRow {
 	if document.Kind != ReaderDiffDocument || len(document.Rows) == 0 {
 		return document.Rows

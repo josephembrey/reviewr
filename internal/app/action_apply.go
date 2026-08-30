@@ -33,6 +33,20 @@ func (m *Model) apply(action Action) effect {
 		m.settings.selectDelta(-1)
 	case ToggleSelectedSetting:
 		m.settings.toggleSelected()
+	case CommentInsert,
+		CommentBackspace,
+		CommentDelete,
+		CommentMoveLeft,
+		CommentMoveRight,
+		CommentMoveUp,
+		CommentMoveDown,
+		CommentMoveWordLeft,
+		CommentMoveWordRight,
+		CommentMoveHome,
+		CommentMoveEnd,
+		CommentSubmit,
+		CommentCancel:
+		m.applyCommentAction(action)
 	case Reload:
 		return m.reloadActiveWorkspace()
 	case Resize,
@@ -50,16 +64,22 @@ func (m *Model) apply(action Action) effect {
 		SelectPreviousFile,
 		ExpandNavigatorSelection,
 		CollapseNavigatorSelection,
-		ExpandReaderContext,
-		CollapseReaderContext,
+		ExpandReaderFold,
+		CollapseReaderFold,
 		ToggleReaderFold,
-		SelectNextHunk,
-		SelectPreviousHunk,
+		SelectNextLandmark,
+		SelectPreviousLandmark,
 		MoveReaderSelection,
 		MoveReaderPage,
 		SelectReaderBoundary,
 		SelectReaderViewport,
 		SelectReaderLine,
+		StartVisualLine,
+		CancelVisualLine,
+		ComposeComment,
+		ComposeCommentAtLine,
+		SetCommentHover,
+		ClearCommentHover,
 		ScrollReader:
 		return m.applyReaderAction(action)
 	default:
@@ -276,18 +296,18 @@ func (m *Model) applyReaderAction(action Action) effect {
 		return m.applyNavigatorExpansion(true)
 	case CollapseNavigatorSelection:
 		return m.applyNavigatorExpansion(false)
-	case ExpandReaderContext:
-		return m.setActiveReaderContextFold(true)
-	case CollapseReaderContext:
-		return m.setActiveReaderContextFold(false)
+	case ExpandReaderFold:
+		return m.setActiveReaderFold(true)
+	case CollapseReaderFold:
+		return m.setActiveReaderFold(false)
 	case ToggleReaderFold:
 		m.activePlace().Focus = navigation.FocusReader
 		m.selectActiveReaderLine(action.Index)
-		return m.toggleActiveReaderContextFold(action.Identity)
-	case SelectNextHunk:
-		m.selectActiveReaderHunk(1)
-	case SelectPreviousHunk:
-		m.selectActiveReaderHunk(-1)
+		return m.toggleActiveReaderFold(action.Identity)
+	case SelectNextLandmark:
+		m.selectActiveReaderLandmark(1)
+	case SelectPreviousLandmark:
+		m.selectActiveReaderLandmark(-1)
 	case MoveReaderSelection:
 		m.moveActiveReaderSelection(action.Amount)
 	case MoveReaderPage:
@@ -299,6 +319,22 @@ func (m *Model) applyReaderAction(action Action) effect {
 	case SelectReaderLine:
 		m.activePlace().Focus = navigation.FocusReader
 		m.selectActiveReaderLine(action.Index)
+	case StartVisualLine:
+		m.files.startVisualSelection(m.files.place.ReaderCursor)
+	case CancelVisualLine:
+		m.cancelFilesVisualSelection()
+	case ComposeComment:
+		m.files.beginComment(m.files.place.ReaderCursor, false, m.geometry)
+		m.ensureCommentComposerVisible()
+	case ComposeCommentAtLine:
+		m.files.place.Focus = navigation.FocusReader
+		m.selectActiveReaderLine(action.Index)
+		m.files.beginComment(m.files.place.ReaderCursor, true, m.geometry)
+		m.ensureCommentComposerVisible()
+	case SetCommentHover:
+		m.files.setCommentHover(action.Index)
+	case ClearCommentHover:
+		m.files.clearCommentHover()
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
 	}

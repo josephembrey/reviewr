@@ -3,8 +3,10 @@ package app
 import (
 	"strings"
 
+	"github.com/josephembrey/reviewr/internal/comments"
 	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/ui"
@@ -31,6 +33,14 @@ type filesState struct {
 	markdownPreviewPaths map[string]bool
 	markdownRows         ui.Rect
 	readerContext        readerContextState
+	comments             comments.Store
+	commentFolds         map[string]bool
+	commentEditor        notes.Editor
+	commentDraft         *commentDraft
+	visualSelection      *visualLineSelection
+	commentHover         *commentHover
+	commentDraftSequence uint64
+	readerRevision       uint64
 	restoredReaderRows   []string
 	reviewSnapshot       review.Snapshot
 	ledger               review.Ledger
@@ -79,6 +89,8 @@ func newFilesState() filesState {
 		comparisonCache:      make(map[string]comparisonCacheEntry),
 		readerCache:          make(map[readerCacheSlot]readerCacheEntry),
 		markdownPreviewPaths: make(map[string]bool),
+		commentFolds:         make(map[string]bool),
+		commentEditor:        notes.NewEditor(),
 	}
 }
 

@@ -94,6 +94,7 @@ func (m *Model) applyLayoutAction(action Action) {
 // clamping only the coordinates made invalid by the new shared geometry.
 func (m *Model) resizeWorkspaceState() {
 	m.files.resizeMarkdownPreview(m.geometry.ReaderRows)
+	m.files.resizeCommentComposer(m.geometry)
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
