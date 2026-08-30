@@ -47,6 +47,14 @@ func (state *historyState) reload(traversal workspace.GitTraversal, startOID str
 	}
 }
 
+func (state *historyState) poll(traversal workspace.GitTraversal, startOID string) effect {
+	state.listGeneration++
+	return effect{
+		kind: effectLoadCommits, generation: state.listGeneration,
+		query: commitQuery(traversal, startOID), background: true,
+	}
+}
+
 func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (historyState, effect) {
 	if msg.generation != state.listGeneration {
 		return state, effect{}
@@ -55,11 +63,14 @@ func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (hi
 	state.listLoading = false
 	state.traversal = traversalForQuery(msg.query)
 	if msg.err != nil {
+		if msg.background {
+			return state, effect{}
+		}
 		state.listError = msg.err
 		return state, effect{}
 	}
 	state.listError = nil
-	_, hadSelection := state.place.SelectedIdentity()
+	oldSelection, hadSelection := state.place.SelectedIdentity()
 	state.commits = append([]repository.Commit(nil), msg.commits...)
 	state.rows = buildCommitRows(state.commits, state.traversal)
 	identities := make([]string, len(state.commits))
@@ -83,6 +94,10 @@ func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (hi
 		state.summaryLoading = false
 		state.summaryError = nil
 		state.place.ReaderOffset = 0
+		return state, effect{}
+	}
+	if selected, ok := state.place.SelectedIdentity(); msg.background && ok && hadSelection && selected == oldSelection &&
+		state.summaryOID == selected && (state.summary.OID != "" || state.summaryLoading) {
 		return state, effect{}
 	}
 	return state, state.requestSelectedSummary()

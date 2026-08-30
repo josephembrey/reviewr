@@ -83,6 +83,30 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	second.waitFor(t, "another reviewr is editing")
 }
 
+func TestPTYAutomaticallyRefreshesChangedFileWithoutMovingTheUser(t *testing.T) {
+	if testing.Short() {
+		t.Skip("PTY smoke test")
+	}
+	repository := t.TempDir()
+	mustRunGit(t, repository, "init", "-q")
+	mustRunGit(t, repository, "config", "user.name", "Reviewr Test")
+	mustRunGit(t, repository, "config", "user.email", "reviewr@example.invalid")
+	mustWriteFixture(t, repository, "main.go", []byte("package main\nconst Value = \"committed0\"\n"))
+	mustRunGit(t, repository, "add", "--", ".")
+	mustRunGit(t, repository, "commit", "-qm", "fixture")
+	mustWriteFixture(t, repository, "main.go", []byte("package main\nconst Value = \"poll-first\"\n"))
+
+	session := startPTYReviewr(t, repository, t.TempDir(), 80, 16)
+	t.Cleanup(session.stop)
+	session.waitFor(t, "poll-first")
+	session.write(t, "\t")
+	session.resetOutput()
+	mustWriteFixture(t, repository, "main.go", []byte("package main\nconst Value = \"poll-other\"\n"))
+	// Bubble Tea emits only the changed cell run ("other"); the existing
+	// "poll-" prefix remains on the terminal screen.
+	session.waitFor(t, "other")
+}
+
 func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY smoke test")

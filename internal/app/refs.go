@@ -52,6 +52,11 @@ func (state *refsState) reload() effect {
 	return effect{kind: effectLoadRefSources, generation: state.sourceGeneration}
 }
 
+func (state *refsState) poll() effect {
+	state.sourceGeneration++
+	return effect{kind: effectLoadRefSources, generation: state.sourceGeneration, background: true}
+}
+
 func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (refsState, effect) {
 	if msg.generation != state.sourceGeneration {
 		return state, effect{}
@@ -60,6 +65,9 @@ func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (re
 	state.loaded = true
 	state.sourceLoading = false
 	if msg.err != nil {
+		if msg.background {
+			return state, effect{}
+		}
 		state.sourceError = msg.err
 		return state, effect{}
 	}
@@ -94,6 +102,9 @@ func (state refsState) landSources(msg refSourcesLoadedMsg, visibleRows int) (re
 	state.selected = state.sources[target].ID
 	state.place.EnsureSelectionVisible(visibleRows)
 	preserve := !firstLoad && state.selected == oldSelected
+	if msg.background && preserve {
+		return state, state.requestPreviewQuiet(state.sources[target])
+	}
 	return state, state.requestPreview(state.sources[target], preserve)
 }
 
@@ -103,6 +114,9 @@ func (state refsState) landPreview(msg refCommitsLoadedMsg, visibleRows int) ref
 	}
 	state.previewLoading = false
 	if msg.err != nil {
+		if msg.background {
+			return state
+		}
 		state.previewError = msg.err
 		return state
 	}
@@ -156,6 +170,16 @@ func (state *refsState) requestPreview(source repository.RefSource, preserve boo
 		kind:       effectLoadRefCommits,
 		generation: state.previewGeneration,
 		refSource:  source,
+	}
+}
+
+func (state *refsState) requestPreviewQuiet(source repository.RefSource) effect {
+	state.previewGeneration++
+	state.previewSource = source.ID
+	state.preservePreview = true
+	return effect{
+		kind: effectLoadRefCommits, generation: state.previewGeneration,
+		refSource: source, background: true,
 	}
 }
 

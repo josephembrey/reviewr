@@ -55,6 +55,11 @@ func (state *stashState) reload() effect {
 	return effect{kind: effectLoadStashes, generation: state.listGeneration}
 }
 
+func (state *stashState) poll() effect {
+	state.listGeneration++
+	return effect{kind: effectLoadStashes, generation: state.listGeneration, background: true}
+}
+
 func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stashState, effect) {
 	if msg.generation != state.listGeneration {
 		return state, effect{}
@@ -62,10 +67,14 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 	state.loaded = true
 	state.listLoading = false
 	if msg.err != nil {
+		if msg.background {
+			return state, effect{}
+		}
 		state.listError = msg.err
 		return state, effect{}
 	}
 	state.listError = nil
+	oldOID, hadSelection := state.place.SelectedIdentity()
 	state.saveReaderPlace()
 	state.stashes = append([]repository.Stash(nil), msg.stashes...)
 	identities := make([]string, len(state.stashes))
@@ -78,6 +87,9 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 		state.clearFiles()
 		return state, effect{}
 	}
+	if selectedOID, ok := state.place.SelectedIdentity(); msg.background && ok && hadSelection && selectedOID == oldOID {
+		return state, state.requestSelectedFilesQuiet()
+	}
 	return state, state.requestSelectedFiles()
 }
 
@@ -88,6 +100,9 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 	}
 	state.filesLoading = false
 	if msg.err != nil {
+		if msg.background {
+			return state, effect{}
+		}
 		state.filesError = msg.err
 		state.clearReader()
 		return state, effect{}
@@ -118,6 +133,9 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 	} else if oldIdentity != identity {
 		state.place.ReaderOffset = 0
 	}
+	if msg.background && identity == oldIdentity {
+		return state, state.requestSelectedFileQuiet()
+	}
 	return state, state.requestSelectedFile(visibleRows)
 }
 
@@ -127,12 +145,15 @@ func (state stashState) landReader(msg stashFileLoadedMsg, visibleRows int) stas
 		msg.oid != state.readerOID || msg.fileIdentity != state.readerFileID {
 		return state
 	}
+	oldLines := readerLineIdentities(state.readerLines())
+	oldOffset := state.place.ReaderOffset
 	state.reader = msg.document
 	state.readerLoading = false
 	state.readerPresentation = msg.lines
 	if state.readerPresentation == nil {
 		state.readerPresentation = state.deriveReaderLines()
 	}
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	state.saveReaderPlace()
 	return state
@@ -188,6 +209,19 @@ func (state *stashState) requestSelectedFiles() effect {
 	return effect{kind: effectLoadStashFiles, generation: state.filesGeneration, identity: stash.OID, stashSource: stash.Source}
 }
 
+func (state *stashState) requestSelectedFilesQuiet() effect {
+	stash, ok := state.selectedStash()
+	if !ok {
+		return effect{}
+	}
+	state.filesGeneration++
+	state.filesOID = stash.OID
+	return effect{
+		kind: effectLoadStashFiles, generation: state.filesGeneration,
+		identity: stash.OID, stashSource: stash.Source, background: true,
+	}
+}
+
 func (state *stashState) requestSelectedFile(visibleRows int) effect {
 	stash, stashOK := state.selectedStash()
 	if !stashOK || state.fileSelected < 0 || state.fileSelected >= len(state.files) {
@@ -208,6 +242,21 @@ func (state *stashState) requestSelectedFile(visibleRows int) effect {
 	return effect{
 		kind: effectLoadStashFile, generation: state.readerGeneration, identity: stash.OID,
 		stashSource: stash.Source, changedFile: change,
+	}
+}
+
+func (state *stashState) requestSelectedFileQuiet() effect {
+	stash, stashOK := state.selectedStash()
+	if !stashOK || state.fileSelected < 0 || state.fileSelected >= len(state.files) {
+		return effect{}
+	}
+	change := state.files[state.fileSelected]
+	state.readerGeneration++
+	state.readerOID = stash.OID
+	state.readerFileID = change.Identity()
+	return effect{
+		kind: effectLoadStashFile, generation: state.readerGeneration,
+		identity: stash.OID, stashSource: stash.Source, changedFile: change, background: true,
 	}
 }
 

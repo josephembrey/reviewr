@@ -48,6 +48,7 @@ type Model struct {
 	stashes   stashState
 	summary   summaryState
 	note      scratchState
+	poll      repositoryPollState
 
 	reviewStateRoot string
 }
@@ -89,6 +90,8 @@ type effect struct {
 	stashSource repository.ChangeSource
 	changedFile repository.ChangedFile
 	text        string
+	background  bool
+	activity    uint64
 
 	scope            string
 	reviewGeneration uint64
@@ -108,6 +111,8 @@ type snapshotLoadedMsg struct {
 	reviewSnapshot   review.Snapshot
 	reviewErr        error
 	reviewCapable    bool
+	background       bool
+	activity         uint64
 }
 
 type reviewSnapshotLoadedMsg struct {
@@ -132,6 +137,8 @@ type reviewDocumentLoadedMsg struct {
 	bounds     review.Bounds
 	document   review.Document
 	lines      []ui.Line
+	background bool
+	activity   uint64
 }
 
 type reviewFileLoadedMsg struct {
@@ -140,6 +147,8 @@ type reviewFileLoadedMsg struct {
 	comparison review.FileComparison
 	content    review.Content
 	lines      []ui.Line
+	background bool
+	activity   uint64
 }
 
 type reviewVerifiedMsg struct {
@@ -161,6 +170,8 @@ type fileLoadedMsg struct {
 	entry      repository.Entry
 	file       repository.File
 	lines      []ui.Line
+	background bool
+	activity   uint64
 }
 
 type diffLoadedMsg struct {
@@ -168,12 +179,16 @@ type diffLoadedMsg struct {
 	entry      repository.Entry
 	diff       repository.Diff
 	lines      []ui.Line
+	background bool
+	activity   uint64
 }
 
 type summaryLoadedMsg struct {
 	generation uint64
 	summary    repository.ChangeSummary
 	err        error
+	background bool
+	activity   uint64
 }
 
 type commitsLoadedMsg struct {
@@ -181,6 +196,8 @@ type commitsLoadedMsg struct {
 	commits    []repository.Commit
 	err        error
 	query      repository.CommitQuery
+	background bool
+	activity   uint64
 }
 
 type commitLoadedMsg struct {
@@ -188,6 +205,8 @@ type commitLoadedMsg struct {
 	oid        string
 	summary    repository.CommitSummary
 	err        error
+	background bool
+	activity   uint64
 }
 
 type scratchLoadedMsg struct {
@@ -208,6 +227,8 @@ type refSourcesLoadedMsg struct {
 	generation uint64
 	sources    []repository.RefSource
 	err        error
+	background bool
+	activity   uint64
 }
 
 type refCommitsLoadedMsg struct {
@@ -215,12 +236,16 @@ type refCommitsLoadedMsg struct {
 	sourceID   repository.RefSourceID
 	commits    []repository.RefCommit
 	err        error
+	background bool
+	activity   uint64
 }
 
 type stashesLoadedMsg struct {
 	generation uint64
 	stashes    []repository.Stash
 	err        error
+	background bool
+	activity   uint64
 }
 
 type stashFilesLoadedMsg struct {
@@ -228,6 +253,8 @@ type stashFilesLoadedMsg struct {
 	oid        string
 	files      []repository.ChangedFile
 	err        error
+	background bool
+	activity   uint64
 }
 
 type stashFileLoadedMsg struct {
@@ -236,6 +263,8 @@ type stashFileLoadedMsg struct {
 	fileIdentity string
 	document     repository.ChangeDocument
 	lines        []ui.Line
+	background   bool
+	activity     uint64
 }
 
 // New creates a model with both primary workspaces ready for their tagged
@@ -283,11 +312,20 @@ func (m Model) Init() tea.Cmd {
 	if _, ok := m.source.(review.Provider); ok {
 		commands = append(commands, m.command(effect{kind: effectLoadReviewState}))
 	}
+	if _, ok := m.source.(repositoryPoller); ok {
+		commands = append(commands, scheduleRepositoryPoll())
+	}
 	return tea.Batch(commands...)
 }
 
 // Update routes external input to one semantic action and lands tagged results.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case repositoryPollTickMsg:
+		return m, m.beginRepositoryPoll()
+	case repositoryPolledMsg:
+		return m, m.landRepositoryPoll(msg)
+	}
 	if !ui.MeetsMinimumSize(m.geometry.Screen.Width, m.geometry.Screen.Height) {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.WindowSizeMsg:
@@ -296,6 +334,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok || (action.Kind != Resize && action.Kind != Quit && action.Kind != FinishPaneResize && action.Kind != FinishScrollbarDrag) {
 				return m, nil
 			}
+			m.noteRepositoryActivity()
 			pending := m.apply(action)
 			return m, m.command(pending)
 		}
@@ -306,7 +345,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var pending effect
 	switch msg := msg.(type) {
 	case snapshotLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.files, pending = m.files.landSnapshot(msg, m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
+		if msg.background {
+			pending = tagRepositoryPoll(pending, msg.activity)
+		}
 		return m, m.command(pending)
 	case reviewSnapshotLoadedMsg:
 		m.files, pending = m.files.landReviewSnapshot(msg, m.controls.Reader, m.geometry.NavigatorRows.Height)
@@ -315,9 +360,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.files, pending = m.files.landReviewState(msg, m.controls.Reader)
 		return m, m.command(pending)
 	case reviewDocumentLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.files = m.files.landReviewDocument(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case reviewFileLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.files = m.files.landReviewFile(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case reviewVerifiedMsg:
@@ -327,18 +378,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.files, pending = m.files.landReviewPersisted(msg)
 		return m, m.command(pending)
 	case fileLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case diffLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case summaryLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.summary = m.summary.land(msg)
 		return m, nil
 	case commitsLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.history, pending = m.history.landCommits(msg, m.geometry.NavigatorRows.Height)
+		if msg.background {
+			pending = tagRepositoryPoll(pending, msg.activity)
+		}
 		return m, m.command(pending)
 	case commitLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case scratchLoadedMsg:
@@ -354,18 +423,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.command(next)
 	case refSourcesLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.refs, pending = m.refs.landSources(msg, m.geometry.NavigatorRows.Height)
+		if msg.background {
+			pending = tagRepositoryPoll(pending, msg.activity)
+		}
 		return m, m.command(pending)
 	case refCommitsLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.refs = m.refs.landPreview(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case stashesLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.stashes, pending = m.stashes.landStashes(msg, m.geometry.NavigatorRows.Height)
+		if msg.background {
+			pending = tagRepositoryPoll(pending, msg.activity)
+		}
 		return m, m.command(pending)
 	case stashFilesLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.stashes, pending = m.stashes.landFiles(msg, m.geometry.ReaderRows.Height)
+		if msg.background {
+			pending = tagRepositoryPoll(pending, msg.activity)
+		}
 		return m, m.command(pending)
 	case stashFileLoadedMsg:
+		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
+			return m, nil
+		}
 		m.stashes = m.stashes.landReader(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	}
@@ -381,6 +474,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	m.noteRepositoryActivity()
 	pending = m.apply(action)
 	command := m.command(pending)
 	if action.Kind == Reload {
@@ -800,9 +894,14 @@ func (m Model) command(pending effect) tea.Cmd {
 		generation := pending.generation
 		reviewGeneration := pending.reviewGeneration
 		scope := pending.scope
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			snapshot, err := source.Snapshot()
-			message := snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err, reviewGeneration: reviewGeneration}
+			message := snapshotLoadedMsg{
+				generation: generation, snapshot: snapshot, err: err,
+				reviewGeneration: reviewGeneration, background: background, activity: activity,
+			}
 			provider, ok := source.(review.Provider)
 			if err == nil && ok {
 				message.reviewCapable = true
@@ -844,6 +943,7 @@ func (m Model) command(pending effect) tea.Cmd {
 		}
 		generation, entry := pending.generation, pending.entry
 		comparison, bounds, retained := pending.comparison, pending.bounds, pending.retained
+		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			var oldContent review.Content
 			if retained != nil && bounds.Old != comparison.Old {
@@ -855,7 +955,7 @@ func (m Model) command(pending effect) tea.Cmd {
 			document := review.BuildDocument(bounds, oldContent, newContent)
 			return reviewDocumentLoadedMsg{
 				generation: generation, entry: entry, comparison: comparison, bounds: bounds,
-				document: document, lines: reviewReaderLines(entry.Path, document),
+				document: document, lines: reviewReaderLines(entry.Path, document), background: background, activity: activity,
 			}
 		}
 	case effectLoadReviewFile:
@@ -864,11 +964,12 @@ func (m Model) command(pending effect) tea.Cmd {
 			return nil
 		}
 		generation, entry, comparison := pending.generation, pending.entry, pending.comparison
+		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
 			return reviewFileLoadedMsg{
 				generation: generation, entry: entry, comparison: comparison, content: content,
-				lines: reviewFileReaderLines(content, entry),
+				lines: reviewFileReaderLines(content, entry), background: background, activity: activity,
 			}
 		}
 	case effectVerifyReview:
@@ -895,40 +996,59 @@ func (m Model) command(pending effect) tea.Cmd {
 		source := m.source
 		generation := pending.generation
 		entry := pending.entry
+		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			file := source.ReadFile(entry)
-			return fileLoadedMsg{generation: generation, entry: entry, file: file, lines: fileReaderLines(file, entry)}
+			return fileLoadedMsg{
+				generation: generation, entry: entry, file: file, lines: fileReaderLines(file, entry),
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadDiff:
 		source := m.source
 		generation := pending.generation
 		entry := pending.entry
+		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			diff := source.ReadDiff(entry)
-			return diffLoadedMsg{generation: generation, entry: entry, diff: diff, lines: diffReaderLines(diff)}
+			return diffLoadedMsg{
+				generation: generation, entry: entry, diff: diff, lines: diffReaderLines(diff),
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadSummary:
 		source := m.source
 		generation := pending.generation
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			summary, err := source.WorktreeSummary()
-			return summaryLoadedMsg{generation: generation, summary: summary, err: err}
+			return summaryLoadedMsg{generation: generation, summary: summary, err: err, background: background, activity: activity}
 		}
 	case effectLoadCommits:
 		source := m.source
 		generation := pending.generation
 		query := pending.query
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			commits, err := source.ListCommits(query)
-			return commitsLoadedMsg{generation: generation, commits: commits, err: err, query: query}
+			return commitsLoadedMsg{
+				generation: generation, commits: commits, err: err, query: query,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadCommit:
 		source := m.source
 		generation := pending.generation
 		oid := pending.identity
+		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			summary, err := source.ReadCommit(oid)
-			return commitLoadedMsg{generation: generation, oid: oid, summary: summary, err: err}
+			return commitLoadedMsg{
+				generation: generation, oid: oid, summary: summary, err: err,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadScratch:
 		store := m.note.store
@@ -952,33 +1072,53 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectLoadRefSources:
 		source := m.source
 		generation := pending.generation
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			sources, err := source.ListRefSources()
-			return refSourcesLoadedMsg{generation: generation, sources: sources, err: err}
+			return refSourcesLoadedMsg{
+				generation: generation, sources: sources, err: err,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadRefCommits:
 		source := m.source
 		generation := pending.generation
 		refSource := pending.refSource
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			commits, err := source.ListRefCommits(refSource)
-			return refCommitsLoadedMsg{generation: generation, sourceID: refSource.ID, commits: commits, err: err}
+			return refCommitsLoadedMsg{
+				generation: generation, sourceID: refSource.ID, commits: commits, err: err,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadStashes:
 		source := m.source
 		generation := pending.generation
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			stashes, err := source.ListStashes()
-			return stashesLoadedMsg{generation: generation, stashes: stashes, err: err}
+			return stashesLoadedMsg{
+				generation: generation, stashes: stashes, err: err,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadStashFiles:
 		source := m.source
 		generation := pending.generation
 		oid := pending.identity
 		stashSource := pending.stashSource
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			files, err := source.ListStashFiles(stashSource)
-			return stashFilesLoadedMsg{generation: generation, oid: oid, files: files, err: err}
+			return stashFilesLoadedMsg{
+				generation: generation, oid: oid, files: files, err: err,
+				background: background, activity: activity,
+			}
 		}
 	case effectLoadStashFile:
 		source := m.source
@@ -986,11 +1126,14 @@ func (m Model) command(pending effect) tea.Cmd {
 		oid := pending.identity
 		stashSource := pending.stashSource
 		file := pending.changedFile
+		background := pending.background
+		activity := pending.activity
 		return func() tea.Msg {
 			document := source.ReadStashFile(stashSource, file)
 			return stashFileLoadedMsg{
 				generation: generation, oid: oid, fileIdentity: file.Identity(),
 				document: document, lines: changeDiffLines(document),
+				background: background, activity: activity,
 			}
 		}
 	case effectQuit:

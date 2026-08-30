@@ -74,6 +74,15 @@ func (state *filesState) reload() effect {
 	return effect{kind: effectLoadSnapshot, generation: state.listGeneration, reviewGeneration: state.reviewGeneration}
 }
 
+func (state *filesState) poll(scope string) effect {
+	state.listGeneration++
+	state.reviewGeneration++
+	return effect{
+		kind: effectLoadSnapshot, generation: state.listGeneration,
+		reviewGeneration: state.reviewGeneration, scope: scope, background: true,
+	}
+}
+
 func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.FileSet, mode workspace.ReaderMode, visibleRows int) (filesState, effect) {
 	if msg.generation != state.listGeneration {
 		return state, effect{}
@@ -82,18 +91,23 @@ func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.File
 	state.loaded = true
 	state.listLoading = false
 	if msg.err != nil {
+		if msg.background {
+			return state, effect{}
+		}
 		state.listError = msg.err
 		return state, effect{}
 	}
 	state.listError = nil
 	state.snapshot = msg.snapshot
-	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration {
+	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration && (!msg.background || msg.reviewErr == nil) {
 		state.reviewSnapshot = msg.reviewSnapshot
 		state.reviewScope = msg.reviewSnapshot.Scope
-		state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
+		if !msg.background {
+			state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
+		}
 		state.rederiveReviews()
 	}
-	pending := state.project(scope, mode, visibleRows, firstLoad, true)
+	pending := state.project(scope, mode, visibleRows, firstLoad, true, msg.background)
 	return state, pending
 }
 
@@ -101,6 +115,8 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
+	oldLines := readerLineIdentities(state.readerLines())
+	oldOffset := state.place.ReaderOffset
 	state.reader = msg.file
 	state.diff = repository.Diff{}
 	state.reviewDocument = review.Document{}
@@ -112,6 +128,7 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	if state.readerPresentation == nil {
 		state.readerPresentation = state.deriveReaderLines()
 	}
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
 }
@@ -120,6 +137,8 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}
+	oldLines := readerLineIdentities(state.readerLines())
+	oldOffset := state.place.ReaderOffset
 	state.diff = msg.diff
 	state.reader = repository.File{}
 	state.reviewDocument = review.Document{}
@@ -131,6 +150,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	if state.readerPresentation == nil {
 		state.readerPresentation = state.deriveReaderLines()
 	}
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
 }
@@ -142,10 +162,10 @@ func (state *filesState) switchScope(scope workspace.FileSet, mode workspace.Rea
 		state.readerMode = mode
 		return effect{}
 	}
-	return state.project(scope, mode, visibleRows, false, false)
+	return state.project(scope, mode, visibleRows, false, false, false)
 }
 
-func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderMode, visibleRows int, firstLoad, refresh bool) effect {
+func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderMode, visibleRows int, firstLoad, refresh, background bool) effect {
 	oldRows := state.tree.Rows()
 	oldEntries := append([]repository.Entry(nil), state.entries...)
 	oldReader := state.readerEntry
@@ -180,6 +200,9 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 		return effect{}
 	}
 	if refresh || entry.Path != oldReader.Path || state.readerMode != mode {
+		if background {
+			return state.requestReaderQuiet(entry, mode)
+		}
 		return state.requestReader(entry, mode)
 	}
 	state.readerEntry = entry
@@ -188,6 +211,14 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 }
 
 func (state *filesState) requestReader(entry repository.Entry, mode workspace.ReaderMode) effect {
+	return state.requestReaderWithLoading(entry, mode, true)
+}
+
+func (state *filesState) requestReaderQuiet(entry repository.Entry, mode workspace.ReaderMode) effect {
+	return state.requestReaderWithLoading(entry, mode, false)
+}
+
+func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode workspace.ReaderMode, loading bool) effect {
 	state.contentGeneration++
 	if state.readerEntry.Path != entry.Path || state.readerMode != mode {
 		state.reader = repository.File{}
@@ -200,7 +231,7 @@ func (state *filesState) requestReader(entry repository.Entry, mode workspace.Re
 	}
 	state.readerEntry = entry
 	state.readerMode = mode
-	state.readerLoading = true
+	state.readerLoading = loading
 	state.requestedComparison = nil
 	state.requestedBounds = nil
 	kind := effectLoadFile
@@ -229,6 +260,16 @@ func (state *filesState) requestReader(entry repository.Entry, mode workspace.Re
 		kind = effectLoadDiff
 	}
 	return effect{kind: kind, generation: state.contentGeneration, entry: entry}
+}
+
+func readerLineIdentities(lines []ui.Line) []string {
+	identities := make([]string, len(lines))
+	occurrences := make(map[string]int, len(lines))
+	for index, line := range lines {
+		occurrences[line.Text]++
+		identities[index] = fmt.Sprintf("%s\x00%d", line.Text, occurrences[line.Text])
+	}
+	return identities
 }
 
 func (state *filesState) requestMode(mode workspace.ReaderMode) effect {

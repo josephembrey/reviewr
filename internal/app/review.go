@@ -142,6 +142,8 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	if !ok || current != msg.comparison {
 		return state
 	}
+	oldLines := readerLineIdentities(state.readerLines())
+	oldOffset := state.place.ReaderOffset
 	state.reviewFile = msg.content
 	state.reviewDocument = review.Document{}
 	comparison := msg.comparison
@@ -155,6 +157,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	if state.readerPresentation == nil {
 		state.readerPresentation = state.deriveReaderLines()
 	}
+	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerLineIdentities(state.readerLines()))
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"

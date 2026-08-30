@@ -124,6 +124,13 @@ type Repository struct {
 	maxBytes int64
 }
 
+// StateFingerprint is the observable Git state used by the application's
+// background poller.
+type StateFingerprint struct {
+	Worktree string
+	Refs     string
+}
+
 // Open resolves path to its containing worktree.
 func Open(path string) (*Repository, error) {
 	client := gitadapter.New()
@@ -137,6 +144,16 @@ func Open(path string) (*Repository, error) {
 // Root returns the resolved absolute worktree root.
 func (r *Repository) Root() string {
 	return r.root
+}
+
+// PollState detects external repository changes without reading file bodies or
+// including reviewr's private refs.
+func (r *Repository) PollState() (StateFingerprint, error) {
+	state, err := r.git.PollState(r.root)
+	if err != nil {
+		return StateFingerprint{}, err
+	}
+	return StateFingerprint{Worktree: state.Worktree, Refs: state.Refs}, nil
 }
 
 // CommonDir returns the canonical absolute Git common directory used for
