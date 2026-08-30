@@ -63,32 +63,89 @@ func Render(model Model) string {
 		}
 	}
 	if g.Footer.Height > 0 {
-		footer := "j/k or ↑/↓ navigate  •  tab focus  •  z swap  •  r refresh  •  q quit"
-		if model.Workspace == workspace.Files {
-			footer = "j/k move • h/l fold • z swap • x review • R bounds • X next gap • r refresh • q quit"
-		}
-		if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
-			footer = "j/k move stashes • f/F move files • tab focus • z swap • r refresh • q quit"
-		}
-		if model.Workspace == workspace.Scratch {
-			footer = SafeSingleLine(model.ScratchStatus)
-			if model.ScratchHasWorktree {
-				footer += "  •  ctrl+t scope"
-			}
-		}
-		style := chromeStyle
-		if model.Workspace == workspace.Files && model.FooterWarning != "" {
-			footer = SafeSingleLine(model.FooterWarning)
-			style = errorStyle
-		} else if model.Workspace == workspace.Scratch && model.ScratchError {
-			style = errorStyle
-		}
-		blocks = append(blocks, fit(style.Render(footer), g.Footer.Width))
+		blocks = append(blocks, renderFooter(model))
 	}
 	if len(blocks) == 0 {
 		return ""
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, blocks...)
+}
+
+type footerEntry struct {
+	key   string
+	label string
+}
+
+func renderFooter(model Model) string {
+	width := model.Geometry.Footer.Width
+	if model.Workspace == workspace.Files && model.FooterWarning != "" {
+		return fit(errorStyle.Render(SafeSingleLine(model.FooterWarning)), width)
+	}
+	if model.Workspace == workspace.Scratch {
+		style := chromeStyle
+		if model.ScratchError {
+			style = errorStyle
+		}
+		footer := style.Render(SafeSingleLine(model.ScratchStatus))
+		if model.ScratchHasWorktree {
+			footer += renderFooterSeparator() + renderFooterEntry(footerEntry{key: "ctrl+t", label: "scope"})
+		}
+		return fit(footer, width)
+	}
+
+	entries := []footerEntry{
+		{key: "j/k or ↑/↓", label: "navigate"},
+		{key: "tab", label: "focus"},
+		{key: "z", label: "swap"},
+		{key: "r", label: "refresh"},
+		{key: "q", label: "quit"},
+	}
+	if model.Workspace == workspace.Files {
+		entries = []footerEntry{
+			{key: "j/k", label: "move"},
+			{key: "h/l", label: "fold"},
+			{key: "z", label: "swap"},
+			{key: "x", label: "review"},
+			{key: "R", label: "bounds"},
+			{key: "X", label: "next gap"},
+			{key: "r", label: "refresh"},
+			{key: "q", label: "quit"},
+		}
+	}
+	if model.Workspace == workspace.Git && model.Controls.Git == workspace.GitStashes {
+		entries = []footerEntry{
+			{key: "j/k", label: "move stashes"},
+			{key: "f/F", label: "move files"},
+			{key: "tab", label: "focus"},
+			{key: "z", label: "swap"},
+			{key: "r", label: "refresh"},
+			{key: "q", label: "quit"},
+		}
+	}
+	return fit(renderFooterEntries(entries), width)
+}
+
+func renderFooterEntries(entries []footerEntry) string {
+	var rendered strings.Builder
+	for index, entry := range entries {
+		if index > 0 {
+			rendered.WriteString(renderFooterSeparator())
+		}
+		rendered.WriteString(renderFooterEntry(entry))
+	}
+	return rendered.String()
+}
+
+func renderFooterEntry(entry footerEntry) string {
+	key := headerStyle.Render(SafeSingleLine(entry.key))
+	if entry.label == "" {
+		return key
+	}
+	return key + chromeStyle.Render(" "+SafeSingleLine(entry.label))
+}
+
+func renderFooterSeparator() string {
+	return mutedStyle.Render(" • ")
 }
 
 func renderHeader(model Model) string {

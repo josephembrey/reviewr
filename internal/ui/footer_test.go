@@ -1,0 +1,40 @@
+package ui
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/josephembrey/reviewr/internal/workspace"
+)
+
+func TestFooterSeparatesKeyLabelAndSeparatorStyles(t *testing.T) {
+	t.Parallel()
+	geometry := Calculate(120, 20)
+	frame := Render(Model{Geometry: geometry, Workspace: workspace.Files})
+	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
+
+	if !strings.Contains(footer, headerStyle.Render("j/k")) {
+		t.Fatalf("footer key does not use accent treatment: %q", footer)
+	}
+	if !strings.Contains(footer, chromeStyle.Render(" move")) {
+		t.Fatalf("footer label does not use readable text treatment: %q", footer)
+	}
+	if !strings.Contains(footer, mutedStyle.Render(" • ")) {
+		t.Fatalf("footer separator does not use subdued treatment: %q", footer)
+	}
+}
+
+func TestScratchScopeShortcutUsesFooterKeyLabelTreatment(t *testing.T) {
+	t.Parallel()
+	geometry := Calculate(80, 14)
+	frame := Render(Model{
+		Geometry:           geometry,
+		Workspace:          workspace.Scratch,
+		ScratchStatus:      "Ln 1, Col 1  •  saved",
+		ScratchHasWorktree: true,
+	})
+	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
+	if !strings.Contains(footer, headerStyle.Render("ctrl+t")) || !strings.Contains(footer, chromeStyle.Render(" scope")) {
+		t.Fatalf("Scratch scope shortcut lacks key/label treatment: %q", footer)
+	}
+}
