@@ -13,21 +13,26 @@ import (
 // content and immutable commit-like changes.
 type readerDocument struct {
 	File   repository.File
+	Entry  repository.Entry
+	Diff   repository.Diff
 	Change *repository.ChangeDocument
 	Mode   workspace.ReaderMode
 }
 
 func (document readerDocument) lines() []ui.Line {
-	if document.Change == nil {
-		return fileReaderLines(document.File)
+	if document.Change != nil {
+		if document.Mode == workspace.FileReader {
+			return changedFileLines(*document.Change)
+		}
+		return changeDiffLines(*document.Change)
 	}
-	if document.Mode == workspace.FileReader {
-		return changedFileLines(*document.Change)
+	if document.Mode == workspace.DiffReader {
+		return diffReaderLines(document.Diff)
 	}
-	return changeDiffLines(*document.Change)
+	return fileReaderLines(document.File, document.Entry)
 }
 
-func fileReaderLines(file repository.File) []ui.Line {
+func fileReaderLines(file repository.File, entry repository.Entry) []ui.Line {
 	switch file.Kind {
 	case repository.FileReady:
 		if file.Symlink {
@@ -40,6 +45,9 @@ func fileReaderLines(file repository.File) []ui.Line {
 		}
 		return lines
 	case repository.FileMissing:
+		if entry.State == repository.FileDeleted {
+			return []ui.Line{{Text: "File was deleted from the worktree.", Tone: ui.ToneError}}
+		}
 		return []ui.Line{{Text: "File is missing from the worktree.", Tone: ui.ToneError}}
 	case repository.FileUnreadable:
 		detail := ""
@@ -60,7 +68,7 @@ func changedFileLines(document repository.ChangeDocument) []ui.Line {
 	if document.Change.Kind == repository.ChangeDeleted {
 		return []ui.Line{{Text: "Deleted file; no stored result content.", Tone: ui.ToneQuiet}}
 	}
-	return fileReaderLines(document.New)
+	return fileReaderLines(document.New, repository.Entry{})
 }
 
 func changeDiffLines(document repository.ChangeDocument) []ui.Line {
@@ -84,7 +92,7 @@ func changeDiffLines(document repository.ChangeDocument) []ui.Line {
 	if document.Old.Kind == repository.FileTooLarge || document.New.Kind == repository.FileTooLarge {
 		lines = append(lines, ui.Line{Text: "Stored file content exceeds the plain-reader limit; showing its bounded diff.", Tone: ui.ToneQuiet}, ui.Line{})
 	}
-	patch := fileReaderLines(document.Patch)
+	patch := fileReaderLines(document.Patch, repository.Entry{})
 	for _, line := range patch {
 		switch {
 		case strings.HasPrefix(line.Text, "@@"):
@@ -100,6 +108,31 @@ func changeDiffLines(document repository.ChangeDocument) []ui.Line {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func diffReaderLines(diff repository.Diff) []ui.Line {
+	switch diff.Kind {
+	case repository.DiffReady:
+		if diff.Content == "" {
+			return []ui.Line{{Text: "No uncommitted diff for this file.", Tone: ui.ToneQuiet}}
+		}
+		rawLines := ui.SafeContentLines(diff.Content)
+		lines := make([]ui.Line, len(rawLines))
+		for index, line := range rawLines {
+			lines[index] = ui.Line{Text: line}
+		}
+		return lines
+	case repository.DiffTooLarge:
+		return []ui.Line{{Text: fmt.Sprintf("Diff is too large (limit %d bytes).", repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
+	case repository.DiffUnavailable:
+		detail := ""
+		if diff.Err != nil {
+			detail = ": " + diff.Err.Error()
+		}
+		return []ui.Line{{Text: "Diff is unavailable" + detail, Tone: ui.ToneError}}
+	default:
+		return nil
+	}
 }
 
 func changeNotice(change repository.ChangedFile) []ui.Line {

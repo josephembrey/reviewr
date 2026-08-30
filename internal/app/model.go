@@ -14,11 +14,14 @@ import (
 
 // Source is the exact read-only repository contract consumed by the TUI.
 type Source interface {
-	ListFiles() ([]string, error)
-	ReadFile(path string) repository.File
+	Snapshot() (repository.Snapshot, error)
+	ReadFile(entry repository.Entry) repository.File
+	ReadDiff(entry repository.Entry) repository.Diff
 	WorktreeSummary() (repository.ChangeSummary, error)
-	ListCommits() ([]repository.Commit, error)
+	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
+	ListRefSources() ([]repository.RefSource, error)
+	ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error)
 	ListStashes() ([]repository.Stash, error)
 	ListStashFiles(source repository.ChangeSource) ([]repository.ChangedFile, error)
 	ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument
@@ -38,6 +41,7 @@ type Model struct {
 	geometry  ui.Geometry
 	files     filesState
 	history   historyState
+	refs      refsState
 	stashes   stashState
 	summary   summaryState
 }
@@ -46,11 +50,14 @@ type effectKind uint8
 
 const (
 	effectNone effectKind = iota
-	effectLoadFiles
+	effectLoadSnapshot
 	effectLoadFile
+	effectLoadDiff
 	effectLoadSummary
 	effectLoadCommits
 	effectLoadCommit
+	effectLoadRefSources
+	effectLoadRefCommits
 	effectLoadStashes
 	effectLoadStashFiles
 	effectLoadStashFile
@@ -61,20 +68,29 @@ type effect struct {
 	kind        effectKind
 	generation  uint64
 	identity    string
+	entry       repository.Entry
+	query       repository.CommitQuery
+	refSource   repository.RefSource
 	stashSource repository.ChangeSource
 	changedFile repository.ChangedFile
 }
 
-type filesLoadedMsg struct {
+type snapshotLoadedMsg struct {
 	generation uint64
-	files      []string
+	snapshot   repository.Snapshot
 	err        error
 }
 
-type contentLoadedMsg struct {
+type fileLoadedMsg struct {
 	generation uint64
-	path       string
+	entry      repository.Entry
 	file       repository.File
+}
+
+type diffLoadedMsg struct {
+	generation uint64
+	entry      repository.Entry
+	diff       repository.Diff
 }
 
 type summaryLoadedMsg struct {
@@ -87,12 +103,26 @@ type commitsLoadedMsg struct {
 	generation uint64
 	commits    []repository.Commit
 	err        error
+	query      repository.CommitQuery
 }
 
 type commitLoadedMsg struct {
 	generation uint64
 	oid        string
 	summary    repository.CommitSummary
+	err        error
+}
+
+type refSourcesLoadedMsg struct {
+	generation uint64
+	sources    []repository.RefSource
+	err        error
+}
+
+type refCommitsLoadedMsg struct {
+	generation uint64
+	sourceID   repository.RefSourceID
+	commits    []repository.RefCommit
 	err        error
 }
 
@@ -126,6 +156,7 @@ func New(source Source, host herdr.Context) Model {
 		lab:     newLabState(),
 		files:   newFilesState(),
 		history: newHistoryState(),
+		refs:    newRefsState(),
 		stashes: newStashState(),
 		summary: newSummaryState(),
 	}
@@ -135,8 +166,12 @@ func New(source Source, host herdr.Context) Model {
 // a pure place-state change rather than a visible first-visit load.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		m.command(effect{kind: effectLoadFiles, generation: m.files.listGeneration}),
-		m.command(effect{kind: effectLoadCommits, generation: m.history.listGeneration}),
+		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration}),
+		m.command(effect{
+			kind:       effectLoadCommits,
+			generation: m.history.listGeneration,
+			query:      commitQuery(workspace.GitGraph, ""),
+		}),
 		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
 	)
 }
@@ -160,11 +195,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var pending effect
 	switch msg := msg.(type) {
-	case filesLoadedMsg:
-		m.files, pending = m.files.landFiles(msg, m.geometry.NavigatorRows.Height)
+	case snapshotLoadedMsg:
+		m.files, pending = m.files.landSnapshot(msg, m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
 		return m, m.command(pending)
-	case contentLoadedMsg:
-		m.files = m.files.landContent(msg, m.geometry.ReaderRows.Height)
+	case fileLoadedMsg:
+		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case diffLoadedMsg:
+		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case summaryLoadedMsg:
 		m.summary = m.summary.land(msg)
@@ -174,6 +212,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.command(pending)
 	case commitLoadedMsg:
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case refSourcesLoadedMsg:
+		m.refs, pending = m.refs.landSources(msg, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case refCommitsLoadedMsg:
+		m.refs = m.refs.landPreview(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case stashesLoadedMsg:
 		m.stashes, pending = m.stashes.landStashes(msg, m.geometry.NavigatorRows.Height)
@@ -217,12 +261,12 @@ func (m Model) View() tea.View {
 	var presentation ui.Model
 	if m.scratch {
 		presentation = ui.Model{Geometry: m.geometry}
+	} else if m.gitStashesActive() {
+		presentation = m.stashes.viewModel(m.geometry, time.Now())
+	} else if m.gitRefsActive() {
+		presentation = m.refs.viewModel(m.geometry)
 	} else if m.active == workspace.Git {
-		if m.showingStashes() {
-			presentation = m.stashes.viewModel(m.geometry, time.Now())
-		} else {
-			presentation = m.history.viewModel(m.geometry)
-		}
+		presentation = m.history.viewModel(m.geometry)
 	} else {
 		presentation = m.files.viewModel(m.geometry)
 	}
@@ -230,11 +274,13 @@ func (m Model) View() tea.View {
 	presentation.PrimaryWorkspace = m.active
 	presentation.DividerDragging = m.layout.dragging
 	presentation.Controls = m.controls
-	presentation.Changes = ui.ChangeSummary{
-		Files:     m.summary.value.Files,
-		Additions: m.summary.value.Additions,
-		Deletions: m.summary.value.Deletions,
-		Ready:     m.summary.loaded,
+	if presentation.Workspace == workspace.Files {
+		presentation.Changes = ui.ChangeSummary{
+			Files:     m.summary.value.Files,
+			Additions: m.summary.value.Additions,
+			Deletions: m.summary.value.Deletions,
+			Ready:     m.summary.loaded,
+		}
 	}
 	content := ui.Render(presentation)
 	view := tea.NewView(content)
@@ -274,8 +320,13 @@ func (m *Model) apply(action Action) effect {
 		m.layout.finishDrag()
 	case ToggleSecondary:
 		if m.active == workspace.Git {
+			m.scrollbar.finish()
 			m.controls.Git = m.controls.Git.Next()
-			if m.showingStashes() && !m.stashes.loaded && !m.stashes.listLoading {
+			if m.controls.Git == workspace.GitRefs {
+				preferredOID, _ := m.history.place.SelectedIdentity()
+				return m.refs.enter(preferredOID)
+			}
+			if m.controls.Git == workspace.GitStashes && !m.stashes.loaded && !m.stashes.listLoading {
 				return m.stashes.reload()
 			}
 		} else {
@@ -283,25 +334,31 @@ func (m *Model) apply(action Action) effect {
 			if m.controls.Files == workspace.AllFiles {
 				m.controls.Reader = workspace.FileReader
 			}
+			return m.files.switchScope(m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
 		}
 	case ToggleTertiary:
 		if m.active == workspace.Git {
 			if m.controls.Git == workspace.GitLog {
 				m.controls.Traversal = m.controls.Traversal.Toggle()
+				return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 			}
 		} else {
 			m.controls.Reader = m.controls.Reader.Toggle()
+			return m.files.requestMode(m.controls.Reader)
 		}
 	case ToggleComparison:
 		if m.active == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
 		}
 	case Reload:
+		if m.gitStashesActive() {
+			return m.stashes.reload()
+		}
+		if m.gitRefsActive() {
+			return m.refs.reload()
+		}
 		if m.active == workspace.Git {
-			if m.showingStashes() {
-				return m.stashes.reload()
-			}
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		return m.files.reload()
 	case Resize:
@@ -336,20 +393,26 @@ func (m *Model) apply(action Action) effect {
 		m.activePlace().Focus = navigation.FocusReader
 	case SelectNext:
 		if m.active == workspace.Files {
-			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height)
+			return m.files.selectDelta(1, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			return m.stashes.selectStashDelta(1, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(1, m.geometry.NavigatorRows.Height)
 		}
 		if m.history.place.SelectDelta(1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
 		}
 	case SelectPrevious:
 		if m.active == workspace.Files {
-			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height)
+			return m.files.selectDelta(-1, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			return m.stashes.selectStashDelta(-1, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			return m.refs.selectDelta(-1, m.geometry.NavigatorRows.Height)
 		}
 		if m.history.place.SelectDelta(-1, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
@@ -357,11 +420,15 @@ func (m *Model) apply(action Action) effect {
 	case SelectIndex:
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
-			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+			return m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			m.stashes.place.Focus = navigation.FocusNavigator
 			return m.stashes.selectStashIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
@@ -370,24 +437,28 @@ func (m *Model) apply(action Action) effect {
 	case ActivateNavigatorRow:
 		if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusNavigator
-			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
+			pending := m.files.selectIndex(action.Index, m.geometry.NavigatorRows.Height, m.controls.Reader)
 			m.files.toggleSelected(m.geometry.NavigatorRows.Height)
 			return pending
 		}
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			m.stashes.place.Focus = navigation.FocusNavigator
 			return m.stashes.selectStashIndex(action.Index, m.geometry.NavigatorRows.Height)
+		}
+		if m.gitRefsActive() {
+			m.refs.place.Focus = navigation.FocusNavigator
+			return m.refs.selectIndex(action.Index, m.geometry.NavigatorRows.Height)
 		}
 		m.history.place.Focus = navigation.FocusNavigator
 		if m.history.place.SelectIndex(action.Index, m.geometry.NavigatorRows.Height) {
 			return m.history.requestSelectedSummary()
 		}
 	case SelectNextFile:
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			return m.stashes.selectFileDelta(1, m.geometry.ReaderRows.Height)
 		}
 	case SelectPreviousFile:
-		if m.showingStashes() {
+		if m.gitStashesActive() {
 			return m.stashes.selectFileDelta(-1, m.geometry.ReaderRows.Height)
 		}
 	case ExpandDirectory:
@@ -411,8 +482,18 @@ func (m *Model) activate(next workspace.Kind) effect {
 	}
 	m.active = next
 	if next == workspace.Git {
+		if m.controls.Git == workspace.GitStashes {
+			if !m.stashes.loaded && !m.stashes.listLoading {
+				return m.stashes.reload()
+			}
+			return effect{}
+		}
+		if m.controls.Git == workspace.GitRefs {
+			preferredOID, _ := m.history.place.SelectedIdentity()
+			return m.refs.enter(preferredOID)
+		}
 		if !m.history.loaded && !m.history.listLoading {
-			return m.history.reload()
+			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 		}
 		return effect{}
 	}
@@ -439,59 +520,83 @@ func allowedInScratch(kind ActionKind) bool {
 }
 
 func (m *Model) activePlace() *navigation.State {
+	if m.gitStashesActive() {
+		return &m.stashes.place
+	}
+	if m.gitRefsActive() {
+		return &m.refs.place
+	}
 	if m.active == workspace.Git {
-		if m.showingStashes() {
-			return &m.stashes.place
-		}
 		return &m.history.place
 	}
 	return &m.files.place
 }
 
 func (m Model) activeReaderLineCount() int {
+	if m.gitStashesActive() {
+		return len(m.stashes.readerLines())
+	}
+	if m.gitRefsActive() {
+		return len(m.refs.commits)
+	}
 	if m.active == workspace.Git {
-		if m.showingStashes() {
-			return len(m.stashes.readerLines())
-		}
 		return len(commitSummaryLines(m.history.summary))
 	}
 	return len(m.files.readerLines())
 }
 
+func (m Model) selectedHistoryOID() string {
+	oid, _ := m.history.place.SelectedIdentity()
+	return oid
+}
+
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	if m.files.reader.Kind != 0 {
+	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 {
 		m.files.place.ClampReader(len(m.files.readerLines()), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
+	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
 	if m.stashes.readerFileID != "" {
 		m.stashes.place.ClampReader(len(m.stashes.readerLines()), m.geometry.ReaderRows.Height)
 	}
 }
 
-func (m Model) showingStashes() bool {
+func (m Model) gitRefsActive() bool {
+	return m.active == workspace.Git && m.controls.Git == workspace.GitRefs
+}
+
+func (m Model) gitStashesActive() bool {
 	return m.active == workspace.Git && m.controls.Git == workspace.GitStashes
 }
 
 func (m Model) command(pending effect) tea.Cmd {
 	switch pending.kind {
-	case effectLoadFiles:
+	case effectLoadSnapshot:
 		source := m.source
 		generation := pending.generation
 		return func() tea.Msg {
-			files, err := source.ListFiles()
-			return filesLoadedMsg{generation: generation, files: files, err: err}
+			snapshot, err := source.Snapshot()
+			return snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err}
 		}
 	case effectLoadFile:
 		source := m.source
 		generation := pending.generation
-		path := pending.identity
+		entry := pending.entry
 		return func() tea.Msg {
-			return contentLoadedMsg{generation: generation, path: path, file: source.ReadFile(path)}
+			return fileLoadedMsg{generation: generation, entry: entry, file: source.ReadFile(entry)}
+		}
+	case effectLoadDiff:
+		source := m.source
+		generation := pending.generation
+		entry := pending.entry
+		return func() tea.Msg {
+			return diffLoadedMsg{generation: generation, entry: entry, diff: source.ReadDiff(entry)}
 		}
 	case effectLoadSummary:
 		source := m.source
@@ -503,9 +608,10 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectLoadCommits:
 		source := m.source
 		generation := pending.generation
+		query := pending.query
 		return func() tea.Msg {
-			commits, err := source.ListCommits()
-			return commitsLoadedMsg{generation: generation, commits: commits, err: err}
+			commits, err := source.ListCommits(query)
+			return commitsLoadedMsg{generation: generation, commits: commits, err: err, query: query}
 		}
 	case effectLoadCommit:
 		source := m.source
@@ -514,6 +620,21 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			summary, err := source.ReadCommit(oid)
 			return commitLoadedMsg{generation: generation, oid: oid, summary: summary, err: err}
+		}
+	case effectLoadRefSources:
+		source := m.source
+		generation := pending.generation
+		return func() tea.Msg {
+			sources, err := source.ListRefSources()
+			return refSourcesLoadedMsg{generation: generation, sources: sources, err: err}
+		}
+	case effectLoadRefCommits:
+		source := m.source
+		generation := pending.generation
+		refSource := pending.refSource
+		return func() tea.Msg {
+			commits, err := source.ListRefCommits(refSource)
+			return refCommitsLoadedMsg{generation: generation, sourceID: refSource.ID, commits: commits, err: err}
 		}
 	case effectLoadStashes:
 		source := m.source

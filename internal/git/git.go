@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,15 +47,6 @@ func (Client) ResolveRoot(path string) (string, error) {
 	return filepath.Clean(string(out)), nil
 }
 
-// ListFiles returns tracked and untracked, nonignored paths relative to root.
-func (Client) ListFiles(root string) ([]string, error) {
-	out, err := run(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, err
-	}
-	return ParseNUL(out), nil
-}
-
 // ParseNUL splits NUL-delimited Git output. A final unterminated field is kept
 // so a nonconforming producer cannot silently drop the last path.
 func ParseNUL(data []byte) []string {
@@ -76,7 +68,7 @@ func ParseNUL(data []byte) []string {
 }
 
 func run(root string, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"-C", root}, args...)
+	commandArgs := append([]string{"--literal-pathspecs", "-C", root}, args...)
 	cmd := exec.Command("git", commandArgs...)
 	cmd.Env = withOptionalLocksDisabled(os.Environ())
 	var stderr bytes.Buffer
@@ -93,9 +85,22 @@ func run(root string, args ...string) ([]byte, error) {
 }
 
 func runBounded(root string, maxBytes int64, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"-C", root}, args...)
+	return runBoundedInputAllowExit(root, maxBytes, nil, nil, args...)
+}
+
+func runBoundedInput(root string, maxBytes int64, input io.Reader, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExit(root, maxBytes, input, nil, args...)
+}
+
+func runBoundedAllowExit(root string, maxBytes int64, allowedExitCodes map[int]struct{}, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExit(root, maxBytes, nil, allowedExitCodes, args...)
+}
+
+func runBoundedInputAllowExit(root string, maxBytes int64, input io.Reader, allowedExitCodes map[int]struct{}, args ...string) ([]byte, error) {
+	commandArgs := append([]string{"--literal-pathspecs", "-C", root}, args...)
 	cmd := exec.Command("git", commandArgs...)
 	cmd.Env = withOptionalLocksDisabled(os.Environ())
+	cmd.Stdin = input
 	stdout := boundedBuffer{limit: max(0, maxBytes)}
 	stderr := boundedBuffer{limit: 64 << 10}
 	cmd.Stdout = &stdout
@@ -103,6 +108,11 @@ func runBounded(root string, maxBytes int64, args ...string) ([]byte, error) {
 	err := cmd.Run()
 	if stdout.truncated {
 		return nil, fmt.Errorf("git %s: %w (%d bytes)", args[0], ErrOutputTooLarge, maxBytes)
+	}
+	if exitError, ok := err.(*exec.ExitError); ok {
+		if _, allowed := allowedExitCodes[exitError.ExitCode()]; allowed {
+			err = nil
+		}
 	}
 	if err != nil {
 		message := bytes.TrimSpace(stderr.Bytes())

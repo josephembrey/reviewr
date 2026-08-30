@@ -278,7 +278,7 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 			Prefix:   []ui.Segment{{Text: stash.Selector + " ", Tone: ui.ToneAccent}},
 			Label:    prose,
 			Suffix: []ui.Segment{
-				{Text: fmt.Sprintf("%df ", stash.Files), Tone: ui.ToneQuiet},
+				{Text: fmt.Sprintf("  %df ", stash.Files), Tone: ui.ToneQuiet},
 				{Text: fmt.Sprintf("+%d ", stash.Additions), Tone: ui.ToneAdded},
 				{Text: fmt.Sprintf("-%d ", stash.Deletions), Tone: ui.ToneRemoved},
 				{Text: ageLabel(now, stash.Timestamp), Tone: ui.ToneQuiet},
@@ -336,7 +336,6 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
 		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderLines: state.readerLines(),
 		ReaderEmpty: readerEmpty, ReaderOffset: state.place.ReaderOffset,
-		Footer: "j/k move stashes • f/F move files • tab focus • r refresh • q quit",
 	}
 }
 

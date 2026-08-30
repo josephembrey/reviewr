@@ -43,8 +43,8 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	if command := key('1'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git switch = active %v command=%v", model.active, command != nil)
 	}
-	if command := key('2'); command != nil || model.controls.Git != workspace.GitRefs {
-		t.Fatalf("Refs switch = controls %+v command=%v", model.controls, command != nil)
+	if command := key('2'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {
+		t.Fatalf("Refs switch = controls %+v refs %+v command=%v", model.controls, model.refs, command != nil)
 	}
 	command := key('2')
 	if command == nil || model.controls.Git != workspace.GitStashes || !model.stashes.listLoading {

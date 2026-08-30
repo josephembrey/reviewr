@@ -20,7 +20,7 @@ func TestCompactNavigatorRowsPreservePrimaryProseAndFullWidthSelection(t *testin
 		},
 	}
 	for _, focused := range []bool{true, false} {
-		narrow := renderNavigatorPresentationRow(row, 20, true, focused)
+		narrow := renderCompactNavigatorRow(row, 20, true, focused)
 		if width := lipgloss.Width(narrow); width != 20 {
 			t.Fatalf("narrow selected row width = %d, want 20: %q", width, narrow)
 		}
@@ -30,7 +30,7 @@ func TestCompactNavigatorRowsPreservePrimaryProseAndFullWidthSelection(t *testin
 		}
 	}
 
-	wide := renderNavigatorPresentationRow(row, 64, false, false)
+	wide := renderCompactNavigatorRow(row, 64, false, false)
 	plain := ansi.Strip(wide)
 	for _, want := range []string{"stash@{0}", "long subject↵with hostile controls", "99f", "+123", "-45", "2h"} {
 		if !strings.Contains(plain, want) {
