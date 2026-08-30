@@ -283,6 +283,60 @@ func TestReaderSelectionMovesByLogicalLineAndWheelScrollStaysIndependent(t *test
 	}
 }
 
+func TestReaderVimJumpsMoveCursorAndViewport(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 16})
+	model.active = workspace.Files
+	model.files.readerEntry = repository.Entry{Path: "large.go"}
+	model.files.place.Focus = navigation.FocusReader
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
+	for line := 1; line <= 80; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("line:%d", line), Kind: ui.ReaderFile,
+			Text: fmt.Sprintf("line %d", line), NewLine: uint64(line),
+		})
+	}
+	model.files.readerPresentation = &document
+
+	model.apply(Action{Kind: SelectReaderBoundary, Amount: 1})
+	if model.files.place.ReaderCursor != len(document.Rows)-1 || model.activeReaderVisualOffset() == 0 {
+		t.Fatalf("G place = %+v", model.files.place)
+	}
+	model.apply(Action{Kind: SelectReaderBoundary, Amount: -1})
+	if model.files.place.ReaderCursor != 0 || model.activeReaderVisualOffset() != 0 {
+		t.Fatalf("gg place = %+v", model.files.place)
+	}
+
+	height := model.geometry.ReaderRows.Height
+	model.setActiveReaderVisualOffset(20)
+	model.apply(Action{Kind: SelectReaderViewport, Amount: -1})
+	if model.files.place.ReaderCursor != 20 {
+		t.Fatalf("H cursor = %d, want 20", model.files.place.ReaderCursor)
+	}
+	model.apply(Action{Kind: SelectReaderViewport})
+	if want := 20 + (height-1)/2; model.files.place.ReaderCursor != want {
+		t.Fatalf("M cursor = %d, want %d", model.files.place.ReaderCursor, want)
+	}
+	model.apply(Action{Kind: SelectReaderViewport, Amount: 1})
+	if want := 20 + height - 1; model.files.place.ReaderCursor != want {
+		t.Fatalf("L cursor = %d, want %d", model.files.place.ReaderCursor, want)
+	}
+
+	model.files.place.ReaderCursor = 30
+	model.setActiveReaderVisualOffset(25)
+	delta := max(1, height/2)
+	model.apply(Action{Kind: MoveReaderPage, Amount: delta})
+	if model.files.place.ReaderCursor != 30+delta || model.activeReaderVisualOffset() != 25+delta {
+		t.Fatalf("Ctrl-d place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+	}
+	model.apply(Action{Kind: MoveReaderPage, Amount: -delta})
+	if model.files.place.ReaderCursor != 30 || model.activeReaderVisualOffset() != 25 {
+		t.Fatalf("Ctrl-u place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+	}
+
+}
+
 func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

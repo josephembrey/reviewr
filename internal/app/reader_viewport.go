@@ -152,6 +152,52 @@ func (m *Model) moveActiveReaderSelection(delta int) {
 	m.selectActiveReaderLine(m.activePlace().ReaderCursor + delta)
 }
 
+func (m *Model) moveActiveReaderPage(delta int) {
+	if delta == 0 {
+		return
+	}
+	layout, ok := m.activeReaderLayout()
+	if !ok || layout.Total == 0 {
+		m.moveActiveReaderSelection(delta)
+		return
+	}
+	place := m.activePlace()
+	visualCursor := layout.VisualOffset(place.ReaderCursor, 0)
+	targetVisual := max(0, min(visualCursor+delta, layout.Total-1))
+	target, _ := layout.SourceOffset(targetVisual)
+	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
+	place.ReaderCursor = target
+}
+
+func (m *Model) selectActiveReaderBoundary(end bool) {
+	document, ok := m.activeReaderDocument()
+	if !ok || len(document.Rows) == 0 {
+		return
+	}
+	target := 0
+	if end {
+		target = len(document.Rows) - 1
+	}
+	m.selectActiveReaderLine(target)
+}
+
+func (m *Model) selectActiveReaderViewport(position int) {
+	layout, ok := m.activeReaderLayout()
+	if !ok || layout.Total == 0 || m.geometry.ReaderRows.Height <= 0 {
+		return
+	}
+	top := m.activeReaderVisualOffset()
+	bottom := min(layout.Total-1, top+m.geometry.ReaderRows.Height-1)
+	targetVisual := top + (bottom-top)/2
+	if position < 0 {
+		targetVisual = top
+	} else if position > 0 {
+		targetVisual = bottom
+	}
+	target, _ := layout.SourceOffset(targetVisual)
+	m.activePlace().ReaderCursor = target
+}
+
 func (m *Model) selectActiveReaderLine(index int) {
 	document, ok := m.activeReaderDocument()
 	if !ok || len(document.Rows) == 0 {

@@ -48,6 +48,9 @@ func (m *Model) apply(action Action) effect {
 		SelectNextHunk,
 		SelectPreviousHunk,
 		MoveReaderSelection,
+		MoveReaderPage,
+		SelectReaderBoundary,
+		SelectReaderViewport,
 		SelectReaderLine,
 		ScrollReader:
 		return m.applyReaderAction(action)
@@ -275,6 +278,12 @@ func (m *Model) applyReaderAction(action Action) effect {
 		m.selectActiveReaderHunk(-1)
 	case MoveReaderSelection:
 		m.moveActiveReaderSelection(action.Amount)
+	case MoveReaderPage:
+		m.moveActiveReaderPage(action.Amount)
+	case SelectReaderBoundary:
+		m.selectActiveReaderBoundary(action.Amount > 0)
+	case SelectReaderViewport:
+		m.selectActiveReaderViewport(action.Amount)
 	case SelectReaderLine:
 		m.activePlace().Focus = navigation.FocusReader
 		m.selectActiveReaderLine(action.Index)

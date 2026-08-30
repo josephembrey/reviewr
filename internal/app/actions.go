@@ -41,6 +41,9 @@ const (
 	SelectNextHunk
 	SelectPreviousHunk
 	MoveReaderSelection
+	MoveReaderPage
+	SelectReaderBoundary
+	SelectReaderViewport
 	SelectReaderLine
 	FocusNavigator
 	FocusReader
@@ -308,6 +311,9 @@ func routeBrowserMessage(msg tea.Msg, context browserRouteContext) (Action, bool
 }
 
 func routeBrowserKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {
+	if action, ok := routeReaderJumpKey(msg, context); ok {
+		return action, true
+	}
 	if action, ok := routeBrowserCommandKey(msg, context); ok {
 		return action, true
 	}
@@ -315,6 +321,43 @@ func routeBrowserKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, 
 		return action, true
 	}
 	return routeBrowserNavigationKey(msg, context)
+}
+
+func routeReaderJumpKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {
+	if context.focus != navigation.FocusReader || !context.hasStructuredReader() {
+		return Action{}, false
+	}
+	halfPage := max(1, context.geometry.ReaderRows.Height/2)
+	fullPage := max(1, context.geometry.ReaderRows.Height)
+	switch msg.String() {
+	case "G":
+		return Action{Kind: SelectReaderBoundary, Amount: 1}, true
+	case "home":
+		return Action{Kind: SelectReaderBoundary, Amount: -1}, true
+	case "end":
+		return Action{Kind: SelectReaderBoundary, Amount: 1}, true
+	case "H":
+		return Action{Kind: SelectReaderViewport, Amount: -1}, true
+	case "M":
+		return Action{Kind: SelectReaderViewport}, true
+	case "L":
+		return Action{Kind: SelectReaderViewport, Amount: 1}, true
+	case "ctrl+u":
+		return Action{Kind: MoveReaderPage, Amount: -halfPage}, true
+	case "ctrl+d":
+		return Action{Kind: MoveReaderPage, Amount: halfPage}, true
+	case "pgup":
+		return Action{Kind: MoveReaderPage, Amount: -fullPage}, true
+	case "pgdown":
+		return Action{Kind: MoveReaderPage, Amount: fullPage}, true
+	default:
+		return Action{}, false
+	}
+}
+
+func (context browserRouteContext) hasStructuredReader() bool {
+	return context.active == workspace.Files ||
+		context.active == workspace.Git && context.controls.Git == workspace.GitStashes
 }
 
 func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {

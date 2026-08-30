@@ -51,15 +51,23 @@ var helpRows = []helpRow{
 		},
 	},
 	{
+		entries: []footerEntry{
+			{key: "home/G", label: "ends"},
+			{key: "H/M/L", label: "view"},
+			{key: "C-u/C-d", label: "half"},
+			{key: "pgup/dn", label: "page"},
+		},
+	},
+	{
 		section: "Git",
 		entries: []footerEntry{
 			{key: "1", label: "view"},
-			{key: "2", label: "traversal"},
+			{key: "2", label: "mode"},
 			{key: "j/k/↑↓", label: "nav"},
 			{key: "f/F", label: "files"},
+			{key: "h/l", label: "fold"},
 		},
 	},
-	{entries: []footerEntry{{key: "h/l/←→", label: "context"}}},
 	{
 		section: "Notes",
 		entries: []footerEntry{

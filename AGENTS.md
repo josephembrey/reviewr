@@ -30,6 +30,20 @@ Load-bearing invariants:
   clamping. World events never arbitrarily move user-controlled cursor, selection, scroll, focus,
   folds, or layout.
 
+## Interaction design
+
+Prefer idiomatic Neovim navigation and Lazygit-style Git controls when they fit reviewr's model.
+Keep the keymap small and contextual rather than reproducing either application wholesale: reuse
+familiar bindings, avoid custom modes and configurable mapping machinery, and introduce a new key
+only when no established convention fits.
+
+The file reader follows Neovim's core movement vocabulary: `j`/`k` and arrows move by line,
+`G` selects the last line, `Ctrl-u`/`Ctrl-d` move half a viewport,
+`PageUp`/`PageDown` move a full viewport, and `H`/`M`/`L` select the top, middle, or bottom visible
+line. `Home` selects the first line because the otherwise-idiomatic `gg` conflicts with reviewr's
+instant global `g` shortcut for Git; `End` is also accepted for the last line. Reader `h`/`l` and
+`[`/`]` retain their contextual fold and hunk meanings.
+
 ## Go architecture
 
 - `cmd/reviewr/` — executable wiring only.
