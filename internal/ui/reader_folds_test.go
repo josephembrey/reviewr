@@ -189,7 +189,7 @@ func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	}
 }
 
-func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
+func TestReaderHeaderOmitsGlobalContextState(t *testing.T) {
 	t.Parallel()
 	geometry := Calculate(80, 12)
 	model := Model{
@@ -200,28 +200,14 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 		ReaderContextFoldable: true,
 	}
 
-	collapsed := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasPrefix(collapsed, model.ReaderTitle+" ▸") || strings.Contains(collapsed, "all context") || !strings.HasSuffix(collapsed, "2 [diff]") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
-		t.Fatalf("collapsed reader title = %q", collapsed)
-	}
-	model.ReaderContextExpanded = true
-	expanded := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasPrefix(expanded, model.ReaderTitle+" ▾") || strings.Contains(expanded, "all context") || !strings.HasSuffix(expanded, "2 [diff]") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
-		t.Fatalf("expanded reader title = %q", expanded)
-	}
-
-	target := LayoutReaderContextFold(geometry, model.ReaderTitle, true, model.Workspace, model.Controls)
-	if !target.Contains(target.X, target.Y) || target.Contains(target.X-1, target.Y) ||
-		LayoutReaderContextFold(geometry, model.ReaderTitle, false, model.Workspace, model.Controls) != (Rect{}) {
-		t.Fatalf("global context hit target disagrees with painted control: %+v", target)
-	}
-	wantX := geometry.ReaderTitle.X + lipgloss.Width(model.ReaderTitle) + 1
-	if target.X != wantX {
-		t.Fatalf("global context target x=%d, want left-cluster position %d", target.X, wantX)
+	foldable := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
+	if !strings.HasPrefix(foldable, model.ReaderTitle) || strings.ContainsAny(foldable, "▸▾") ||
+		!strings.HasSuffix(foldable, "2 [diff]") || lipgloss.Width(foldable) != geometry.ReaderTitle.Width {
+		t.Fatalf("reader title exposed global fold state: %q", foldable)
 	}
 	model.ReaderContextFoldable = false
-	if title := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); strings.Contains(title, "▸") || strings.Contains(title, "▾") {
-		t.Fatalf("non-foldable reader title exposed a global control: %q", title)
+	if plain := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); plain != foldable {
+		t.Fatalf("foldability changed reader title: foldable=%q plain=%q", foldable, plain)
 	}
 }
 

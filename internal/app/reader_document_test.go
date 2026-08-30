@@ -381,51 +381,6 @@ func TestReaderFoldClickExpandsAndRefoldsPersistentControl(t *testing.T) {
 	}
 }
 
-func TestReaderHeaderContextControlExpandsAndRefoldsAllContext(t *testing.T) {
-	t.Parallel()
-	model := newTestModel(&fakeSource{})
-	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
-	model.controls.Reader = workspace.DiffReader
-	model.files.readerEntry = repository.Entry{Path: "main.go"}
-	model.files.readerMode = workspace.DiffReader
-	model.files.place.Focus = navigation.FocusNavigator
-	document := foldableDiffDocument()
-	model.files.readerPresentation = &document
-
-	target := ui.LayoutReaderContextFold(
-		model.geometry,
-		model.files.readerTitle(),
-		true,
-		model.active,
-		model.presentationControls(),
-	)
-	click := tea.MouseClickMsg(tea.Mouse{X: target.X, Y: target.Y, Button: tea.MouseLeft})
-	for _, test := range []struct {
-		expanded bool
-		label    string
-	}{{expanded: true, label: "expand all"}, {expanded: false, label: "refold all"}} {
-		next, command := model.Update(click)
-		model = next.(Model)
-		if command == nil || model.files.readerContext.allExpanded(document) != test.expanded || model.files.place.Focus != navigation.FocusReader {
-			t.Fatalf("%s header click = expanded %v focus %v command=%v", test.label, model.files.readerContext.allExpanded(document), model.files.place.Focus, command != nil)
-		}
-		finishReaderContextAnimation(&model, readerContextAnimationEffect(readerContextFiles, model.files.readerContext.generation, true))
-		folds := 0
-		for _, row := range model.files.readerRows() {
-			if row.Kind != ui.ReaderFold {
-				continue
-			}
-			folds++
-			if row.FoldExpanded != test.expanded {
-				t.Fatalf("%s left fold in the opposite state: %+v", test.label, row)
-			}
-		}
-		if folds < 2 {
-			t.Fatalf("%s exercised %d folds, want multiple global targets", test.label, folds)
-		}
-	}
-}
-
 func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

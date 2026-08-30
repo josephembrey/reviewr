@@ -224,7 +224,6 @@ type Model struct {
 	// width have not changed. Scrolling should never rewrap the whole file.
 	ReaderLayout          *ReaderLayout
 	ReaderContextFoldable bool
-	ReaderContextExpanded bool
 	ReaderLines           []Line
 	ReaderCommitRows      []commitrow.Row
 	ReaderEmpty           Line

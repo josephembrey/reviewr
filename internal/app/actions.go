@@ -37,7 +37,6 @@ const (
 	CollapseNavigatorSelection
 	ExpandReaderContext
 	CollapseReaderContext
-	ToggleReaderContext
 	ToggleReaderFold
 	SelectNextHunk
 	SelectPreviousHunk
@@ -555,20 +554,6 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
-		if mouse.Button == tea.MouseLeft && m.geometry.ReaderTitle.Contains(mouse.X, mouse.Y) {
-			viewport, ok := m.activeReaderViewport()
-			title := ""
-			switch {
-			case m.gitStashesActive():
-				title = m.stashes.readerTitle()
-			case m.active == workspace.Files:
-				title = m.files.readerTitle()
-			}
-			target := ui.LayoutReaderContextFold(m.geometry, title, ok && viewport.foldable, m.active, m.presentationControls())
-			if target.Contains(mouse.X, mouse.Y) {
-				return Action{Kind: ToggleReaderContext}, true
-			}
-		}
 		if m.geometry.ReaderRows.Contains(mouse.X, mouse.Y) {
 			readerOffset = m.activeReaderVisualOffset()
 			readerLineCount = m.activeReaderLineCount()

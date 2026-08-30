@@ -44,7 +44,6 @@ func (m *Model) apply(action Action) effect {
 		CollapseNavigatorSelection,
 		ExpandReaderContext,
 		CollapseReaderContext,
-		ToggleReaderContext,
 		ToggleReaderFold,
 		SelectNextHunk,
 		SelectPreviousHunk,
@@ -266,15 +265,6 @@ func (m *Model) applyReaderAction(action Action) effect {
 		return m.setActiveReaderContextFold(true)
 	case CollapseReaderContext:
 		return m.setActiveReaderContextFold(false)
-	case ToggleReaderContext:
-		if m.gitStashesActive() {
-			m.stashes.place.Focus = navigation.FocusReader
-			return m.setStashReaderContext(!m.stashes.readerContext.allExpanded(m.stashes.rawReaderDocument()))
-		}
-		if m.active == workspace.Files {
-			m.files.place.Focus = navigation.FocusReader
-			return m.setFilesReaderContext(!m.files.readerContext.allExpanded(m.files.rawReaderDocument()))
-		}
 	case ToggleReaderFold:
 		m.activePlace().Focus = navigation.FocusReader
 		m.selectActiveReaderLine(action.Index)
@@ -312,16 +302,6 @@ func (m *Model) applyNavigatorExpansion(expand bool) effect {
 	}
 	if m.controls.Reader == workspace.DiffReader {
 		return m.setFilesReaderContext(expand)
-	}
-	return effect{}
-}
-
-func (m *Model) setActiveReaderContext(expanded bool) effect {
-	if m.gitStashesActive() {
-		return m.setStashReaderContext(expanded)
-	}
-	if m.active == workspace.Files {
-		return m.setFilesReaderContext(expanded)
 	}
 	return effect{}
 }

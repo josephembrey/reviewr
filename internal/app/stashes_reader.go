@@ -111,17 +111,6 @@ func (state stashState) rawReaderDocument() ui.ReaderDocument {
 	return state.deriveReaderDocument()
 }
 
-func (state *stashState) setReaderContextExpanded(expanded bool) (bool, bool) {
-	oldRows := readerRowIdentities(state.readerRows())
-	oldOffset := state.place.ReaderOffset
-	oldCursor := state.place.ReaderCursor
-	changed, animating := state.readerContext.setAll(state.rawReaderDocument(), expanded)
-	if changed {
-		state.reconcileReaderPlace(oldRows, oldOffset, oldCursor)
-	}
-	return changed, animating
-}
-
 func (state *stashState) toggleReaderContextFold(identity string) (bool, bool) {
 	return state.changeReaderContextFold(identity, nil)
 }

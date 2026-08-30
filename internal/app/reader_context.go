@@ -62,15 +62,6 @@ func (m *Model) setFilesReaderContext(expanded bool) effect {
 	return readerContextAnimationEffect(readerContextFiles, m.files.readerContext.generation, animating)
 }
 
-func (m *Model) setStashReaderContext(expanded bool) effect {
-	changed, animating := m.stashes.setReaderContextExpanded(expanded)
-	if !changed {
-		return effect{}
-	}
-	m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
-	return readerContextAnimationEffect(readerContextStashes, m.stashes.readerContext.generation, animating)
-}
-
 func (m *Model) toggleActiveReaderContextFold(identity string) effect {
 	return m.changeActiveReaderContextFold(identity, nil)
 }

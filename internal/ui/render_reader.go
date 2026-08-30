@@ -74,17 +74,8 @@ func renderReader(model Model) string {
 
 func renderReaderTitle(model Model, title string) string {
 	focused := model.Focus == navigation.FocusReader
-	layout := layoutReaderPaneTitle(model.Geometry, title, model.ReaderContextFoldable, model.Workspace, model.Controls)
-	left := clip(renderTitle(title, focused), layout.titleWidth)
-	if layout.fold.Width > 0 {
-		label := "▸"
-		if model.ReaderContextExpanded {
-			label = "▾"
-		}
-		gap := max(0, layout.fold.X-model.Geometry.ReaderTitle.X-lipgloss.Width(left))
-		left += strings.Repeat(" ", gap) + readerFoldStyle.Render(label)
-	}
-	left = fit(left, layout.leftWidth)
+	layout := layoutReaderPaneTitle(model.Geometry, model.Workspace, model.Controls)
+	left := fit(renderTitle(title, focused), layout.leftWidth)
 	if layout.control.rect.Width == 0 {
 		return left
 	}
