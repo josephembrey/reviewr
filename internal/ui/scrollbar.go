@@ -57,7 +57,7 @@ func verticalScrollbar(viewport, total, offset int, focused bool) []string {
 		return nil
 	}
 
-	thumbStyle := quietTitleStyle.Bold(true)
+	thumbStyle := dimStyle.Bold(true)
 	if focused {
 		thumbStyle = headerStyle
 	}

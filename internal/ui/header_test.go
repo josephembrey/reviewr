@@ -62,7 +62,7 @@ func TestWorkspaceSwitcherUsesDrawerBracketsWithoutReverseHighlight(t *testing.T
 	}
 }
 
-func TestScratchKeepsMutedPrimaryWorkspaceBracketed(t *testing.T) {
+func TestScratchKeepsInactivePrimaryWorkspaceBracketed(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name    string
@@ -111,6 +111,9 @@ func TestHeaderRightAlignsChangeSummary(t *testing.T) {
 	}
 	if !strings.Contains(frame, addedStyle.Render("+345")) || !strings.Contains(frame, errorStyle.Render("-67")) {
 		t.Fatalf("header stats lack semantic colors: %q", frame)
+	}
+	if strings.Contains(frame, dimStyle.Render("12 changes ")) {
+		t.Fatalf("header change count is incorrectly muted: %q", frame)
 	}
 }
 

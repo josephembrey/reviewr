@@ -80,7 +80,7 @@ func TestFocusStylingDoesNotChangeFrameStructure(t *testing.T) {
 	if ansi.Strip(navigatorFocused) != ansi.Strip(readerFocused) {
 		t.Fatal("changing focus changed frame text or geometry")
 	}
-	if !focusedTitleStyle.GetBold() || quietTitleStyle.GetBold() {
+	if !focusedTitleStyle.GetBold() || chromeStyle.GetBold() {
 		t.Fatal("focus emphasis must live on the focused title only")
 	}
 	if got := strings.Count(renderDivider(g.Divider, false), "│"); got != g.Divider.Height {
@@ -93,8 +93,8 @@ func TestDividerUsesAccentOnlyWhileDragging(t *testing.T) {
 	rect := Rect{Width: 1, Height: 2}
 	idle := renderDivider(rect, false)
 	dragging := renderDivider(rect, true)
-	if !strings.Contains(idle, dimStyle.Render("│")) {
-		t.Fatalf("idle divider lacks quiet style: %q", idle)
+	if strings.Contains(idle, dimStyle.Render("│")) || ansi.Strip(idle) != idle {
+		t.Fatalf("idle divider does not use terminal default foreground: %q", idle)
 	}
 	if !strings.Contains(dragging, headerStyle.Render("│")) {
 		t.Fatalf("dragging divider lacks accent style: %q", dragging)
@@ -142,6 +142,16 @@ func TestStructuralPaletteUsesTerminalANSIRoles(t *testing.T) {
 		if got[index] != want[index] {
 			t.Fatalf("structural palette[%d] = %v, want terminal ANSI %v", index, got[index], want[index])
 		}
+	}
+}
+
+func TestStructuralChromeUsesTerminalDefaultForeground(t *testing.T) {
+	t.Parallel()
+	if _, ok := chromeStyle.GetForeground().(lipgloss.NoColor); !ok {
+		t.Fatalf("chrome foreground = %T, want terminal default", chromeStyle.GetForeground())
+	}
+	if _, ok := dimStyle.GetForeground().(lipgloss.NoColor); ok {
+		t.Fatal("muted style unexpectedly uses terminal default foreground")
 	}
 }
 

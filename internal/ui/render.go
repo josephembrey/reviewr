@@ -27,7 +27,7 @@ var (
 
 	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	focusedTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	quietTitleStyle   = lipgloss.NewStyle().Foreground(dimColor)
+	chromeStyle       = lipgloss.NewStyle()
 	dimStyle          = lipgloss.NewStyle().Foreground(dimColor)
 	errorStyle        = lipgloss.NewStyle().Foreground(errorColor)
 	addedStyle        = lipgloss.NewStyle().Foreground(addedColor)
@@ -67,7 +67,7 @@ func Render(model Model) string {
 		if model.Workspace == workspace.Scratch {
 			footer = SafeSingleLine(model.ScratchStatus)
 		}
-		style := dimStyle
+		style := chromeStyle
 		if model.Workspace == workspace.Files && model.FooterWarning != "" {
 			footer = SafeSingleLine(model.FooterWarning)
 			style = errorStyle
@@ -116,11 +116,11 @@ func renderHeaderControl(control headerControl, wide bool) string {
 	if wide {
 		key = style.Bold(true).Render(control.key) + " "
 	}
-	return key + quietTitleStyle.Render("[") + style.Bold(true).Render(control.value) + quietTitleStyle.Render("]")
+	return key + chromeStyle.Render("[") + style.Bold(true).Render(control.value) + chromeStyle.Render("]")
 }
 
 func renderChangeSummary(summary ChangeSummary) string {
-	return quietTitleStyle.Render(fmt.Sprintf("%d changes ", summary.Files)) + renderChangeTotals(summary)
+	return chromeStyle.Render(fmt.Sprintf("%d changes ", summary.Files)) + renderChangeTotals(summary)
 }
 
 func renderChangeTotals(summary ChangeSummary) string {
@@ -152,7 +152,7 @@ func renderWorkspaceSwitcher(width int, activeWorkspace, primaryWorkspace worksp
 		case switcherKey:
 			rendered.WriteString(headerStyle.Render(segment))
 		default:
-			rendered.WriteString(quietTitleStyle.Render(segment))
+			rendered.WriteString(chromeStyle.Render(segment))
 		}
 		index = end
 	}
@@ -360,7 +360,7 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 	row += selection.Render(strings.Repeat(" ", max(0, layout.Label.Width-lipgloss.Width(row))))
 	if layout.Progress.Width > 0 {
 		progress := " " + item.Progress
-		row += dimStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
+		row += chromeStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
 	}
 	if layout.Changes.Width > 0 {
 		additions, deletions := formatLineChanges(*item.Changes)
@@ -385,7 +385,7 @@ func reviewBadgeStyle(state review.State) lipgloss.Style {
 	case review.BasisChanged:
 		return errorStyle
 	default:
-		return dimStyle
+		return chromeStyle
 	}
 }
 
@@ -548,7 +548,7 @@ func renderTitle(title string, focused bool) string {
 	if focused {
 		return focusedTitleStyle.Render(title)
 	}
-	return quietTitleStyle.Render(title)
+	return chromeStyle.Render(title)
 }
 
 func renderNavigatorRow(path string, width int, selected, focused bool) string {
@@ -567,7 +567,7 @@ func renderDivider(rect Rect, dragging bool) string {
 	if rect.Width <= 0 || rect.Height <= 0 {
 		return ""
 	}
-	style := dimStyle
+	style := chromeStyle
 	if dragging {
 		style = headerStyle
 	}
