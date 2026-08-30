@@ -109,7 +109,10 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		}
 		kind = effectLoadDiff
 	}
-	return effect{kind: kind, generation: state.contentGeneration, entry: entry}
+	return effect{
+		kind: kind, generation: state.contentGeneration, entry: entry,
+		fileComparison: state.snapshot.Comparison(),
+	}
 }
 
 func (state *filesState) requestMode(mode workspace.ReaderMode) effect {

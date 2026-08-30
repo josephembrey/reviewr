@@ -10,15 +10,16 @@ import (
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/session"
+	"github.com/josephembrey/reviewr/internal/turn"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 // Source is the exact read-only repository contract consumed by the TUI.
 type Source interface {
-	Snapshot() (repository.Snapshot, error)
+	Snapshot(scope string) (repository.Snapshot, error)
 	ReadFile(entry repository.Entry) repository.File
-	ReadDiff(entry repository.Entry) repository.Diff
+	ReadDiff(comparison repository.Comparison, entry repository.Entry) repository.Diff
 	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
 	ReadCommit(oid string) (repository.CommitSummary, error)
 	ListRefSources() ([]repository.RefSource, error)
@@ -51,6 +52,7 @@ type Model struct {
 	stashes        stashState
 	note           scopedNotesState
 	poll           repositoryPollState
+	turn           *turn.Host
 	readerViewport readerViewport
 	sessionStore   SessionStore
 	sessionSave    uint64
@@ -98,6 +100,10 @@ func NewWithSessionAndNotesScopes(source Source, host herdr.Context, stores note
 		sessionStore: store,
 	}
 	model.restoreSession(restored)
+	agents := herdr.NewAgentSampler(host)
+	if repo, ok := source.(turn.Repository); ok && agents.Available() {
+		model.turn = turn.NewHost(repo, agents)
+	}
 	return model
 }
 

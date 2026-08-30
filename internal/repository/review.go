@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"errors"
 	"fmt"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
@@ -15,23 +14,21 @@ func (r *Repository) ReviewRepositoryID() (review.RepositoryID, error) {
 }
 
 // ReviewComparisons enriches already-enumerated typed candidates with exact
-// uncommitted endpoint identities. Unsupported comparison bases remain inert
-// rather than borrowing unsafe bounds.
-func (r *Repository) ReviewComparisons(scope string, candidates []review.Candidate) (review.Snapshot, error) {
+// endpoint identities from the snapshot's pinned basis. Unsupported comparison
+// bases remain inert rather than borrowing unsafe bounds.
+func (r *Repository) ReviewComparisons(scope, basis string, candidates []review.Candidate) (review.Snapshot, error) {
 	snapshot := review.Snapshot{Scope: scope, Comparisons: make(map[string]review.FileComparison)}
-	if scope != "uncommitted" {
+	if scope != ComparisonUncommitted && scope != ComparisonBranch && scope != ComparisonLastTurn {
 		return snapshot, fmt.Errorf("exact %s comparison is not available", scope)
 	}
-	head, unborn, err := r.reviewHead()
-	if err != nil {
-		return snapshot, err
+	if basis == "" {
+		return snapshot, fmt.Errorf("exact %s comparison has no basis", scope)
 	}
-	treeEntries, treeErr := r.reviewTreeEntries(head, unborn, candidates)
+	treeEntries, treeErr := r.reviewTreeEntries(basis, candidates)
 	for _, candidate := range candidates {
 		snapshot.Comparisons[candidate.Path] = r.reviewComparison(
 			scope,
-			head,
-			unborn,
+			basis,
 			treeEntries,
 			treeErr,
 			candidate,
@@ -40,25 +37,7 @@ func (r *Repository) ReviewComparisons(scope string, candidates []review.Candida
 	return snapshot, nil
 }
 
-func (r *Repository) reviewHead() (string, bool, error) {
-	head, err := r.git.HeadOID(r.root)
-	if errors.Is(err, gitadapter.ErrUnbornHead) {
-		head, err = r.git.EmptyTreeOID(r.root)
-		if err != nil {
-			return "", true, fmt.Errorf("resolve review comparison HEAD: %w", err)
-		}
-		return head, true, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("resolve review comparison HEAD: %w", err)
-	}
-	return head, false, nil
-}
-
-func (r *Repository) reviewTreeEntries(head string, unborn bool, candidates []review.Candidate) (map[string]gitadapter.TreeEntry, error) {
-	if unborn {
-		return nil, nil
-	}
+func (r *Repository) reviewTreeEntries(basis string, candidates []review.Candidate) (map[string]gitadapter.TreeEntry, error) {
 	paths := make([]string, 0, len(candidates))
 	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
@@ -68,23 +47,22 @@ func (r *Repository) reviewTreeEntries(head string, unborn bool, candidates []re
 			seen[path] = struct{}{}
 		}
 	}
-	return r.git.ReadTreeEntries(r.root, head, paths)
+	return r.git.ReadTreeEntries(r.root, basis, paths)
 }
 
 func (r *Repository) reviewComparison(
-	scope, head string,
-	unborn bool,
+	scope, basis string,
 	treeEntries map[string]gitadapter.TreeEntry,
 	treeErr error,
 	candidate review.Candidate,
 ) review.FileComparison {
 	oldPath := candidateOldPath(candidate)
-	old, basisReason := reviewOldEndpoint(oldPath, unborn, treeEntries, treeErr)
+	old, basisReason := reviewOldEndpoint(oldPath, treeEntries, treeErr)
 	new := r.worktreeReviewContent(candidate.Path).Endpoint
 	basisReason = validateReviewEndpoints(candidate.Action, &old, &new, basisReason)
 	comparison := review.FileComparison{
-		Identity:    review.ComparisonIdentity{Scope: scope, Basis: head},
-		OldSource:   review.EndpointSource{Kind: review.GitTreeSource, Value: head},
+		Identity:    review.ComparisonIdentity{Scope: scope, Basis: basis},
+		OldSource:   review.EndpointSource{Kind: review.GitTreeSource, Value: basis},
 		NewSource:   review.EndpointSource{Kind: review.WorktreeSource},
 		Action:      candidate.Action,
 		Old:         old,
@@ -106,13 +84,9 @@ func candidateOldPath(candidate review.Candidate) string {
 
 func reviewOldEndpoint(
 	path string,
-	unborn bool,
 	entries map[string]gitadapter.TreeEntry,
 	treeErr error,
 ) (review.Endpoint, string) {
-	if unborn {
-		return review.AbsentEndpoint(path), ""
-	}
 	if treeErr != nil {
 		return review.Endpoint{Path: path, Kind: review.Regular}, "comparison basis content is unavailable"
 	}

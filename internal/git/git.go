@@ -55,6 +55,36 @@ func (Client) ResolveRoot(path string) (string, error) {
 	return canonical, nil
 }
 
+// FindRoot resolves an absolute directory to its Git worktree, reporting a
+// normal miss for directories outside Git.
+func (Client) FindRoot(path string) (string, bool, error) {
+	if !filepath.IsAbs(path) {
+		return "", false, nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	out, err := runBoundedAllowExit(
+		path, 4096, map[int]struct{}{128: {}},
+		"rev-parse", "--path-format=absolute", "--show-toplevel",
+	)
+	if err != nil {
+		return "", false, err
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "" {
+		return "", false, nil
+	}
+	canonical, err := filepath.EvalSymlinks(filepath.Clean(value))
+	if err != nil {
+		return "", false, err
+	}
+	return canonical, true, nil
+}
+
 // ResolveCommonDir returns the canonical absolute Git common directory. Git's
 // machine-oriented rev-parse output is decoded when it quotes an unusual path.
 // Linked worktrees of one clone resolve to the same identity.

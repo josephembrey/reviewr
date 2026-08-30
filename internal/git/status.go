@@ -33,27 +33,10 @@ type FileEntry struct {
 // Snapshot reads all tracked, untracked, and ignored file identities, then
 // overlays porcelain-v2 state and per-file line statistics into one result.
 func (client Client) Snapshot(root string) ([]FileEntry, error) {
-	trackedOutput, err := run(root, "ls-files", "-z", "--cached")
+	entries, err := client.Inventory(root)
 	if err != nil {
 		return nil, err
 	}
-	statusOutput, err := run(
-		root,
-		"status",
-		"--porcelain=v2",
-		"-z",
-		"--untracked-files=all",
-		"--ignored=traditional",
-		"--renames",
-	)
-	if err != nil {
-		return nil, err
-	}
-	status, err := ParsePorcelainV2(statusOutput)
-	if err != nil {
-		return nil, err
-	}
-	entries := MergeFileEntries(ParseNUL(trackedOutput), status)
 	untracked := make([]string, 0)
 	for _, entry := range entries {
 		if entry.State == FileUntracked {
@@ -74,6 +57,32 @@ func (client Client) Snapshot(root string) ([]FileEntry, error) {
 		entries[index].Binary = stat.binary
 	}
 	return entries, nil
+}
+
+// Inventory reads all tracked, untracked, and ignored identities without
+// calculating comparison-specific line statistics.
+func (client Client) Inventory(root string) ([]FileEntry, error) {
+	trackedOutput, err := run(root, "ls-files", "-z", "--cached")
+	if err != nil {
+		return nil, err
+	}
+	statusOutput, err := run(
+		root,
+		"status",
+		"--porcelain=v2",
+		"-z",
+		"--untracked-files=all",
+		"--ignored=traditional",
+		"--renames",
+	)
+	if err != nil {
+		return nil, err
+	}
+	status, err := ParsePorcelainV2(statusOutput)
+	if err != nil {
+		return nil, err
+	}
+	return MergeFileEntries(ParseNUL(trackedOutput), status), nil
 }
 
 // ParsePorcelainV2 parses only NUL-delimited porcelain-v2 records. Paths remain

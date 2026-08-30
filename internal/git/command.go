@@ -32,12 +32,20 @@ func runBoundedAllowExit(root string, maxBytes int64, allowedExitCodes map[int]s
 }
 
 func runBoundedInputAllowExit(root string, maxBytes int64, input io.Reader, allowedExitCodes map[int]struct{}, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExitWithEnv(root, maxBytes, input, allowedExitCodes, nil, args...)
+}
+
+func runBoundedWithEnv(root string, maxBytes int64, environment map[string]string, args ...string) ([]byte, error) {
+	return runBoundedInputAllowExitWithEnv(root, maxBytes, nil, nil, environment, args...)
+}
+
+func runBoundedInputAllowExitWithEnv(root string, maxBytes int64, input io.Reader, allowedExitCodes map[int]struct{}, environment map[string]string, args ...string) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("run git: no command")
 	}
 	commandArgs := append([]string{"--literal-pathspecs", "-C", root}, args...)
 	cmd := exec.Command("git", commandArgs...)
-	cmd.Env = withOptionalLocksDisabled(os.Environ())
+	cmd.Env = withEnvironment(withOptionalLocksDisabled(os.Environ()), environment)
 	cmd.Stdin = input
 	stdout := boundedBuffer{limit: max(0, maxBytes)}
 	stderr := boundedBuffer{limit: maxStderrBytes}
@@ -60,6 +68,24 @@ func runBoundedInputAllowExit(root string, maxBytes int64, input io.Reader, allo
 		return nil, fmt.Errorf("git %s: %s: %w", args[0], message, err)
 	}
 	return stdout.Bytes(), nil
+}
+
+func withEnvironment(base []string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+	result := append([]string(nil), base...)
+	for name, value := range overrides {
+		prefix := name + "="
+		filtered := result[:0]
+		for _, entry := range result {
+			if len(entry) < len(prefix) || entry[:len(prefix)] != prefix {
+				filtered = append(filtered, entry)
+			}
+		}
+		result = append(filtered, prefix+value)
+	}
+	return result
 }
 
 type boundedBuffer struct {

@@ -80,12 +80,21 @@ func (state *filesState) reload(scope string) effect {
 	state.reviewGeneration++
 	state.listLoading = true
 	state.listError = nil
-	state.reviewSnapshot = review.Snapshot{Scope: state.reviewScope, Comparisons: make(map[string]review.FileComparison)}
+	if state.reviewScope != scope {
+		state.comparisonWarning = ""
+	}
+	state.reviewScope = scope
+	state.reviewSnapshot = review.Snapshot{Scope: scope, Comparisons: make(map[string]review.FileComparison)}
 	state.rederiveReviews()
 	return effect{
 		kind: effectLoadSnapshot, generation: state.listGeneration,
 		reviewGeneration: state.reviewGeneration, scope: scope,
 	}
+}
+
+func (state filesState) comparisonPending() bool {
+	loaded := state.snapshot.Comparison().Scope
+	return state.listLoading && loaded != "" && state.reviewScope != "" && loaded != state.reviewScope
 }
 
 func (state *filesState) poll(scope string) effect {
@@ -113,12 +122,10 @@ func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.File
 	}
 	state.listError = nil
 	state.snapshot = msg.snapshot
-	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration && (!msg.background || msg.reviewErr == nil) {
+	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration {
 		state.reviewSnapshot = msg.reviewSnapshot
 		state.reviewScope = msg.reviewSnapshot.Scope
-		if !msg.background {
-			state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
-		}
+		state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
 		state.rederiveReviews()
 	}
 	pending := state.project(scope, mode, visibleRows, firstLoad, true, msg.background)

@@ -2,6 +2,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
@@ -168,24 +169,106 @@ func (r *Repository) NotesStores(lookupEnv func(string) (string, bool)) notes.St
 	return notes.NewStores(r.commonDir, r.root, lookupEnv)
 }
 
-// Snapshot returns one typed source for the All and Changed file scopes.
-func (r *Repository) Snapshot() (Snapshot, error) {
-	entries, err := r.git.Snapshot(r.root)
+// Snapshot returns one typed source for the All and Changed file sets under
+// the requested comparison.
+func (r *Repository) Snapshot(scope string) (Snapshot, error) {
+	inventory, err := r.git.Inventory(r.root)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	result := make([]Entry, len(entries))
-	for index, entry := range entries {
-		result[index] = Entry{
-			Path:         entry.Path,
-			PreviousPath: entry.PreviousPath,
-			State:        repositoryFileState(entry.State),
-			Additions:    entry.Additions,
-			Deletions:    entry.Deletions,
-			Binary:       entry.Binary,
-		}
+	comparison, changes, err := r.resolveComparison(scope)
+	if err != nil {
+		return Snapshot{}, err
 	}
-	return NewSnapshot(result), nil
+	return NewComparisonSnapshot(comparisonEntries(inventory, changes), comparison), nil
+}
+
+func (r *Repository) resolveComparison(scope string) (Comparison, []gitadapter.FileEntry, error) {
+	comparison := Comparison{Scope: scope}
+	switch scope {
+	case ComparisonBranch:
+		_, base, err := r.git.DefaultBranch(r.root)
+		if err != nil {
+			return comparison, nil, err
+		}
+		if base == "" {
+			comparison.Reason = "origin/HEAD does not name a default branch"
+			return comparison, nil, nil
+		}
+		basis, err := r.git.MergeBase(r.root, base)
+		if err != nil {
+			return comparison, nil, err
+		}
+		if basis == "" {
+			comparison.Reason = "the default branch and HEAD have no merge base"
+			return comparison, nil, nil
+		}
+		comparison.Basis = basis
+		changes, err := r.git.WorktreeChanges(r.root, basis)
+		return comparison, changes, err
+	case ComparisonLastTurn:
+		basis, exists, err := r.git.TurnBaseline(r.root)
+		if err != nil {
+			return comparison, nil, err
+		}
+		if !exists {
+			comparison.Reason = "no agent turn has been observed in this worktree"
+			return comparison, nil, nil
+		}
+		current, err := r.git.SnapshotWorktree(r.root)
+		if err != nil {
+			return comparison, nil, err
+		}
+		comparison.Basis = basis
+		comparison.Target = current
+		changes, err := r.git.TreeChanges(r.root, basis, current)
+		return comparison, changes, err
+	case ComparisonUncommitted, "":
+		comparison.Scope = ComparisonUncommitted
+		basis, err := r.git.HeadOID(r.root)
+		if errors.Is(err, gitadapter.ErrUnbornHead) {
+			basis, err = r.git.EmptyTreeOID(r.root)
+		}
+		if err != nil {
+			return comparison, nil, err
+		}
+		comparison.Basis = basis
+		changes, err := r.git.WorktreeChanges(r.root, basis)
+		return comparison, changes, err
+	default:
+		comparison.Reason = "unsupported comparison " + scope
+		return comparison, nil, nil
+	}
+}
+
+func comparisonEntries(inventory, changes []gitadapter.FileEntry) []Entry {
+	byPath := make(map[string]Entry, len(inventory)+len(changes))
+	for _, entry := range inventory {
+		state := FileUnchanged
+		if entry.State == gitadapter.FileIgnored {
+			state = FileIgnored
+		}
+		byPath[entry.Path] = Entry{Path: entry.Path, State: state}
+	}
+	for _, entry := range changes {
+		byPath[entry.Path] = repositoryEntry(entry)
+	}
+	result := make([]Entry, 0, len(byPath))
+	for _, entry := range byPath {
+		result = append(result, entry)
+	}
+	return result
+}
+
+func repositoryEntry(entry gitadapter.FileEntry) Entry {
+	return Entry{
+		Path:         entry.Path,
+		PreviousPath: entry.PreviousPath,
+		State:        repositoryFileState(entry.State),
+		Additions:    entry.Additions,
+		Deletions:    entry.Deletions,
+		Binary:       entry.Binary,
+	}
 }
 
 func repositoryFileState(state gitadapter.FileState) FileState {

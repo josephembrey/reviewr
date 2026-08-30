@@ -64,3 +64,7 @@ func (c Context) BinPath() string { return c.binPath }
 func (c Context) canLabelPane() bool {
 	return c.hosted && c.paneID != "" && filepath.IsAbs(c.binPath)
 }
+
+func (c Context) canSampleAgents() bool {
+	return c.hosted && filepath.IsAbs(c.binPath)
+}

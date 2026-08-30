@@ -18,6 +18,26 @@ const (
 	FileIgnored
 )
 
+const (
+	ComparisonUncommitted = "uncommitted"
+	ComparisonBranch      = "branch"
+	ComparisonLastTurn    = "last-turn"
+)
+
+// Comparison pins the immutable old side used to derive a file snapshot.
+// Reason is non-empty when the requested comparison cannot currently resolve.
+type Comparison struct {
+	Scope  string
+	Basis  string
+	Target string
+	Reason string
+}
+
+// Available reports whether the comparison has an exact old tree.
+func (comparison Comparison) Available() bool {
+	return comparison.Basis != "" && comparison.Reason == ""
+}
+
 // Entry is the typed repository/app file identity. Path is the current stable
 // repository-relative identity; PreviousPath records an explicit Git rename.
 type Entry struct {
@@ -36,12 +56,18 @@ func (entry Entry) Changed() bool {
 
 // Snapshot is the single immutable source from which Files scopes are derived.
 type Snapshot struct {
-	entries []Entry
-	summary ChangeSummary
+	entries    []Entry
+	summary    ChangeSummary
+	comparison Comparison
 }
 
 // NewSnapshot copies, deduplicates, and sorts typed entries by current path.
 func NewSnapshot(entries []Entry) Snapshot {
+	return NewComparisonSnapshot(entries, Comparison{})
+}
+
+// NewComparisonSnapshot copies typed entries and retains their pinned basis.
+func NewComparisonSnapshot(entries []Entry, comparison Comparison) Snapshot {
 	byPath := make(map[string]Entry, len(entries))
 	for _, entry := range entries {
 		if entry.Path != "" {
@@ -59,7 +85,7 @@ func NewSnapshot(entries []Entry) Snapshot {
 		}
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].Path < result[right].Path })
-	return Snapshot{entries: result, summary: summary}
+	return Snapshot{entries: result, summary: summary, comparison: comparison}
 }
 
 // All returns tracked, untracked, and ignored entries.
@@ -81,6 +107,9 @@ func (snapshot Snapshot) Changed() []Entry {
 
 // Summary returns aggregate line statistics for changed entries.
 func (snapshot Snapshot) Summary() ChangeSummary { return snapshot.summary }
+
+// Comparison returns the exact basis used to derive this snapshot.
+func (snapshot Snapshot) Comparison() Comparison { return snapshot.comparison }
 
 func addCount(left, right uint64) uint64 {
 	if math.MaxUint64-left < right {

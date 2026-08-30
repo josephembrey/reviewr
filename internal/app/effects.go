@@ -21,7 +21,6 @@ const (
 	effectLoadDiff
 	effectLoadCommits
 	effectLoadCommit
-	effectLoadReviewSnapshot
 	effectLoadReviewState
 	effectLoadReviewDocument
 	effectLoadReviewFile
@@ -47,6 +46,7 @@ type effect struct {
 	generation         uint64
 	identity           string
 	entry              repository.Entry
+	fileComparison     repository.Comparison
 	query              repository.CommitQuery
 	refSource          repository.RefSource
 	stashSource        repository.ChangeSource
@@ -65,7 +65,6 @@ type effect struct {
 	retained         *string
 	delta            review.Delta
 	store            *review.Store
-	candidates       []review.Candidate
 }
 
 // repositoryPollResult tags asynchronous repository work without making
@@ -88,14 +87,6 @@ type snapshotLoadedMsg struct {
 	reviewSnapshot   review.Snapshot
 	reviewErr        error
 	reviewCapable    bool
-}
-
-type reviewSnapshotLoadedMsg struct {
-	listGeneration   uint64
-	reviewGeneration uint64
-	scope            string
-	snapshot         review.Snapshot
-	err              error
 }
 
 type reviewStateLoadedMsg struct {
@@ -248,8 +239,7 @@ func (m Model) command(pending effect) tea.Cmd {
 	switch pending.kind {
 	case effectLoadSnapshot, effectLoadFile, effectLoadDiff:
 		return m.repositoryCommand(pending)
-	case effectLoadReviewSnapshot,
-		effectLoadReviewState,
+	case effectLoadReviewState,
 		effectLoadReviewDocument,
 		effectLoadReviewFile,
 		effectVerifyReview,
@@ -282,15 +272,20 @@ func (m Model) repositoryCommand(pending effect) tea.Cmd {
 		background := pending.background
 		activity := pending.activity
 		return func() tea.Msg {
-			snapshot, err := source.Snapshot()
+			snapshot, err := source.Snapshot(scope)
 			message := snapshotLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, snapshot: snapshot, err: err, reviewGeneration: reviewGeneration,
 			}
 			provider, ok := source.(review.Provider)
-			if err == nil && ok {
+			comparison := snapshot.Comparison()
+			if err == nil && ok && comparison.Available() {
 				message.reviewCapable = true
-				message.reviewSnapshot, message.reviewErr = provider.ReviewComparisons(scope, reviewCandidates(snapshot.Changed()))
+				message.reviewSnapshot, message.reviewErr = provider.ReviewComparisons(scope, comparison.Basis, reviewCandidates(snapshot.Changed()))
+			} else if err == nil && ok && comparison.Reason != "" {
+				message.reviewCapable = true
+				message.reviewSnapshot = review.Snapshot{Scope: scope, Comparisons: make(map[string]review.FileComparison)}
+				message.reviewErr = errors.New(comparison.Reason)
 			}
 			return message
 		}
@@ -310,9 +305,10 @@ func (m Model) repositoryCommand(pending effect) tea.Cmd {
 		source := m.source
 		generation := pending.generation
 		entry := pending.entry
+		comparison := pending.fileComparison
 		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
-			diff := source.ReadDiff(entry)
+			diff := source.ReadDiff(comparison, entry)
 			return diffLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, entry: entry, diff: diff, presentation: diffReaderDocument(diff),
@@ -339,15 +335,6 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 		return nil
 	}
 	switch pending.kind {
-	case effectLoadReviewSnapshot:
-		listGeneration := pending.generation
-		reviewGeneration := pending.reviewGeneration
-		scope := pending.scope
-		candidates := pending.candidates
-		return func() tea.Msg {
-			snapshot, err := provider.ReviewComparisons(scope, candidates)
-			return reviewSnapshotLoadedMsg{listGeneration: listGeneration, reviewGeneration: reviewGeneration, scope: scope, snapshot: snapshot, err: err}
-		}
 	case effectLoadReviewState:
 		root := m.reviewStateRoot
 		return func() tea.Msg {

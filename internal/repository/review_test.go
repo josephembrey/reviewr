@@ -20,7 +20,7 @@ func TestReviewComparisonsPreserveGitStateIncludingUnreachableObjects(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.txt", Action: review.Modified}})
+	snapshot, err := repo.ReviewComparisons(ComparisonUncommitted, comparisonBasis(t, repo, ComparisonUncommitted), []review.Candidate{{Path: "tracked.txt", Action: review.Modified}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestSHA256ReviewComparisonsUseRepositoryNativeObjectIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.txt", Action: review.Modified}})
+	snapshot, err := repo.ReviewComparisons(ComparisonUncommitted, comparisonBasis(t, repo, ComparisonUncommitted), []review.Candidate{{Path: "tracked.txt", Action: review.Modified}})
 	if err != nil {
 		t.Fatal(err)
 	}

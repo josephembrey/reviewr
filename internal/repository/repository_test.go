@@ -250,7 +250,7 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if commonDir := repo.CommonDir(); commonDir == "" {
 		t.Fatal("CommonDir() is empty")
 	}
-	snapshot, err := repo.Snapshot()
+	snapshot, err := repo.Snapshot(ComparisonUncommitted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 			t.Fatalf("ReadFile(%q) = %+v", entry.Path, result)
 		}
 	}
-	diff := repo.ReadDiff(Entry{Path: "untracked space.txt", State: FileUntracked})
+	diff := repo.ReadDiff(snapshot.Comparison(), Entry{Path: "untracked space.txt", State: FileUntracked})
 	if diff.Kind != DiffReady || !strings.Contains(diff.Content, "+untracked") {
 		t.Fatalf("ReadDiff(untracked) = %+v", diff)
 	}
@@ -383,7 +383,7 @@ func TestDeletedAndRenamedEntriesReadCoherently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := repo.Snapshot()
+	snapshot, err := repo.Snapshot(ComparisonUncommitted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,10 +402,10 @@ func TestDeletedAndRenamedEntriesReadCoherently(t *testing.T) {
 	if file := repo.ReadFile(deleted); file.Kind != FileMissing {
 		t.Fatalf("deleted file read = %+v", file)
 	}
-	if diff := repo.ReadDiff(renamed); diff.Kind != DiffReady || !strings.Contains(diff.Content, "old.go") || !strings.Contains(diff.Content, "new.go") {
+	if diff := repo.ReadDiff(snapshot.Comparison(), renamed); diff.Kind != DiffReady || !strings.Contains(diff.Content, "old.go") || !strings.Contains(diff.Content, "new.go") {
 		t.Fatalf("renamed diff = %+v", diff)
 	}
-	if diff := repo.ReadDiff(deleted); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-package gone") {
+	if diff := repo.ReadDiff(snapshot.Comparison(), deleted); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-package gone") {
 		t.Fatalf("deleted diff = %+v", diff)
 	}
 }
@@ -435,7 +435,7 @@ func TestReviewComparisonsEnrichTypedSnapshotWithExactEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := repo.Snapshot()
+	snapshot, err := repo.Snapshot(ComparisonUncommitted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +452,7 @@ func TestReviewComparisonsEnrichTypedSnapshotWithExactEndpoints(t *testing.T) {
 		}
 		candidates = append(candidates, review.Candidate{Path: entry.Path, PreviousPath: entry.PreviousPath, Action: action})
 	}
-	reviews, err := repo.ReviewComparisons("uncommitted", candidates)
+	reviews, err := repo.ReviewComparisons(ComparisonUncommitted, snapshot.Comparison().Basis, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,6 +504,184 @@ func TestReviewComparisonsEnrichTypedSnapshotWithExactEndpoints(t *testing.T) {
 	}
 }
 
+func TestBranchComparisonUsesDefaultBranchMergeBaseThroughTheWorktree(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "base\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "base")
+	base := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
+	runGit(t, root, "update-ref", "refs/remotes/origin/main", base)
+	runGit(t, root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	runGit(t, root, "checkout", "-qb", "feature")
+
+	writeFile(t, root, "tracked.txt", "committed\n")
+	writeFile(t, root, "branch.txt", "branch\n")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-qm", "feature")
+	writeFile(t, root, "tracked.txt", "committed\nworking\n")
+	writeFile(t, root, "loose.txt", "loose\n")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repo.Snapshot(ComparisonBranch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison := snapshot.Comparison(); comparison.Scope != ComparisonBranch || comparison.Basis != base || !comparison.Available() {
+		t.Fatalf("branch comparison = %+v, want merge base %s", comparison, base)
+	}
+	changed := entriesByPath(snapshot.Changed())
+	for path, state := range map[string]FileState{
+		"branch.txt":  FileAdded,
+		"tracked.txt": FileModified,
+		"loose.txt":   FileUntracked,
+	} {
+		if entry, ok := changed[path]; !ok || entry.State != state {
+			t.Fatalf("branch entry %q = %+v, %v; want state %v", path, entry, ok, state)
+		}
+	}
+	if diff := repo.ReadDiff(snapshot.Comparison(), changed["tracked.txt"]); diff.Kind != DiffReady || !strings.Contains(diff.Content, "+working") || !strings.Contains(diff.Content, "-base") {
+		t.Fatalf("branch worktree diff = %+v", diff)
+	}
+	reviews, err := repo.ReviewComparisons(ComparisonBranch, snapshot.Comparison().Basis, []review.Candidate{{Path: "tracked.txt", Action: review.Modified}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := reviews.Comparisons["tracked.txt"]
+	if comparison.Identity.Basis != base || comparison.OldSource.Value != base {
+		t.Fatalf("branch review comparison = %+v", comparison)
+	}
+	if content := repo.ReadReviewContent(comparison.OldSource, comparison.Old); content.State != review.ContentText || content.Text != "base\n" {
+		t.Fatalf("branch review old content = %+v", content)
+	}
+}
+
+func TestLastTurnComparisonUsesPersistedWorktreeSnapshot(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, ".gitignore", "ignored/\n")
+	writeFile(t, root, "tracked.txt", "before\n")
+	runGit(t, root, "add", ".gitignore", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "existing-untracked.txt", "before loose\n")
+	if err := os.MkdirAll(filepath.Join(root, "ignored"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "ignored/cache.txt", "before ignored\n")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := repo.SnapshotTurnWorktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.WriteTurnBaseline(baseline); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, root, "tracked.txt", "committed during turn\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "agent commit")
+	writeFile(t, root, "tracked.txt", "committed during turn\nworking\n")
+	writeFile(t, root, "existing-untracked.txt", "after loose\n")
+	writeFile(t, root, "new-untracked.txt", "new loose\n")
+	writeFile(t, root, "ignored/cache.txt", "after ignored\n")
+
+	snapshot, err := repo.Snapshot(ComparisonLastTurn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison := snapshot.Comparison(); comparison.Scope != ComparisonLastTurn || comparison.Basis != baseline || !comparison.Available() {
+		t.Fatalf("last-turn comparison = %+v, want baseline %s", comparison, baseline)
+	}
+	changed := entriesByPath(snapshot.Changed())
+	for _, path := range []string{"tracked.txt", "existing-untracked.txt", "new-untracked.txt"} {
+		if _, ok := changed[path]; !ok {
+			t.Fatalf("last-turn changes omit %q: %#v", path, changed)
+		}
+	}
+	if _, ok := changed["ignored/cache.txt"]; ok {
+		t.Fatalf("last-turn included ignored file: %#v", changed)
+	}
+	if entry := entriesByPath(snapshot.All())["ignored/cache.txt"]; entry.State != FileIgnored {
+		t.Fatalf("ignored all-files entry = %+v", entry)
+	}
+	if diff := repo.ReadDiff(snapshot.Comparison(), changed["existing-untracked.txt"]); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-before loose") || !strings.Contains(diff.Content, "+after loose") {
+		t.Fatalf("last-turn diff for baseline-untracked file = %+v", diff)
+	}
+	reviews, err := repo.ReviewComparisons(ComparisonLastTurn, snapshot.Comparison().Basis, []review.Candidate{{Path: "existing-untracked.txt", Action: review.Modified}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := reviews.Comparisons["existing-untracked.txt"]
+	if comparison.Identity.Basis != baseline || comparison.OldSource.Value != baseline {
+		t.Fatalf("last-turn review comparison = %+v", comparison)
+	}
+	if content := repo.ReadReviewContent(comparison.OldSource, comparison.Old); content.State != review.ContentText || content.Text != "before loose\n" {
+		t.Fatalf("last-turn review old content = %+v", content)
+	}
+}
+
+func TestUnavailableComparisonsStayEmptyAndExplainWhy(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "base\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "tracked.txt", "changed\n")
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []string{ComparisonBranch, ComparisonLastTurn} {
+		snapshot, snapshotErr := repo.Snapshot(scope)
+		if snapshotErr != nil {
+			t.Fatal(snapshotErr)
+		}
+		if comparison := snapshot.Comparison(); comparison.Available() || comparison.Reason == "" || len(snapshot.Changed()) != 0 {
+			t.Fatalf("unavailable %s snapshot = comparison %+v changed %#v", scope, comparison, snapshot.Changed())
+		}
+	}
+}
+
+func TestTurnSnapshotAndBaselinePreserveWorktreeIndexAndPublicRefs(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "base\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-qm", "base")
+	writeFile(t, root, "tracked.txt", "worktree\n")
+	writeFile(t, root, "untracked.txt", "loose\n")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := captureGitState(t, root)
+	publicBefore := publicRefs(t, root)
+	tree, err := repo.SnapshotTurnWorktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterSnapshot := captureGitState(t, root)
+	if !bytes.Equal(afterSnapshot.status, before.status) || !bytes.Equal(afterSnapshot.index, before.index) ||
+		afterSnapshot.head != before.head || afterSnapshot.refs != before.refs || publicRefs(t, root) != publicBefore {
+		t.Fatalf("turn snapshot changed repository state\nbefore: %+v\nafter:  %+v", before, afterSnapshot)
+	}
+	if err := repo.WriteTurnBaseline(tree); err != nil {
+		t.Fatal(err)
+	}
+	afterBaseline := captureGitState(t, root)
+	if !bytes.Equal(afterBaseline.status, before.status) || !bytes.Equal(afterBaseline.index, before.index) ||
+		afterBaseline.head != before.head || publicRefs(t, root) != publicBefore {
+		t.Fatalf("turn baseline changed worktree, index, HEAD, or public refs\nbefore: %+v\nafter:  %+v", before, afterBaseline)
+	}
+	if got := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "refs/worktree/reviewr/turn-base^{tree}"))); got != tree {
+		t.Fatalf("turn baseline = %q, want %q", got, tree)
+	}
+}
+
 func TestReviewContentProvesNestedAbsenceWithoutFollowingParentSymlinks(t *testing.T) {
 	root := initRepository(t)
 	repo, err := Open(root)
@@ -535,7 +713,7 @@ func TestReviewContentKeepsExactIdentityWhenSnapshotIsOversized(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo.maxBytes = 8
-	reviews, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "large.txt", Action: review.Modified}})
+	reviews, err := repo.ReviewComparisons(ComparisonUncommitted, comparisonBasis(t, repo, ComparisonUncommitted), []review.Candidate{{Path: "large.txt", Action: review.Modified}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +731,7 @@ func TestReviewComparisonsSupportAddedFilesOnUnbornHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviews, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "first.go", Action: review.Added}})
+	reviews, err := repo.ReviewComparisons(ComparisonUncommitted, comparisonBasis(t, repo, ComparisonUncommitted), []review.Candidate{{Path: "first.go", Action: review.Added}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +750,8 @@ func TestReviewComparisonsRejectStatusContentRace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resurrected, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.go", Action: review.Deleted}})
+	basis := comparisonBasis(t, repo, ComparisonUncommitted)
+	resurrected, err := repo.ReviewComparisons(ComparisonUncommitted, basis, []review.Candidate{{Path: "tracked.go", Action: review.Deleted}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +762,7 @@ func TestReviewComparisonsRejectStatusContentRace(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "tracked.go")); err != nil {
 		t.Fatal(err)
 	}
-	disappeared, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.go", Action: review.Modified}})
+	disappeared, err := repo.ReviewComparisons(ComparisonUncommitted, basis, []review.Candidate{{Path: "tracked.go", Action: review.Modified}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,6 +880,32 @@ func captureGitState(t *testing.T, root string) gitState {
 		refs:    string(runGitBytes(t, root, "show-ref", "--head", "--dereference")),
 		objects: string(runGitBytes(t, root, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")),
 	}
+}
+
+func comparisonBasis(t *testing.T, repo *Repository, scope string) string {
+	t.Helper()
+	snapshot, err := repo.Snapshot(scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := snapshot.Comparison()
+	if !comparison.Available() {
+		t.Fatalf("comparison %q unavailable: %s", scope, comparison.Reason)
+	}
+	return comparison.Basis
+}
+
+func entriesByPath(entries []Entry) map[string]Entry {
+	byPath := make(map[string]Entry, len(entries))
+	for _, entry := range entries {
+		byPath[entry.Path] = entry
+	}
+	return byPath
+}
+
+func publicRefs(t *testing.T, root string) string {
+	t.Helper()
+	return string(runGitBytes(t, root, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/remotes", "refs/tags"))
 }
 
 func initRepository(t *testing.T) string {

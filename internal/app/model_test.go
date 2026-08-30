@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ type fakeSource struct {
 	listErr        error
 	snapshot       repository.Snapshot
 	snapshots      int
+	snapshotScopes []string
 	contents       map[string]repository.File
 	diffs          map[string]repository.Diff
 	commits        []repository.Commit
@@ -37,16 +39,20 @@ type fakeSource struct {
 	stashDocuments map[string]repository.ChangeDocument
 }
 
-func (s *fakeSource) Snapshot() (repository.Snapshot, error) {
+func (s *fakeSource) Snapshot(scope string) (repository.Snapshot, error) {
 	s.snapshots++
+	s.snapshotScopes = append(s.snapshotScopes, scope)
 	if len(s.snapshot.All()) > 0 {
-		return s.snapshot, s.listErr
+		return repository.NewComparisonSnapshot(
+			s.snapshot.All(),
+			repository.Comparison{Scope: scope, Basis: "fake-" + scope},
+		), s.listErr
 	}
 	entries := make([]repository.Entry, len(s.files))
 	for index, path := range s.files {
 		entries[index] = repository.Entry{Path: path}
 	}
-	return repository.NewSnapshot(entries), s.listErr
+	return repository.NewComparisonSnapshot(entries, repository.Comparison{Scope: scope, Basis: "fake-" + scope}), s.listErr
 }
 
 func (s *fakeSource) ReadFile(entry repository.Entry) repository.File {
@@ -56,7 +62,7 @@ func (s *fakeSource) ReadFile(entry repository.Entry) repository.File {
 	return repository.File{Path: entry.Path, Kind: repository.FileMissing, Err: errors.New("missing")}
 }
 
-func (s *fakeSource) ReadDiff(entry repository.Entry) repository.Diff {
+func (s *fakeSource) ReadDiff(_ repository.Comparison, entry repository.Entry) repository.Diff {
 	if diff, ok := s.diffs[entry.Path]; ok {
 		return diff
 	}
@@ -602,6 +608,35 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 	press('3')
 	if model.controls.Comparison != comparison {
 		t.Fatalf("Git 3 changed hidden Files comparison: %+v", model.controls)
+	}
+}
+
+func TestComparisonControlReloadsTheMatchingRepositorySnapshot(t *testing.T) {
+	t.Parallel()
+	source := &fakeSource{snapshot: snapshotOf(repository.Entry{Path: "changed.go", State: repository.FileModified})}
+	model := newTestModel(source)
+	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
+
+	for _, want := range []workspace.Comparison{workspace.Branch, workspace.LastTurn, workspace.Uncommitted} {
+		next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: '3', Text: "3"}))
+		model = next.(Model)
+		if model.controls.Comparison != want || command == nil {
+			t.Fatalf("comparison toggle = %v command=%v, want %v", model.controls.Comparison, command != nil, want)
+		}
+		message := command()
+		loaded, ok := message.(snapshotLoadedMsg)
+		if !ok || loaded.snapshot.Comparison().Scope != want.Label() {
+			t.Fatalf("comparison load = %#v, want scope %q", message, want.Label())
+		}
+		next, _ = model.Update(message)
+		model = next.(Model)
+		if got := model.files.snapshot.Comparison().Scope; got != want.Label() {
+			t.Fatalf("landed comparison = %q, want %q", got, want.Label())
+		}
+	}
+	wantScopes := []string{"branch", "last-turn", "uncommitted"}
+	if !reflect.DeepEqual(source.snapshotScopes, wantScopes) {
+		t.Fatalf("snapshot scopes = %#v, want %#v", source.snapshotScopes, wantScopes)
 	}
 }
 

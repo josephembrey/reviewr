@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 const repositoryPollInterval = time.Second
@@ -16,19 +17,21 @@ type repositoryPoller interface {
 type repositoryPollTickMsg struct{}
 
 type repositoryPolledMsg struct {
-	generation uint64
-	activity   uint64
-	state      repository.StateFingerprint
-	err        error
+	generation          uint64
+	activity            uint64
+	state               repository.StateFingerprint
+	turnBaselineChanged bool
+	err                 error
 }
 
 type repositoryPollState struct {
-	generation  uint64
-	running     bool
-	ready       bool
-	deferNext   bool
-	activity    uint64
-	fingerprint repository.StateFingerprint
+	generation        uint64
+	running           bool
+	ready             bool
+	deferNext         bool
+	activity          uint64
+	turnBaselineDirty bool
+	fingerprint       repository.StateFingerprint
 }
 
 func scheduleRepositoryPoll() tea.Cmd {
@@ -50,9 +53,17 @@ func (m *Model) beginRepositoryPoll() tea.Cmd {
 	m.poll.running = true
 	generation := m.poll.generation
 	activity := m.poll.activity
+	turnHost := m.turn
 	return func() tea.Msg {
+		turnBaselineChanged := false
+		if turnHost != nil {
+			turnBaselineChanged = turnHost.Sample().BaselineChanged
+		}
 		state, err := provider.PollState()
-		return repositoryPolledMsg{generation: generation, activity: activity, state: state, err: err}
+		return repositoryPolledMsg{
+			generation: generation, activity: activity, state: state,
+			turnBaselineChanged: turnBaselineChanged, err: err,
+		}
 	}
 }
 
@@ -61,6 +72,7 @@ func (m *Model) landRepositoryPoll(msg repositoryPolledMsg) tea.Cmd {
 		return nil
 	}
 	m.poll.running = false
+	m.poll.turnBaselineDirty = m.poll.turnBaselineDirty || msg.turnBaselineChanged
 	commands := []tea.Cmd{scheduleRepositoryPoll()}
 	if msg.activity != m.poll.activity {
 		return batchCommands(commands...)
@@ -72,9 +84,12 @@ func (m *Model) landRepositoryPoll(msg repositoryPolledMsg) tea.Cmd {
 	refsChanged := !m.poll.ready || msg.state.Refs != m.poll.fingerprint.Refs
 	m.poll.ready = true
 	m.poll.fingerprint = msg.state
-	if worktreeChanged {
+	comparisonChanged := (refsChanged && m.controls.Comparison == workspace.Branch) ||
+		(m.poll.turnBaselineDirty && m.controls.Comparison == workspace.LastTurn)
+	if worktreeChanged || comparisonChanged {
 		commands = append(commands, m.command(tagRepositoryPoll(m.files.poll(m.controls.Comparison.Label()), msg.activity)))
 	}
+	m.poll.turnBaselineDirty = false
 	if refsChanged {
 		commands = append(commands, m.command(tagRepositoryPoll(m.history.poll(m.controls.Traversal, m.selectedHistoryOID()), msg.activity)))
 		if m.refs.loaded {

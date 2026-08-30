@@ -204,6 +204,48 @@ func TestFileRefreshPreservesHiddenOpenFileAndCollapsedDirectory(t *testing.T) {
 	}
 }
 
+func TestComparisonSwitchBlanksOnlyTheMismatchedDerivedView(t *testing.T) {
+	t.Parallel()
+	state := newFilesState()
+	state, _ = state.landSnapshot(snapshotLoadedMsg{
+		generation: state.listGeneration,
+		snapshot: repository.NewComparisonSnapshot(
+			[]repository.Entry{{Path: "changed.go", State: repository.FileModified}},
+			repository.Comparison{Scope: repository.ComparisonUncommitted, Basis: "head"},
+		),
+	}, workspace.ChangedFiles, workspace.DiffReader, 10)
+	state.readerEntry = repository.Entry{Path: "changed.go", State: repository.FileModified}
+	state.diff = repository.Diff{Kind: repository.DiffReady, Content: "old comparison"}
+	presentation := ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: []ui.ReaderRow{{Identity: "old", Text: "old comparison"}}}
+	state.readerPresentation = &presentation
+	state.readerLoading = false
+	selected, _ := state.place.SelectedIdentity()
+
+	pending := state.reload(repository.ComparisonBranch)
+	view := state.viewModel(ui.Calculate(80, 20))
+	if !state.comparisonPending() || len(view.NavigatorRows) != 0 || len(view.ReaderDocument.Rows) != 0 ||
+		view.ReaderEmpty.Text != "Loading comparison…" || state.tree.FileCount() != 1 {
+		t.Fatalf("pending comparison view leaked stale content: state=%+v view=%+v", state, view)
+	}
+	if current, _ := state.place.SelectedIdentity(); current != selected {
+		t.Fatalf("pending comparison moved selection from %q to %q", selected, current)
+	}
+
+	state, _ = state.landSnapshot(snapshotLoadedMsg{
+		generation: pending.generation,
+		snapshot: repository.NewComparisonSnapshot(
+			[]repository.Entry{{Path: "changed.go", State: repository.FileModified}},
+			repository.Comparison{Scope: repository.ComparisonBranch, Basis: "base"},
+		),
+	}, workspace.ChangedFiles, workspace.DiffReader, 10)
+	if state.comparisonPending() {
+		t.Fatal("landed comparison remained pending")
+	}
+	if current, _ := state.place.SelectedIdentity(); current != selected {
+		t.Fatalf("landed comparison moved selection from %q to %q", selected, current)
+	}
+}
+
 func TestScopeSwitchUsesIndependentFoldsAndPreservesRoleReader(t *testing.T) {
 	t.Parallel()
 	state := loadedFilesState(t,

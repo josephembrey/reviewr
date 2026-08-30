@@ -73,10 +73,6 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 			pending = tagRepositoryPoll(pending, msg.activity)
 		}
 		return true, pending
-	case reviewSnapshotLoadedMsg:
-		var pending effect
-		m.files, pending = m.files.landReviewSnapshot(msg, m.controls.Reader)
-		return true, pending
 	case reviewStateLoadedMsg:
 		var pending effect
 		m.files, pending = m.files.landReviewState(msg, m.controls.Reader)

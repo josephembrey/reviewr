@@ -30,7 +30,7 @@ type fakeReviewSource struct {
 type commentEditedMsg struct{}
 type herdrTurnMsg struct{}
 
-func (source *fakeReviewSource) ReviewComparisons(scope string, candidates []reviewdomain.Candidate) (reviewdomain.Snapshot, error) {
+func (source *fakeReviewSource) ReviewComparisons(scope, _ string, candidates []reviewdomain.Candidate) (reviewdomain.Snapshot, error) {
 	source.requestedCandidates = append(source.requestedCandidates, append([]reviewdomain.Candidate(nil), candidates...))
 	if err := source.comparisonErr[scope]; err != nil {
 		return reviewdomain.Snapshot{Scope: scope, Comparisons: map[string]reviewdomain.FileComparison{}}, err
@@ -567,20 +567,22 @@ func TestReviewSnapshotsAreGenerationScopedAndRefreshNeverMutatesLedger(t *testi
 		t.Fatal("All/Changed projection changed review coverage")
 	}
 
-	branch := state.requestComparison("branch")
-	lastTurn := state.requestComparison("last-turn")
-	state, _ = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
-		listGeneration: branch.generation, reviewGeneration: branch.reviewGeneration, scope: "branch",
-		snapshot: reviewdomain.Snapshot{Scope: "branch", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
-	}, workspace.FileReader)
+	branch := state.reload("branch")
+	lastTurn := state.reload("last-turn")
+	state, _ = state.landSnapshot(snapshotLoadedMsg{
+		generation: branch.generation, reviewGeneration: branch.reviewGeneration, reviewCapable: true,
+		snapshot:       snapshotOf(repository.Entry{Path: "changed.go", State: repository.FileModified}),
+		reviewSnapshot: reviewdomain.Snapshot{Scope: "branch", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
+	}, workspace.AllFiles, workspace.FileReader, 10)
 	if state.reviewScope != "last-turn" || len(state.reviewSnapshot.Comparisons) != 0 {
 		t.Fatal("stale comparison scope landed")
 	}
 	var pending effect
-	state, pending = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
-		listGeneration: lastTurn.generation, reviewGeneration: lastTurn.reviewGeneration, scope: "last-turn",
-		snapshot: reviewdomain.Snapshot{Scope: "last-turn", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
-	}, workspace.FileReader)
+	state, pending = state.landSnapshot(snapshotLoadedMsg{
+		generation: lastTurn.generation, reviewGeneration: lastTurn.reviewGeneration, reviewCapable: true,
+		snapshot:       snapshotOf(repository.Entry{Path: "changed.go", State: repository.FileModified}),
+		reviewSnapshot: reviewdomain.Snapshot{Scope: "last-turn", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
+	}, workspace.AllFiles, workspace.FileReader, 10)
 	if state.reviewSnapshot.Comparisons["changed.go"] != two || !reflect.DeepEqual(state.ledger, before) {
 		t.Fatal("current scope failed to land or mutated receipts")
 	}

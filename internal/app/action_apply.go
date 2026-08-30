@@ -85,7 +85,7 @@ func (m *Model) applyViewControl(action Action) effect {
 	case ToggleComparison:
 		if m.active == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
-			return m.files.requestComparison(m.controls.Comparison.Label())
+			return m.files.reload(m.controls.Comparison.Label())
 		}
 	case ToggleDiffHighlight:
 		if m.diffHighlightEligible() {

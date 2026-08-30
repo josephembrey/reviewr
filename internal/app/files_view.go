@@ -58,11 +58,26 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 	if footerWarning == "" {
 		footerWarning = state.comparisonWarning
 	}
+	navigatorRows := state.navigatorRows()
+	navigatorTitle := fmt.Sprintf("%d files", state.tree.FileCount())
+	navigatorEmpty := state.navigatorEmpty()
+	readerEmpty := state.readerEmpty()
+	readerOffset := state.place.ReaderOffset
+	readerColumn := state.place.ReaderColumn
+	if state.comparisonPending() {
+		navigatorRows = nil
+		navigatorTitle = "0 files"
+		document = ui.ReaderDocument{}
+		contextFoldable = false
+		readerEmpty = ui.Line{Text: "Loading comparison…", Tone: ui.ToneQuiet}
+		readerOffset = 0
+		readerColumn = 0
+	}
 	return ui.Model{
 		Geometry:              geometry,
-		NavigatorTitle:        fmt.Sprintf("%d files", state.tree.FileCount()),
-		NavigatorRows:         state.navigatorRows(),
-		NavigatorEmpty:        state.navigatorEmpty(),
+		NavigatorTitle:        navigatorTitle,
+		NavigatorRows:         navigatorRows,
+		NavigatorEmpty:        navigatorEmpty,
 		Selected:              state.place.Selected,
 		Top:                   state.place.Top,
 		Focus:                 state.place.Focus,
@@ -70,9 +85,9 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 		ReaderDocument:        document,
 		ReaderContextFoldable: contextFoldable,
 		ReaderContextExpanded: state.readerContextExpanded,
-		ReaderEmpty:           state.readerEmpty(),
-		ReaderOffset:          state.place.ReaderOffset,
-		ReaderColumn:          state.place.ReaderColumn,
+		ReaderEmpty:           readerEmpty,
+		ReaderOffset:          readerOffset,
+		ReaderColumn:          readerColumn,
 		FooterWarning:         footerWarning,
 	}
 }

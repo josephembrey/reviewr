@@ -26,7 +26,7 @@ type Candidate struct {
 // Provider is the additive seam implemented by authoritative typed Git entry
 // sources. It deliberately does not enumerate files or infer status.
 type Provider interface {
-	ReviewComparisons(scope string, candidates []Candidate) (Snapshot, error)
+	ReviewComparisons(scope, basis string, candidates []Candidate) (Snapshot, error)
 	ReadReviewContent(source EndpointSource, endpoint Endpoint) Content
 	ReviewRepositoryID() (RepositoryID, error)
 }

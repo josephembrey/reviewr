@@ -35,6 +35,29 @@ func (client Client) ReadDiff(root, path, previousPath string, untracked bool, m
 	} else if err != nil {
 		return nil, err
 	}
+	return client.ReadDiffFrom(root, base, path, previousPath, untracked, maxBytes)
+}
+
+// ReadDiffFrom renders a live-worktree patch from one pinned old tree.
+func (Client) ReadDiffFrom(root, base, path, previousPath string, untracked bool, maxBytes int64) ([]byte, error) {
+	if untracked {
+		return runBoundedAllowExit(
+			root,
+			maxBytes,
+			map[int]struct{}{1: {}},
+			"diff",
+			"--no-index",
+			"--no-color",
+			"--no-ext-diff",
+			expandableDiffContext,
+			"--",
+			"/dev/null",
+			path,
+		)
+	}
+	if !validObjectID(base) {
+		return nil, errors.New("invalid diff comparison identity")
+	}
 	args := []string{
 		"diff",
 		"--no-color",
@@ -42,6 +65,30 @@ func (client Client) ReadDiff(root, path, previousPath string, untracked bool, m
 		"--find-renames",
 		expandableDiffContext,
 		base,
+		"--",
+	}
+	if previousPath != "" && previousPath != path {
+		args = append(args, previousPath)
+	}
+	args = append(args, path)
+	return runBounded(root, maxBytes, args...)
+}
+
+// ReadDiffBetween renders a patch between two pinned trees. Turn comparisons
+// use this path so files that were untracked at both endpoints are not mistaken
+// for deletions by Git's live-worktree diff machinery.
+func (Client) ReadDiffBetween(root, base, target, path, previousPath string, maxBytes int64) ([]byte, error) {
+	if !validObjectID(base) || !validObjectID(target) {
+		return nil, errors.New("invalid diff comparison identity")
+	}
+	args := []string{
+		"diff",
+		"--no-color",
+		"--no-ext-diff",
+		"--find-renames",
+		expandableDiffContext,
+		base,
+		target,
 		"--",
 	}
 	if previousPath != "" && previousPath != path {

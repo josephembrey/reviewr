@@ -37,45 +37,6 @@ func reviewCandidates(entries []repository.Entry) []review.Candidate {
 	return result
 }
 
-func (state *filesState) requestComparison(scope string) effect {
-	state.reviewGeneration++
-	state.reviewScope = scope
-	state.reviewSnapshot = review.Snapshot{Scope: scope, Comparisons: make(map[string]review.FileComparison)}
-	state.rederiveReviews()
-	state.comparisonWarning = ""
-	state.resetReaderContext()
-	if state.readerEntry.Path != "" {
-		state.readerLoading = true
-	}
-	return effect{
-		kind:             effectLoadReviewSnapshot,
-		generation:       state.listGeneration,
-		reviewGeneration: state.reviewGeneration,
-		scope:            scope,
-		candidates:       reviewCandidates(state.snapshot.Changed()),
-	}
-}
-
-func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode workspace.ReaderMode) (filesState, effect) {
-	if msg.listGeneration != state.listGeneration || msg.reviewGeneration != state.reviewGeneration || msg.scope != state.reviewScope {
-		return state, effect{}
-	}
-	state.comparisonWarning = reviewLoadWarning(msg.err)
-	if msg.err != nil {
-		state.reviewSnapshot = review.Snapshot{Scope: msg.scope, Comparisons: make(map[string]review.FileComparison)}
-	} else {
-		state.reviewSnapshot = msg.snapshot
-	}
-	state.rederiveReviews()
-	if state.readerEntry.Path == "" {
-		state.readerLoading = false
-		return state, effect{}
-	}
-	pending := state.requestReader(state.readerEntry, mode)
-	state.place.ClampReaderSource(len(state.readerRows()))
-	return state, pending
-}
-
 func (state filesState) landReviewState(msg reviewStateLoadedMsg, mode workspace.ReaderMode) (filesState, effect) {
 	state.reviewLoaded = true
 	state.store = msg.store

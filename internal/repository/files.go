@@ -72,7 +72,7 @@ func (r *Repository) ReadFile(entry Entry) File {
 }
 
 // ReadDiff renders one bounded patch without allowing Git pathspec magic.
-func (r *Repository) ReadDiff(entry Entry) Diff {
+func (r *Repository) ReadDiff(comparison Comparison, entry Entry) Diff {
 	result := Diff{Entry: entry}
 	if err := validatePath(entry.Path); err != nil {
 		result.Kind = DiffUnavailable
@@ -90,13 +90,32 @@ func (r *Repository) ReadDiff(entry Entry) Diff {
 		result.Kind = DiffReady
 		return result
 	}
-	data, err := r.git.ReadDiff(
-		r.root,
-		entry.Path,
-		entry.PreviousPath,
-		entry.State == FileUntracked,
-		r.maxBytes,
-	)
+	if !comparison.Available() {
+		result.Kind = DiffUnavailable
+		result.Err = fmt.Errorf("%s", comparison.Reason)
+		return result
+	}
+	var data []byte
+	var err error
+	if comparison.Target != "" {
+		data, err = r.git.ReadDiffBetween(
+			r.root,
+			comparison.Basis,
+			comparison.Target,
+			entry.Path,
+			entry.PreviousPath,
+			r.maxBytes,
+		)
+	} else {
+		data, err = r.git.ReadDiffFrom(
+			r.root,
+			comparison.Basis,
+			entry.Path,
+			entry.PreviousPath,
+			entry.State == FileUntracked,
+			r.maxBytes,
+		)
+	}
 	result.Size = int64(len(data))
 	if err != nil {
 		if errors.Is(err, gitadapter.ErrOutputTooLarge) {

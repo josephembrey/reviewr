@@ -74,6 +74,42 @@ func TestRepositoryPollResultsYieldToNewerUserActivity(t *testing.T) {
 	}
 }
 
+func TestTurnBaselineSignalSurvivesAnOverlappingUserAction(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.controls.Comparison = workspace.LastTurn
+	model.poll = repositoryPollState{
+		generation: 4,
+		running:    true,
+		ready:      true,
+		activity:   2,
+		fingerprint: repository.StateFingerprint{
+			Worktree: "same-worktree",
+			Refs:     "same-refs",
+		},
+	}
+	filesGeneration := model.files.listGeneration
+
+	_ = model.landRepositoryPoll(repositoryPolledMsg{
+		generation:          4,
+		activity:            1,
+		state:               model.poll.fingerprint,
+		turnBaselineChanged: true,
+	})
+	if !model.poll.turnBaselineDirty || model.files.listGeneration != filesGeneration {
+		t.Fatalf("overlapped turn signal = poll %+v files generation %d", model.poll, model.files.listGeneration)
+	}
+
+	_ = model.landRepositoryPoll(repositoryPolledMsg{
+		generation: 4,
+		activity:   2,
+		state:      model.poll.fingerprint,
+	})
+	if model.poll.turnBaselineDirty || model.files.listGeneration != filesGeneration+1 {
+		t.Fatalf("retained turn signal = poll %+v files generation %d", model.poll, model.files.listGeneration)
+	}
+}
+
 func TestEveryBackgroundRepositoryResultUsesTheSharedActivityGate(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
@@ -168,6 +204,29 @@ func TestRepositoryPollOnlyReloadsChangedDomainsWithoutLoadingState(t *testing.T
 	}
 	if model.history.listLoading || model.refs.sourceLoading || model.stashes.listLoading {
 		t.Fatal("ref poll exposed a Git-view loading state")
+	}
+
+	model.controls.Comparison = workspace.Branch
+	filesGeneration = model.files.listGeneration
+	historyGeneration = model.history.listGeneration
+	_ = model.landRepositoryPoll(repositoryPolledMsg{
+		generation: 4,
+		state:      repository.StateFingerprint{Worktree: "new-worktree", Refs: "newer-refs"},
+	})
+	if model.files.listGeneration != filesGeneration+1 || model.history.listGeneration != historyGeneration+1 {
+		t.Fatalf("branch ref poll generations = files %d history %d", model.files.listGeneration, model.history.listGeneration)
+	}
+
+	model.controls.Comparison = workspace.LastTurn
+	filesGeneration = model.files.listGeneration
+	historyGeneration = model.history.listGeneration
+	_ = model.landRepositoryPoll(repositoryPolledMsg{
+		generation:          4,
+		state:               repository.StateFingerprint{Worktree: "new-worktree", Refs: "newer-refs"},
+		turnBaselineChanged: true,
+	})
+	if model.files.listGeneration != filesGeneration+1 || model.history.listGeneration != historyGeneration {
+		t.Fatalf("turn baseline poll generations = files %d history %d", model.files.listGeneration, model.history.listGeneration)
 	}
 }
 
