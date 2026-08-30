@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	udiff "github.com/aymanbagabas/go-udiff"
@@ -40,71 +41,106 @@ type Document struct {
 // go-udiff's line differ bounds its Myers/LCS search depth, so sparse edits stay
 // distinct without exposing large files to unbounded quadratic work.
 func BuildDocument(bounds Bounds, oldContent, newContent Content) Document {
-	document := Document{Bounds: bounds}
-	if oldContent.Endpoint != bounds.Old || newContent.Endpoint != bounds.New || !bounds.Old.Exact() || !bounds.New.Exact() {
-		document.Reason = "file changed; refresh before marking reviewed"
-		document.Lines = []Line{{Identity: "notice:stale", Text: document.Reason, Kind: NoticeLine}}
-		return document
-	}
-	document.Exact = true
-	if oldContent.State == ContentUnavailable || newContent.State == ContentUnavailable {
-		document.Exact = false
-		document.Reason = "exact endpoint content unavailable"
-		document.Lines = []Line{{Identity: "notice:unavailable", Text: document.Reason, Kind: NoticeLine}}
-		return document
-	}
-	if oldContent.State == ContentBinary || newContent.State == ContentBinary {
-		document.Lines = []Line{{Identity: "notice:binary", Text: "Binary comparison; exact identity is reviewable.", Kind: NoticeLine}}
-		return document
-	}
-	if oldContent.State == ContentTooLarge || newContent.State == ContentTooLarge {
-		document.Lines = []Line{{Identity: "notice:oversized", Text: "File is too large for a text comparison; exact identity is reviewable.", Kind: NoticeLine}}
+	document, complete := initialDocument(bounds, oldContent, newContent)
+	if complete {
 		return document
 	}
 	oldText := normalizeLineEndings(contentText(oldContent))
 	newText := normalizeLineEndings(contentText(newContent))
-	oldNo, newNo := 1, 1
-	occurrences := make(map[string]int)
-	appendLine := func(kind LineKind, text string, oldLine, newLine int) {
-		key := fmt.Sprintf("%d:%s", kind, ContentIdentity([]byte(text)))
-		occurrences[key]++
-		identity := fmt.Sprintf("%s:%d", key, occurrences[key])
-		document.Lines = append(document.Lines, Line{Identity: identity, Text: linePrefix(kind) + text, Kind: kind, OldLine: oldLine, NewLine: newLine})
-	}
-	appendBlock := func(kind LineKind, text string) {
-		for _, line := range splitLines(text) {
-			switch kind {
-			case ContextLine:
-				appendLine(kind, line, oldNo, newNo)
-				oldNo++
-				newNo++
-			case RemovedLine:
-				appendLine(kind, line, oldNo, 0)
-				document.Removed++
-				oldNo++
-			case AddedLine:
-				appendLine(kind, line, 0, newNo)
-				document.Added++
-				newNo++
-			}
-		}
+	builder := documentBuilder{
+		document: &document, oldLine: 1, newLine: 1,
+		occurrences: make(map[string]int),
 	}
 	cursor := 0
 	for _, edit := range udiff.Lines(oldText, newText) {
-		appendBlock(ContextLine, oldText[cursor:edit.Start])
-		appendBlock(RemovedLine, oldText[edit.Start:edit.End])
-		appendBlock(AddedLine, edit.New)
+		builder.appendBlock(ContextLine, oldText[cursor:edit.Start])
+		builder.appendBlock(RemovedLine, oldText[edit.Start:edit.End])
+		builder.appendBlock(AddedLine, edit.New)
 		cursor = edit.End
 	}
-	appendBlock(ContextLine, oldText[cursor:])
-	if bounds.Old.Kind != bounds.New.Kind {
-		document.Lines = append([]Line{{Identity: "notice:kind", Text: fmt.Sprintf("file type %s -> %s", bounds.Old.Kind, bounds.New.Kind), Kind: NoticeLine}}, document.Lines...)
-	} else if bounds.Old.Mode != bounds.New.Mode {
-		document.Lines = append([]Line{{Identity: "notice:mode", Text: fmt.Sprintf("mode %o -> %o", bounds.Old.Mode, bounds.New.Mode), Kind: NoticeLine}}, document.Lines...)
-	} else if bounds.Old.Kind == Submodule && bounds.Old.ContentID != bounds.New.ContentID {
-		document.Lines = append([]Line{{Identity: "notice:submodule", Text: "submodule target changed", Kind: NoticeLine}}, document.Lines...)
+	builder.appendBlock(ContextLine, oldText[cursor:])
+	if notice, ok := comparisonNotice(bounds); ok {
+		document.Lines = append([]Line{notice}, document.Lines...)
 	}
 	return document
+}
+
+func initialDocument(bounds Bounds, oldContent, newContent Content) (Document, bool) {
+	document := Document{Bounds: bounds}
+	if oldContent.Endpoint != bounds.Old || newContent.Endpoint != bounds.New || !bounds.Old.Exact() || !bounds.New.Exact() {
+		document.Reason = "file changed; refresh before marking reviewed"
+		document.Lines = []Line{{Identity: "notice:stale", Text: document.Reason, Kind: NoticeLine}}
+		return document, true
+	}
+	document.Exact = true
+	switch {
+	case oldContent.State == ContentUnavailable || newContent.State == ContentUnavailable:
+		document.Exact = false
+		document.Reason = "exact endpoint content unavailable"
+		document.Lines = []Line{{Identity: "notice:unavailable", Text: document.Reason, Kind: NoticeLine}}
+		return document, true
+	case oldContent.State == ContentBinary || newContent.State == ContentBinary:
+		document.Lines = []Line{{Identity: "notice:binary", Text: "Binary comparison; exact identity is reviewable.", Kind: NoticeLine}}
+		return document, true
+	case oldContent.State == ContentTooLarge || newContent.State == ContentTooLarge:
+		document.Lines = []Line{{Identity: "notice:oversized", Text: "File is too large for a text comparison; exact identity is reviewable.", Kind: NoticeLine}}
+		return document, true
+	default:
+		return document, false
+	}
+}
+
+type documentBuilder struct {
+	document    *Document
+	oldLine     int
+	newLine     int
+	occurrences map[string]int
+}
+
+func (builder *documentBuilder) appendBlock(kind LineKind, text string) {
+	for _, line := range splitLines(text) {
+		oldLine, newLine := builder.oldLine, builder.newLine
+		switch kind {
+		case ContextLine:
+			builder.oldLine++
+			builder.newLine++
+		case RemovedLine:
+			newLine = 0
+			builder.oldLine++
+			builder.document.Removed++
+		case AddedLine:
+			oldLine = 0
+			builder.newLine++
+			builder.document.Added++
+		}
+		builder.appendLine(kind, line, oldLine, newLine)
+	}
+}
+
+func (builder *documentBuilder) appendLine(kind LineKind, text string, oldLine, newLine int) {
+	key := strconv.Itoa(int(kind)) + ":" + ContentIdentity([]byte(text))
+	builder.occurrences[key]++
+	identity := key + ":" + strconv.Itoa(builder.occurrences[key])
+	builder.document.Lines = append(builder.document.Lines, Line{
+		Identity: identity,
+		Text:     linePrefix(kind) + text,
+		Kind:     kind,
+		OldLine:  oldLine,
+		NewLine:  newLine,
+	})
+}
+
+func comparisonNotice(bounds Bounds) (Line, bool) {
+	switch {
+	case bounds.Old.Kind != bounds.New.Kind:
+		return Line{Identity: "notice:kind", Text: fmt.Sprintf("file type %s -> %s", bounds.Old.Kind, bounds.New.Kind), Kind: NoticeLine}, true
+	case bounds.Old.Mode != bounds.New.Mode:
+		return Line{Identity: "notice:mode", Text: fmt.Sprintf("mode %o -> %o", bounds.Old.Mode, bounds.New.Mode), Kind: NoticeLine}, true
+	case bounds.Old.Kind == Submodule && bounds.Old.ContentID != bounds.New.ContentID:
+		return Line{Identity: "notice:submodule", Text: "submodule target changed", Kind: NoticeLine}, true
+	default:
+		return Line{}, false
+	}
 }
 
 // LineIdentities returns stable row identities for Continuity reconciliation.

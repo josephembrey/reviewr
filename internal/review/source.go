@@ -87,9 +87,28 @@ func ReadExactContent(path string, kind FileKind, mode uint32, reader io.Reader,
 	if retainLimit < 0 {
 		retainLimit = 0
 	}
+	contentID, size, binary, text, err := streamExactContent(reader, retainLimit)
+	if err != nil {
+		return UnavailableContent(path, kind, mode, err)
+	}
+	endpoint := Endpoint{Path: path, Kind: kind, Mode: mode, ContentID: contentID}
+	content := Content{Endpoint: endpoint, Size: size}
+	switch {
+	case binary:
+		content.State = ContentBinary
+	case size > retainLimit:
+		content.State = ContentTooLarge
+	default:
+		content.State = ContentText
+		content.Text = text
+	}
+	return content
+}
+
+func streamExactContent(reader io.Reader, retainLimit int64) (string, int64, bool, string, error) {
 	hash := sha256.New()
 	buffer := make([]byte, 32*1024)
-	retained := bytes.NewBuffer(make([]byte, 0, minInt64(retainLimit+1, 64*1024)))
+	retained := bytes.NewBuffer(make([]byte, 0, retainedCapacity(retainLimit)))
 	var size int64
 	binary := false
 	for {
@@ -99,7 +118,7 @@ func ReadExactContent(path string, kind FileKind, mode uint32, reader io.Reader,
 			_, _ = hash.Write(chunk)
 			size += int64(count)
 			binary = binary || bytes.IndexByte(chunk, 0) >= 0
-			remaining := retainLimit + 1 - int64(retained.Len())
+			remaining := retainLimit - int64(retained.Len())
 			if remaining > 0 {
 				keep := int64(count)
 				if keep > remaining {
@@ -109,32 +128,22 @@ func ReadExactContent(path string, kind FileKind, mode uint32, reader io.Reader,
 			}
 		}
 		if err == io.EOF {
-			break
+			contentID := "sha256:" + hex.EncodeToString(hash.Sum(nil))
+			return contentID, size, binary, retained.String(), nil
 		}
 		if err != nil {
-			return UnavailableContent(path, kind, mode, err)
+			return "", 0, false, "", err
 		}
 	}
-	endpoint := Endpoint{
-		Path: path, Kind: kind, Mode: mode,
-		ContentID: "sha256:" + hex.EncodeToString(hash.Sum(nil)),
-	}
-	content := Content{Endpoint: endpoint, Size: size}
-	switch {
-	case binary:
-		content.State = ContentBinary
-	case size > retainLimit:
-		content.State = ContentTooLarge
-	default:
-		content.State = ContentText
-		content.Text = retained.String()
-	}
-	return content
 }
 
-func minInt64(left, right int64) int {
-	if left < right {
-		return int(left)
+func retainedCapacity(limit int64) int {
+	const initialMaximum = 64 * 1024
+	if limit <= 0 {
+		return 0
 	}
-	return int(right)
+	if limit < initialMaximum {
+		return int(limit)
+	}
+	return initialMaximum
 }
