@@ -31,6 +31,83 @@ func TestStatePathsUseXDGAndCloneIdentity(t *testing.T) {
 	}
 }
 
+func TestWorktreeStatePathsPreserveProjectCompatibilityAndStayOpaque(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+	commonDir := "/projects/example/.git"
+	root := "/worktrees/example feature"
+
+	project, err := StatePaths(commonDir, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := WorktreeStatePaths(commonDir, root, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _ := StatePaths(commonDir, lookup)
+	otherRoot, _ := WorktreeStatePaths(commonDir, "/worktrees/other", lookup)
+	otherProject, _ := WorktreeStatePaths("/projects/other/.git", root, lookup)
+
+	if project != again || project.Note != filepath.Join(project.Directory, "note.txt") || project.Lock != filepath.Join(project.Directory, "edit.lock") {
+		t.Fatalf("project compatibility changed: project=%+v again=%+v", project, again)
+	}
+	if filepath.Dir(filepath.Dir(worktree.Directory)) != project.Directory {
+		t.Fatalf("worktree path %q is not below project path %q", worktree.Directory, project.Directory)
+	}
+	if worktree == otherRoot || worktree == otherProject {
+		t.Fatalf("worktree identity was not keyed by both inputs: worktree=%+v otherRoot=%+v otherProject=%+v", worktree, otherRoot, otherProject)
+	}
+	if strings.Contains(worktree.Directory, commonDir) || strings.Contains(worktree.Directory, root) {
+		t.Fatalf("private identities leaked into worktree path %q", worktree.Directory)
+	}
+	if stores := NewStores(commonDir, root, false, lookup); stores.HasWorktree() {
+		t.Fatal("primary checkout constructed a duplicate worktree store")
+	}
+}
+
+func TestProjectAndWorktreeStoresHaveIndependentFilesAndLocks(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+	commonDir := "/projects/example/.git"
+	root := "/worktrees/example"
+
+	owner := NewPrivateStore(commonDir, lookup)
+	t.Cleanup(func() { _ = owner.Close() })
+	if _, readOnly, err := owner.Load(); err != nil || readOnly {
+		t.Fatalf("project owner Load() = readOnly %v, %v", readOnly, err)
+	}
+	if err := owner.Save("project note"); err != nil {
+		t.Fatal(err)
+	}
+
+	stores := NewStores(commonDir, root, true, lookup)
+	t.Cleanup(func() { _ = stores.Close() })
+	projectText, projectReadOnly, projectErr := stores.Project.Load()
+	worktreeText, worktreeReadOnly, worktreeErr := stores.Worktree.Load()
+	if projectErr != nil || !projectReadOnly || projectText != "project note" {
+		t.Fatalf("contended project = %q, readOnly %v, %v", projectText, projectReadOnly, projectErr)
+	}
+	if worktreeErr != nil || worktreeReadOnly || worktreeText != "" {
+		t.Fatalf("independent worktree = %q, readOnly %v, %v", worktreeText, worktreeReadOnly, worktreeErr)
+	}
+	if err := stores.Worktree.Save("local note"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stores.Project.Save("must fail"); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("contended project Save() = %v", err)
+	}
+	projectPaths, _ := StatePaths(commonDir, lookup)
+	worktreePaths, _ := WorktreeStatePaths(commonDir, root, lookup)
+	projectData, projectErr := os.ReadFile(projectPaths.Note)
+	worktreeData, worktreeErr := os.ReadFile(worktreePaths.Note)
+	if projectErr != nil || worktreeErr != nil || string(projectData) != "project note" || string(worktreeData) != "local note" {
+		t.Fatalf("independent files = project %q (%v), worktree %q (%v)", projectData, projectErr, worktreeData, worktreeErr)
+	}
+}
+
 func TestStatePathsUseLinuxFallbackAndIgnoreRelativeXDG(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()

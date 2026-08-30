@@ -10,7 +10,6 @@ import (
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/preferences"
 	"github.com/josephembrey/reviewr/internal/repository"
-	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 func main() {
@@ -35,14 +34,16 @@ func run(args []string) error {
 	host := herdr.NewRuntime(herdr.Detect(os.LookupEnv))
 	host.Start()
 	defer host.Close()
-	commonDir, _ := repo.CommonDir()
-	store := scratch.NewPrivateStore(commonDir, os.LookupEnv)
+	stores, err := repo.ScratchStores(os.LookupEnv)
+	if err != nil {
+		return err
+	}
 	paneStore, paneState, _ := preferences.Open("")
-	model := app.NewWithPaneState(repo, host.Context(), store, paneStore, paneState.PanesSwapped)
+	model := app.NewWithPaneStateAndScratchScopes(repo, host.Context(), stores, paneStore, paneState.PanesSwapped)
 	final, runErr := tea.NewProgram(model).Run()
 	model, ok := final.(app.Model)
 	if !ok {
-		return errors.Join(runErr, store.Close())
+		return errors.Join(runErr, stores.Close())
 	}
 	return errors.Join(runErr, model.Shutdown())
 }

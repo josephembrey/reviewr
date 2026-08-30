@@ -65,6 +65,11 @@ func TestCalculatePartitionsScreen(t *testing.T) {
 		assertSurfaceGeometry(t, g.Navigator, g.NavigatorTitle, g.NavigatorRows)
 		assertSurfaceGeometry(t, g.Reader, g.ReaderTitle, g.ReaderRows)
 		assertSurfaceGeometry(t, g.Body, g.ScratchTitle, g.ScratchRows)
+		for name, rect := range map[string]Rect{"project scope": g.ScratchProjectScope, "worktree scope": g.ScratchWorktreeScope} {
+			if rect.Y != g.ScratchTitle.Y || rect.X < g.ScratchTitle.X || rect.X+rect.Width > g.ScratchTitle.X+g.ScratchTitle.Width || rect.Height > g.ScratchTitle.Height {
+				t.Fatalf("%s is outside Scratch title: rect=%+v title=%+v", name, rect, g.ScratchTitle)
+			}
+		}
 		if g.ScratchText != g.ScratchRows {
 			t.Fatalf("Scratch fitting text does not use full rows: %+v", g)
 		}
@@ -91,6 +96,7 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 				"navigator rows": g.NavigatorRows, "divider": g.Divider,
 				"reader": g.Reader, "reader title": g.ReaderTitle,
 				"reader rows": g.ReaderRows, "scratch title": g.ScratchTitle,
+				"project scope": g.ScratchProjectScope, "worktree scope": g.ScratchWorktreeScope,
 				"scratch rows": g.ScratchRows, "scratch text": g.ScratchText,
 				"scratch bar": g.ScratchBar, "footer": g.Footer,
 			} {
@@ -125,6 +131,15 @@ func TestScratchHitTestUsesFullWidthRowsAndScrollbar(t *testing.T) {
 	}
 	if got := g.ScratchHitTest(g.ScratchTitle.X, g.ScratchTitle.Y, 30, 3); got.Kind != HitNone {
 		t.Fatalf("Scratch title hit = %+v", got)
+	}
+	if got := g.ScratchHitTestWithScopes(g.ScratchProjectScope.X, g.ScratchProjectScope.Y, 30, 3, true); got.Kind != HitScratchProjectScope {
+		t.Fatalf("project scope hit = %+v", got)
+	}
+	if got := g.ScratchHitTestWithScopes(g.ScratchWorktreeScope.X, g.ScratchWorktreeScope.Y, 30, 3, true); got.Kind != HitScratchWorktreeScope {
+		t.Fatalf("worktree scope hit = %+v", got)
+	}
+	if got := g.ScratchHitTestWithScopes(g.ScratchProjectScope.X, g.ScratchProjectScope.Y, 30, 3, false); got.Kind != HitNone {
+		t.Fatalf("collapsed scope hit = %+v", got)
 	}
 	if got := g.ScratchHitTest(g.HeaderFiles.X, g.HeaderFiles.Y, 30, 3); got.Kind != HitFilesWorkspace {
 		t.Fatalf("Scratch header hit = %+v", got)

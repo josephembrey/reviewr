@@ -13,6 +13,7 @@ import (
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
 	"github.com/josephembrey/reviewr/internal/review"
+	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 // DefaultMaxFileBytes bounds memory and render work for one reader load.
@@ -161,6 +162,21 @@ func (r *Repository) PollState() (StateFingerprint, error) {
 // executable startup.
 func (r *Repository) CommonDir() (string, error) {
 	return r.git.ResolveCommonDir(r.root)
+}
+
+// ScratchStores builds the private project and optional linked-worktree note
+// sessions from canonical Git identities. Comparing Git-dir to common-dir is
+// Git's own robust distinction between the primary and linked checkouts.
+func (r *Repository) ScratchStores(lookupEnv func(string) (string, bool)) (scratch.Stores, error) {
+	commonDir, err := r.git.ResolveCommonDir(r.root)
+	if err != nil {
+		return scratch.Stores{}, fmt.Errorf("resolve Scratch project identity: %w", err)
+	}
+	gitDir, err := r.git.ResolveGitDir(r.root)
+	if err != nil {
+		return scratch.Stores{}, fmt.Errorf("resolve Scratch worktree identity: %w", err)
+	}
+	return scratch.NewStores(commonDir, r.root, gitDir != commonDir, lookupEnv), nil
 }
 
 // ReviewRepositoryID returns the canonical private-state namespace without

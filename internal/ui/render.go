@@ -72,6 +72,9 @@ func Render(model Model) string {
 		}
 		if model.Workspace == workspace.Scratch {
 			footer = SafeSingleLine(model.ScratchStatus)
+			if model.ScratchHasWorktree {
+				footer += "  •  ctrl+t scope"
+			}
 		}
 		style := chromeStyle
 		if model.Workspace == workspace.Files && model.FooterWarning != "" {
@@ -211,9 +214,57 @@ func renderScratch(model Model) string {
 		g.Body,
 		g.ScratchTitle,
 		g.ScratchRows,
-		renderTitle("Scratch", true),
+		renderScratchTitle(g, model.ScratchScope, model.ScratchHasWorktree),
 		rows,
 	)
+}
+
+func renderScratchTitle(g Geometry, scope scratch.Scope, hasWorktree bool) string {
+	if !hasWorktree {
+		return renderTitle("Scratch", true)
+	}
+	width := min(g.ScratchTitle.Width, g.ScratchWorktreeScope.X+g.ScratchWorktreeScope.Width-g.ScratchTitle.X)
+	value := []byte(strings.Repeat(" ", max(0, width)))
+	paint := func(x int, label string) {
+		for index := 0; index < len(label); index++ {
+			position := x - g.ScratchTitle.X + index
+			if position >= 0 && position < len(value) {
+				value[position] = label[index]
+			}
+		}
+	}
+	paint(g.ScratchTitle.X, "Scratch")
+	paint(g.ScratchProjectScope.X+1, "project")
+	paint(g.ScratchWorktreeScope.X+1, "worktree")
+	selected := g.ScratchProjectScope
+	if scope == scratch.Worktree {
+		selected = g.ScratchWorktreeScope
+	}
+	if selected.Width > 0 {
+		value[selected.X-g.ScratchTitle.X] = '['
+		if selected.Width > 1 {
+			value[selected.X-g.ScratchTitle.X+selected.Width-1] = ']'
+		}
+	}
+	var rendered strings.Builder
+	isFocused := func(index int) bool {
+		x := g.ScratchTitle.X + index
+		return x < g.ScratchTitle.X+len("Scratch") || selected.Contains(x, g.ScratchTitle.Y)
+	}
+	for index := 0; index < len(value); {
+		focused := isFocused(index)
+		style := chromeStyle
+		if focused {
+			style = focusedTitleStyle
+		}
+		end := index + 1
+		for end < len(value) && isFocused(end) == focused {
+			end++
+		}
+		rendered.WriteString(style.Render(string(value[index:end])))
+		index = end
+	}
+	return rendered.String()
 }
 
 func renderScratchRow(row scratch.Row, cursorRow bool, presentation scratch.Presentation, width int) string {

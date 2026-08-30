@@ -17,25 +17,27 @@ func (r Rect) Contains(x, y int) bool {
 
 // Geometry is the single source of pane bounds for render and mouse routing.
 type Geometry struct {
-	Screen         Rect
-	Header         Rect
-	HeaderSwitcher Rect
-	HeaderFiles    Rect
-	HeaderGit      Rect
-	HeaderScratch  Rect
-	Body           Rect
-	Navigator      Rect
-	NavigatorTitle Rect
-	NavigatorRows  Rect
-	Divider        Rect
-	Reader         Rect
-	ReaderTitle    Rect
-	ReaderRows     Rect
-	ScratchTitle   Rect
-	ScratchRows    Rect
-	ScratchText    Rect
-	ScratchBar     Rect
-	Footer         Rect
+	Screen               Rect
+	Header               Rect
+	HeaderSwitcher       Rect
+	HeaderFiles          Rect
+	HeaderGit            Rect
+	HeaderScratch        Rect
+	Body                 Rect
+	Navigator            Rect
+	NavigatorTitle       Rect
+	NavigatorRows        Rect
+	Divider              Rect
+	Reader               Rect
+	ReaderTitle          Rect
+	ReaderRows           Rect
+	ScratchTitle         Rect
+	ScratchProjectScope  Rect
+	ScratchWorktreeScope Rect
+	ScratchRows          Rect
+	ScratchText          Rect
+	ScratchBar           Rect
+	Footer               Rect
 }
 
 // MinimumPaneWidth is the draggable split's preferred lower bound. Geometry
@@ -118,6 +120,8 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
 	g.ScratchTitle, g.ScratchRows = surfaceRows(g.Body)
+	g.ScratchProjectScope = clipTo(g.ScratchTitle, Rect{X: g.ScratchTitle.X + 9, Y: g.ScratchTitle.Y, Width: 9, Height: 1})
+	g.ScratchWorktreeScope = clipTo(g.ScratchTitle, Rect{X: g.ScratchTitle.X + 18, Y: g.ScratchTitle.Y, Width: 10, Height: 1})
 	// Scratch uses the full row width while content fits. ScratchBar is only
 	// the potential lane; CalculateScrollbar decides whether it is reserved.
 	g.ScratchText = g.ScratchRows
@@ -155,6 +159,8 @@ const (
 	HitNavigator
 	HitNavigatorRow
 	HitReader
+	HitScratchProjectScope
+	HitScratchWorktreeScope
 	HitScratchText
 	HitScratchScrollbar
 )
@@ -169,6 +175,12 @@ type Hit struct {
 // ScratchHitTest resolves the full-width overlay using the same explicit
 // rectangles and scrollbar calculation used to paint it.
 func (g Geometry) ScratchHitTest(x, y, totalRows, offset int) Hit {
+	return g.ScratchHitTestWithScopes(x, y, totalRows, offset, false)
+}
+
+// ScratchHitTestWithScopes adds the optional scope labels to the shared title
+// geometry without making an absent primary-checkout switcher interactive.
+func (g Geometry) ScratchHitTestWithScopes(x, y, totalRows, offset int, hasWorktree bool) Hit {
 	if g.HeaderFiles.Contains(x, y) {
 		return Hit{Kind: HitFilesWorkspace}
 	}
@@ -177,6 +189,12 @@ func (g Geometry) ScratchHitTest(x, y, totalRows, offset int) Hit {
 	}
 	if g.HeaderScratch.Contains(x, y) {
 		return Hit{Kind: HitScratchWorkspace}
+	}
+	if hasWorktree && g.ScratchProjectScope.Contains(x, y) {
+		return Hit{Kind: HitScratchProjectScope}
+	}
+	if hasWorktree && g.ScratchWorktreeScope.Contains(x, y) {
+		return Hit{Kind: HitScratchWorktreeScope}
 	}
 	if g.Header.Contains(x, y) || g.ScratchTitle.Contains(x, y) {
 		return Hit{Kind: HitNone}

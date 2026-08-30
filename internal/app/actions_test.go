@@ -127,6 +127,40 @@ func TestScratchRoutingIsModelessAndSemantic(t *testing.T) {
 	}
 }
 
+func TestScratchScopeKeyboardAndMouseRouting(t *testing.T) {
+	t.Parallel()
+	g := ui.Calculate(80, 12)
+	editor := scratch.NewEditor()
+	editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+	presentation := editor.Presentation()
+	ctrlT := tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl})
+	if got, ok := routeScratchMessage(ctrlT, g, presentation, false, false); ok {
+		t.Fatalf("primary ctrl+t routed as (%+v, true)", got)
+	}
+	if got, ok := routeScratchMessage(ctrlT, g, presentation, false, false, true); !ok || got.Kind != ToggleScratchScope {
+		t.Fatalf("linked ctrl+t = (%+v, %v)", got, ok)
+	}
+	if got, ok := routeScratchMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), g, presentation, false, false, true); !ok || got != (Action{Kind: ScratchInsert, Text: "\t"}) {
+		t.Fatalf("linked Tab = (%+v, %v)", got, ok)
+	}
+	for _, test := range []struct {
+		name string
+		rect ui.Rect
+		want ActionKind
+	}{
+		{name: "project", rect: g.ScratchProjectScope, want: SelectProjectScratch},
+		{name: "worktree", rect: g.ScratchWorktreeScope, want: SelectWorktreeScratch},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			msg := tea.MouseClickMsg(tea.Mouse{X: test.rect.X + test.rect.Width/2, Y: test.rect.Y, Button: tea.MouseLeft})
+			if got, ok := routeScratchMessage(msg, g, presentation, false, false, true); !ok || got.Kind != test.want {
+				t.Fatalf("scope click = (%+v, %v), want %v", got, ok, test.want)
+			}
+		})
+	}
+}
+
 func TestMouseRoutingPrecedence(t *testing.T) {
 	t.Parallel()
 	g := ui.Calculate(80, 20)

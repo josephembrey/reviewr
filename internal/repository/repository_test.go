@@ -45,6 +45,20 @@ func TestOpenResolvesWorktreeRoot(t *testing.T) {
 			t.Fatalf("Root() = %q, want %q", repo.Root(), root)
 		}
 	})
+
+	t.Run("symlinked checkout path", func(t *testing.T) {
+		alias := filepath.Join(t.TempDir(), "checkout-link")
+		if err := os.Symlink(root, alias); err != nil {
+			t.Fatal(err)
+		}
+		repo, err := Open(filepath.Join(alias, "one"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if repo.Root() != root {
+			t.Fatalf("Root() = %q, want canonical %q", repo.Root(), root)
+		}
+	})
 }
 
 func TestOpenRejectsNonRepository(t *testing.T) {
@@ -90,6 +104,59 @@ func TestCommonDirSharesLinkedWorktreesAndIsolatesClones(t *testing.T) {
 	}
 	if cloneCommon := openCommon(clone); cloneCommon == mainCommon {
 		t.Fatalf("separate clone reused common directory %q", cloneCommon)
+	}
+}
+
+func TestScratchStoresCollapsePrimaryAndSeparateLinkedWorktree(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "tracked\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	linked := filepath.Join(t.TempDir(), "linked checkout")
+	runGit(t, root, "worktree", "add", "-q", "-b", "scratch-linked", linked)
+	t.Cleanup(func() { runGit(t, root, "worktree", "remove", "--force", linked) })
+
+	stateHome := t.TempDir()
+	lookup := func(key string) (string, bool) { return stateHome, key == "XDG_STATE_HOME" }
+	primaryRepo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkedRepo, err := Open(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaryStores, err := primaryRepo.ScratchStores(lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = primaryStores.Close() })
+	linkedStores, err := linkedRepo.ScratchStores(lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = linkedStores.Close() })
+
+	if primaryStores.HasWorktree() {
+		t.Fatal("primary checkout exposed a duplicate worktree note")
+	}
+	if !linkedStores.HasWorktree() {
+		t.Fatal("linked checkout did not expose a worktree note")
+	}
+	if _, readOnly, err := primaryStores.Project.Load(); err != nil || readOnly {
+		t.Fatalf("primary project Load() = readOnly %v, %v", readOnly, err)
+	}
+	if err := primaryStores.Project.Save("shared"); err != nil {
+		t.Fatal(err)
+	}
+	if text, readOnly, err := linkedStores.Project.Load(); err != nil || !readOnly || text != "shared" {
+		t.Fatalf("linked project Load() = %q, readOnly %v, %v", text, readOnly, err)
+	}
+	if text, readOnly, err := linkedStores.Worktree.Load(); err != nil || readOnly || text != "" {
+		t.Fatalf("linked worktree Load() = %q, readOnly %v, %v", text, readOnly, err)
+	}
+	if err := linkedStores.Worktree.Save("local"); err != nil {
+		t.Fatal(err)
 	}
 }
 

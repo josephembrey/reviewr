@@ -50,7 +50,7 @@ type Model struct {
 	history   historyState
 	refs      refsState
 	stashes   stashState
-	note      scratchState
+	note      scopedScratchState
 	poll      repositoryPollState
 	paneStore PaneStateStore
 	paneSave  uint64
@@ -86,18 +86,19 @@ const (
 )
 
 type effect struct {
-	kind        effectKind
-	generation  uint64
-	identity    string
-	entry       repository.Entry
-	query       repository.CommitQuery
-	refSource   repository.RefSource
-	stashSource repository.ChangeSource
-	changedFile repository.ChangedFile
-	text        string
-	swapped     bool
-	background  bool
-	activity    uint64
+	kind         effectKind
+	generation   uint64
+	identity     string
+	entry        repository.Entry
+	query        repository.CommitQuery
+	refSource    repository.RefSource
+	stashSource  repository.ChangeSource
+	changedFile  repository.ChangedFile
+	text         string
+	swapped      bool
+	background   bool
+	activity     uint64
+	scratchScope scratch.Scope
 
 	scope            string
 	reviewGeneration uint64
@@ -208,15 +209,20 @@ type commitLoadedMsg struct {
 }
 
 type scratchLoadedMsg struct {
+	scope      scratch.Scope
 	generation uint64
 	text       string
 	readOnly   bool
 	err        error
 }
 
-type scratchSaveDueMsg struct{ generation uint64 }
+type scratchSaveDueMsg struct {
+	scope      scratch.Scope
+	generation uint64
+}
 
 type scratchSavedMsg struct {
+	scope      scratch.Scope
 	generation uint64
 	err        error
 }
@@ -276,14 +282,26 @@ func New(source Source, host herdr.Context) Model {
 	return NewWithScratch(source, host, scratch.NewMemoryStore())
 }
 
-// NewWithScratch creates a model with an explicit clone-scoped Scratch store.
+// NewWithScratch creates a model with an explicit project-scoped Scratch store.
 func NewWithScratch(source Source, host herdr.Context, store scratch.Store) Model {
 	return NewWithPaneState(source, host, store, nil, false)
+}
+
+// NewWithScratchScopes creates a model with project and optional linked-
+// worktree Scratch sessions.
+func NewWithScratchScopes(source Source, host herdr.Context, stores scratch.Stores) Model {
+	return NewWithPaneStateAndScratchScopes(source, host, stores, nil, false)
 }
 
 // NewWithPaneState creates a model with a startup pane-side preference and
 // its external persistence boundary.
 func NewWithPaneState(source Source, host herdr.Context, scratchStore scratch.Store, paneStore PaneStateStore, swapped bool) Model {
+	return NewWithPaneStateAndScratchScopes(source, host, scratch.Stores{Project: scratchStore}, paneStore, swapped)
+}
+
+// NewWithPaneStateAndScratchScopes creates a model with independently scoped
+// Scratch sessions plus a startup pane-side preference.
+func NewWithPaneStateAndScratchScopes(source Source, host herdr.Context, stores scratch.Stores, paneStore PaneStateStore, swapped bool) Model {
 	return Model{
 		source:    source,
 		host:      host,
@@ -294,7 +312,7 @@ func NewWithPaneState(source Source, host herdr.Context, scratchStore scratch.St
 		history:   newHistoryState(),
 		refs:      newRefsState(),
 		stashes:   newStashState(),
-		note:      newScratchState(scratchStore),
+		note:      newScopedScratchState(stores),
 		paneStore: paneStore,
 	}
 }
@@ -414,13 +432,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
 		return m, nil
 	case scratchLoadedMsg:
-		m.note.landLoad(msg)
-		m.note.resize(m.geometry)
+		m.note.landLoad(msg.scope, msg, m.geometry)
 		return m, nil
 	case scratchSaveDueMsg:
-		return m, m.command(m.note.due(msg))
+		return m, m.command(m.note.due(msg.scope, msg))
 	case scratchSavedMsg:
-		exit, next := m.note.landSave(msg)
+		exit, next := m.note.landSave(msg.scope, msg)
 		if exit != scratchExitNone {
 			next = m.finishScratchExit(exit)
 		}
@@ -471,7 +488,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var action Action
 	var ok bool
 	if m.scratch {
-		action, ok = routeScratchMessage(msg, m.geometry, m.note.editor.Presentation(), m.note.editor.Dragging(), m.note.scrollbarDragging)
+		note := m.note.current()
+		action, ok = routeScratchMessage(msg, m.geometry, note.editor.Presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
 	} else {
 		place := m.activePlace()
 		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
@@ -498,12 +516,15 @@ func (m Model) View() tea.View {
 	}
 	var presentation ui.Model
 	if m.scratch {
-		status, statusError := m.note.status()
+		note := m.note.current()
+		status, statusError := note.status()
 		presentation = ui.Model{
-			Geometry:      m.geometry,
-			Scratch:       m.note.editor.Presentation(),
-			ScratchStatus: status,
-			ScratchError:  statusError,
+			Geometry:           m.geometry,
+			Scratch:            note.editor.Presentation(),
+			ScratchStatus:      status,
+			ScratchError:       statusError,
+			ScratchScope:       m.note.scope,
+			ScratchHasWorktree: m.note.hasWorktree(),
 		}
 	} else if m.gitStashesActive() {
 		presentation = m.stashes.viewModel(m.geometry, time.Now())
@@ -539,10 +560,10 @@ func (m *Model) apply(action Action) effect {
 	switch action.Kind {
 	case Quit:
 		pending := m.note.requestExit(scratchExitQuit)
-		if pending.kind != effectNone || m.note.saving {
+		if pending.kind != effectNone || m.note.current().saving {
 			return pending
 		}
-		m.note.pendingExit = scratchExitNone
+		m.note.finishExit()
 		return effect{kind: effectQuit}
 	case ToggleWorkspace:
 		m.scrollbar.finish()
@@ -579,6 +600,12 @@ func (m *Model) apply(action Action) effect {
 		m.scratch = true
 		m.layout.finishDrag()
 		return m.note.open()
+	case ToggleScratchScope:
+		return m.note.toggleScope()
+	case SelectProjectScratch:
+		return m.note.selectScope(scratch.Project)
+	case SelectWorktreeScratch:
+		return m.note.selectScope(scratch.Worktree)
 	case ToggleSecondary:
 		if m.active == workspace.Git {
 			m.scrollbar.finish()
@@ -822,14 +849,14 @@ func (m *Model) activePlace() *navigation.State {
 
 func (m *Model) requestScratchExit(exit scratchExit) effect {
 	pending := m.note.requestExit(exit)
-	if pending.kind != effectNone || m.note.saving {
+	if pending.kind != effectNone || m.note.current().saving {
 		return pending
 	}
 	return m.finishScratchExit(exit)
 }
 
 func (m *Model) finishScratchExit(exit scratchExit) effect {
-	m.note.pendingExit = scratchExitNone
+	m.note.finishExit()
 	m.scratch = false
 	switch exit {
 	case scratchExitFiles:
@@ -1048,23 +1075,26 @@ func (m Model) command(pending effect) tea.Cmd {
 			}
 		}
 	case effectLoadScratch:
-		store := m.note.store
+		scope := pending.scratchScope
+		store := m.note.forScope(scope).store
 		generation := pending.generation
 		return func() tea.Msg {
 			text, readOnly, err := store.Load()
-			return scratchLoadedMsg{generation: generation, text: text, readOnly: readOnly, err: err}
+			return scratchLoadedMsg{scope: scope, generation: generation, text: text, readOnly: readOnly, err: err}
 		}
 	case effectDebounceScratch:
+		scope := pending.scratchScope
 		generation := pending.generation
 		return tea.Tick(scratchSaveDebounce, func(time.Time) tea.Msg {
-			return scratchSaveDueMsg{generation: generation}
+			return scratchSaveDueMsg{scope: scope, generation: generation}
 		})
 	case effectSaveScratch:
-		store := m.note.store
+		scope := pending.scratchScope
+		store := m.note.forScope(scope).store
 		generation := pending.generation
 		text := pending.text
 		return func() tea.Msg {
-			return scratchSavedMsg{generation: generation, err: store.Save(text)}
+			return scratchSavedMsg{scope: scope, generation: generation, err: store.Save(text)}
 		}
 	case effectSavePaneState:
 		store := m.paneStore

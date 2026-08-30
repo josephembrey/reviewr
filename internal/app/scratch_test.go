@@ -10,6 +10,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -22,6 +23,7 @@ type fakeScratchStore struct {
 	loads    int
 	saves    []string
 	closed   bool
+	closeErr error
 }
 
 func (store *fakeScratchStore) Load() (string, bool, error) {
@@ -39,11 +41,17 @@ func (store *fakeScratchStore) Save(text string) error {
 
 func (store *fakeScratchStore) Close() error {
 	store.closed = true
-	return nil
+	return store.closeErr
 }
 
 func newScratchTestModel(store *fakeScratchStore) Model {
 	model := NewWithScratch(&fakeSource{}, herdr.Context{}, store)
+	model.apply(Action{Kind: Resize, Width: 80, Height: 16})
+	return model
+}
+
+func newScopedScratchTestModel(project, worktree *fakeScratchStore) Model {
+	model := NewWithScratchScopes(&fakeSource{}, herdr.Context{}, scratch.Stores{Project: project, Worktree: worktree})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 16})
 	return model
 }
@@ -372,5 +380,177 @@ func TestScratchLoadFailureIsRecoverable(t *testing.T) {
 	}
 	if status, isError := model.note.status(); !isError || !strings.Contains(status, "unreadable state") {
 		t.Fatalf("load error status = %q, %v", status, isError)
+	}
+}
+
+func TestScratchScopesSaveBeforeSwitchAndRestoreIndependentEditorPlace(t *testing.T) {
+	t.Parallel()
+	project := &fakeScratchStore{text: "project"}
+	worktree := &fakeScratchStore{text: "worktree"}
+	model := openScratch(t, newScopedScratchTestModel(project, worktree))
+	if model.note.scope != scratch.Project {
+		t.Fatalf("initial scope = %v, want project", model.note.scope)
+	}
+
+	next, _ := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}))
+	model = next.(Model)
+	model = typeScratch(t, model, "!")
+	projectPlace := model.note.current().editor.Presentation()
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if command == nil || model.note.scope != scratch.Project || !model.note.switchPending || worktree.loads != 0 {
+		t.Fatalf("dirty switch started incorrectly: scope=%v pending=%v command=%v worktree loads=%d", model.note.scope, model.note.switchPending, command != nil, worktree.loads)
+	}
+	next, loadCommand := model.Update(command())
+	model = next.(Model)
+	if loadCommand == nil || model.note.scope != scratch.Worktree || project.text != "project!" {
+		t.Fatalf("project save did not precede switch: scope=%v project=%q load=%v", model.note.scope, project.text, loadCommand != nil)
+	}
+	next, command = model.Update(loadCommand())
+	model = next.(Model)
+	if command != nil || model.note.current().editor.Text() != "worktree" {
+		t.Fatalf("worktree load = command %v note %q", command != nil, model.note.current().editor.Text())
+	}
+
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd}))
+	model = next.(Model)
+	model = typeScratch(t, model, "!")
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}))
+	model = next.(Model)
+	worktreePlace := model.note.current().editor.Presentation()
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if command == nil {
+		t.Fatal("dirty worktree switch did not save")
+	}
+	next, command = model.Update(command())
+	model = next.(Model)
+	if command != nil || model.note.scope != scratch.Project || !reflect.DeepEqual(model.note.current().editor.Presentation(), projectPlace) {
+		t.Fatalf("project place was not restored: scope=%v command=%v place=%+v", model.note.scope, command != nil, model.note.current().editor.Presentation())
+	}
+
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if command == nil || model.note.current().editor.Text() != "project" {
+		t.Fatalf("project undo history did not survive switch: command=%v text=%q", command != nil, model.note.current().editor.Text())
+	}
+	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: 'y', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if command == nil {
+		t.Fatal("redone project text did not flush before returning to worktree")
+	}
+	next, command = model.Update(command())
+	model = next.(Model)
+	if command != nil || model.note.scope != scratch.Worktree || !reflect.DeepEqual(model.note.current().editor.Presentation(), worktreePlace) {
+		t.Fatalf("worktree place was not restored: scope=%v command=%v place=%+v", model.note.scope, command != nil, model.note.current().editor.Presentation())
+	}
+}
+
+func TestScratchScopeTagsContainDirtySaveAndLoadRaces(t *testing.T) {
+	t.Parallel()
+	project := &fakeScratchStore{}
+	worktree := &fakeScratchStore{text: "local"}
+	model := typeScratch(t, openScratch(t, newScopedScratchTestModel(project, worktree)), "a")
+	firstGeneration := model.note.generation
+	next, firstSave := model.Update(scratchSaveDueMsg{scope: scratch.Project, generation: firstGeneration})
+	model = next.(Model)
+	if firstSave == nil || !model.note.current().saving {
+		t.Fatal("first project autosave did not start")
+	}
+	model = typeScratch(t, model, "b")
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if command != nil || !model.note.switchPending || model.note.scope != scratch.Project {
+		t.Fatalf("switch did not wait for in-flight save: command=%v scope=%v pending=%v", command != nil, model.note.scope, model.note.switchPending)
+	}
+
+	next, secondSave := model.Update(firstSave())
+	model = next.(Model)
+	if secondSave == nil || model.note.scope != scratch.Project || project.text != "a" {
+		t.Fatalf("stale save completion switched early: scope=%v project=%q command=%v", model.note.scope, project.text, secondSave != nil)
+	}
+	next, _ = model.Update(scratchLoadedMsg{scope: scratch.Worktree, generation: 0, text: "wrong"})
+	model = next.(Model)
+	if model.note.forScope(scratch.Worktree).loaded || model.note.forScope(scratch.Worktree).editor.Text() != "" {
+		t.Fatal("unrequested worktree load landed")
+	}
+	next, loadWorktree := model.Update(secondSave())
+	model = next.(Model)
+	if loadWorktree == nil || model.note.scope != scratch.Worktree || project.text != "ab" {
+		t.Fatalf("latest project save did not complete switch: scope=%v project=%q load=%v", model.note.scope, project.text, loadWorktree != nil)
+	}
+	projectBefore := model.note.forScope(scratch.Project).editor.Presentation()
+	next, _ = model.Update(scratchLoadedMsg{scope: scratch.Project, generation: model.note.forScope(scratch.Project).loadGeneration, text: "stale"})
+	model = next.(Model)
+	if !reflect.DeepEqual(model.note.forScope(scratch.Project).editor.Presentation(), projectBefore) || model.note.scope != scratch.Worktree {
+		t.Fatal("stale project load disturbed scoped state")
+	}
+	next, command = model.Update(loadWorktree())
+	model = next.(Model)
+	if command != nil || model.note.current().editor.Text() != "local" || model.note.forScope(scratch.Project).editor.Text() != "ab" {
+		t.Fatalf("scoped race result: command=%v project=%q worktree=%q", command != nil, model.note.forScope(scratch.Project).editor.Text(), model.note.current().editor.Text())
+	}
+}
+
+func TestScratchScopeDefaultsToProjectAndReadOnlyProjectDoesNotBlockWorktree(t *testing.T) {
+	t.Parallel()
+	project := &fakeScratchStore{text: "shared", readOnly: true}
+	worktree := &fakeScratchStore{text: "local"}
+	model := openScratch(t, newScopedScratchTestModel(project, worktree))
+	next, loadWorktree := model.Update(tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl}))
+	model = next.(Model)
+	if loadWorktree == nil || model.note.scope != scratch.Worktree {
+		t.Fatalf("read-only project blocked local scope: scope=%v command=%v", model.note.scope, loadWorktree != nil)
+	}
+	next, _ = model.Update(loadWorktree())
+	model = next.(Model)
+	model = typeScratch(t, model, "x")
+	if got := model.note.current().editor.Text(); got != "xlocal" {
+		t.Fatalf("local edit = %q", got)
+	}
+	next, saveWorktree := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	model = next.(Model)
+	if saveWorktree == nil {
+		t.Fatal("dirty local note did not save on close")
+	}
+	next, _ = model.Update(saveWorktree())
+	model = next.(Model)
+	if model.scratch {
+		t.Fatal("Scratch did not close after local save")
+	}
+	next, reloadProject := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	model = next.(Model)
+	if reloadProject == nil || model.note.scope != scratch.Project || worktree.loads != 1 {
+		t.Fatalf("re-entry did not default to project: scope=%v command=%v worktree loads=%d", model.note.scope, reloadProject != nil, worktree.loads)
+	}
+}
+
+func TestScratchShutdownSavesAndClosesEveryScopeWithJoinedErrors(t *testing.T) {
+	t.Parallel()
+	projectSaveErr := errors.New("project save")
+	projectCloseErr := errors.New("project close")
+	worktreeSaveErr := errors.New("worktree save")
+	worktreeCloseErr := errors.New("worktree close")
+	project := &fakeScratchStore{saveErr: projectSaveErr, closeErr: projectCloseErr}
+	worktree := &fakeScratchStore{saveErr: worktreeSaveErr, closeErr: worktreeCloseErr}
+	model := newScopedScratchTestModel(project, worktree)
+	for scope, text := range map[scratch.Scope]string{scratch.Project: "shared", scratch.Worktree: "local"} {
+		note := model.note.forScope(scope)
+		note.editor.Load(text)
+		note.loaded = true
+		note.generation = 2
+		note.savedGeneration = 1
+	}
+
+	err := model.Shutdown()
+	for _, want := range []error{projectSaveErr, projectCloseErr, worktreeSaveErr, worktreeCloseErr} {
+		if !errors.Is(err, want) {
+			t.Fatalf("Shutdown() error %v does not contain %v", err, want)
+		}
+	}
+	if !project.closed || !worktree.closed || !reflect.DeepEqual(project.saves, []string{"shared"}) || !reflect.DeepEqual(worktree.saves, []string{"local"}) {
+		t.Fatalf("Shutdown() project=%+v worktree=%+v", project, worktree)
 	}
 }

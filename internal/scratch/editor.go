@@ -1,4 +1,4 @@
-// Package scratch implements the pure editing domain for the global Scratch overlay.
+// Package scratch implements editing and private persistence for Scratch notes.
 package scratch
 
 import (

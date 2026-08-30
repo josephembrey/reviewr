@@ -130,3 +130,66 @@ func TestScratchStatusSanitizesTerminalControlsAndRows(t *testing.T) {
 		t.Fatalf("status changed frame size to %dx%d", width, height)
 	}
 }
+
+func TestScratchScopeTitleAndFooterCollapseOrExposeTogether(t *testing.T) {
+	t.Parallel()
+	g := Calculate(60, 7)
+	editor := scratch.NewEditor()
+	editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+	base := Model{
+		Geometry:      g,
+		Workspace:     workspace.Scratch,
+		Scratch:       editor.Presentation(),
+		ScratchStatus: "Ln 1, Col 1  •  saved",
+	}
+
+	primary := Render(base)
+	primaryPlain := ansi.Strip(primary)
+	if strings.Contains(primaryPlain, "project") || strings.Contains(primaryPlain, "worktree") || strings.Contains(primaryPlain, "ctrl+t") {
+		t.Fatalf("primary Scratch exposed redundant scopes: %q", primaryPlain)
+	}
+
+	base.ScratchHasWorktree = true
+	base.ScratchScope = scratch.Project
+	project := Render(base)
+	projectPlain := ansi.Strip(project)
+	if !strings.Contains(projectPlain, "Scratch  [project] worktree") || !strings.Contains(projectPlain, "ctrl+t scope") {
+		t.Fatalf("project-scoped frame = %q", projectPlain)
+	}
+	if !strings.Contains(project, headerStyle.Render("[project]")) {
+		t.Fatalf("project scope styles are not active/readable: %q", project)
+	}
+
+	base.ScratchScope = scratch.Worktree
+	worktree := Render(base)
+	worktreePlain := ansi.Strip(worktree)
+	if !strings.Contains(worktreePlain, "Scratch   project [worktree]") || !strings.Contains(worktreePlain, "ctrl+t scope") {
+		t.Fatalf("worktree-scoped frame = %q", worktreePlain)
+	}
+	if !strings.Contains(worktree, headerStyle.Render("[worktree]")) {
+		t.Fatalf("worktree scope styles are not active/readable: %q", worktree)
+	}
+}
+
+func TestScratchScopeRenderingStaysBoundedAtHostileWidths(t *testing.T) {
+	t.Parallel()
+	for width := 1; width <= 32; width++ {
+		for _, scope := range []scratch.Scope{scratch.Project, scratch.Worktree} {
+			g := Calculate(width, 4)
+			editor := scratch.NewEditor()
+			editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+			frame := Render(Model{
+				Geometry:           g,
+				Workspace:          workspace.Scratch,
+				Scratch:            editor.Presentation(),
+				ScratchStatus:      "saved",
+				ScratchScope:       scope,
+				ScratchHasWorktree: true,
+			})
+			gotWidth, gotHeight := lipgloss.Size(frame)
+			if gotWidth != width || gotHeight != 4 {
+				t.Fatalf("width %d scope %v rendered %dx%d: %q", width, scope, gotWidth, gotHeight, frame)
+			}
+		}
+	}
+}

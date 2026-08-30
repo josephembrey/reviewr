@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -28,12 +29,60 @@ type Store interface {
 	Close() error
 }
 
+// Scope identifies one independently edited and persisted Scratch note.
+type Scope uint8
+
+const (
+	Project Scope = iota
+	Worktree
+)
+
+func (scope Scope) String() string {
+	if scope == Worktree {
+		return "worktree"
+	}
+	return "project"
+}
+
+// Stores contains the available independently locked persistence sessions.
+// Worktree is nil for the primary checkout, where both concepts collapse to
+// the project note.
+type Stores struct {
+	Project  Store
+	Worktree Store
+}
+
+// HasWorktree reports whether the current checkout has a distinct local note.
+func (stores Stores) HasWorktree() bool { return stores.Worktree != nil }
+
+// Store returns the session for scope, collapsing unsupported worktree scope
+// to the project session.
+func (stores Stores) Store(scope Scope) Store {
+	if scope == Worktree && stores.Worktree != nil {
+		return stores.Worktree
+	}
+	return stores.Project
+}
+
+// Close releases every constructed session and joins independent failures.
+func (stores Stores) Close() error {
+	var projectErr, worktreeErr error
+	if stores.Project != nil {
+		projectErr = stores.Project.Close()
+	}
+	if stores.Worktree != nil {
+		worktreeErr = stores.Worktree.Close()
+	}
+	return errors.Join(projectErr, worktreeErr)
+}
+
 // Paths identifies one clone's opaque private state without exposing the Git
 // common directory in filenames.
 type Paths struct {
 	Directory string
 	Note      string
 	Lock      string
+	stateBase string
 }
 
 // StatePaths derives the private versioned path for a canonical Git common
@@ -52,7 +101,39 @@ func StatePaths(commonDir string, lookupEnv func(string) (string, bool)) (Paths,
 		Directory: directory,
 		Note:      filepath.Join(directory, "note.txt"),
 		Lock:      filepath.Join(directory, "edit.lock"),
+		stateBase: base,
 	}, nil
+}
+
+// WorktreeStatePaths derives a second opaque path below the existing project
+// state directory. StatePaths remains unchanged so every existing note stays
+// at its original project path.
+func WorktreeStatePaths(commonDir, worktreeRoot string, lookupEnv func(string) (string, bool)) (Paths, error) {
+	project, err := StatePaths(commonDir, lookupEnv)
+	if err != nil {
+		return Paths{}, err
+	}
+	if worktreeRoot == "" || !filepath.IsAbs(worktreeRoot) {
+		return Paths{}, fmt.Errorf("Git worktree root must be absolute")
+	}
+	identity := fmt.Sprintf("%x", sha256.Sum256([]byte(filepath.Clean(worktreeRoot))))
+	directory := filepath.Join(project.Directory, "worktrees", identity)
+	return Paths{
+		Directory: directory,
+		Note:      filepath.Join(directory, "note.txt"),
+		Lock:      filepath.Join(directory, "edit.lock"),
+		stateBase: project.stateBase,
+	}, nil
+}
+
+// NewStores constructs the project session and, for a linked checkout, a
+// separately keyed and separately locked worktree session.
+func NewStores(commonDir, worktreeRoot string, linked bool, lookupEnv func(string) (string, bool)) Stores {
+	stores := Stores{Project: NewPrivateStore(commonDir, lookupEnv)}
+	if linked {
+		stores.Worktree = NewWorktreePrivateStore(commonDir, worktreeRoot, lookupEnv)
+	}
+	return stores
 }
 
 func stateBase(lookupEnv func(string) (string, bool)) (string, error) {
@@ -99,6 +180,13 @@ func NewPrivateStore(commonDir string, lookupEnv func(string) (string, bool)) *P
 	return &PrivateStore{paths: paths, pathErr: err}
 }
 
+// NewWorktreePrivateStore creates a lazy session whose identity includes both
+// the project common directory and canonical current worktree root.
+func NewWorktreePrivateStore(commonDir, worktreeRoot string, lookupEnv func(string) (string, bool)) *PrivateStore {
+	paths, err := WorktreeStatePaths(commonDir, worktreeRoot, lookupEnv)
+	return &PrivateStore{paths: paths, pathErr: err}
+}
+
 func (s *PrivateStore) Load() (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -108,7 +196,7 @@ func (s *PrivateStore) Load() (string, bool, error) {
 	if s.pathErr != nil {
 		return "", true, s.pathErr
 	}
-	if err := ensurePrivateDirectory(s.paths.Directory); err != nil {
+	if err := ensurePrivateDirectory(s.paths.stateBase, s.paths.Directory); err != nil {
 		return "", true, fmt.Errorf("prepare scratch state: %w", err)
 	}
 	var lockErr error
@@ -211,13 +299,19 @@ func (s *PrivateStore) Close() error {
 	return errors.Join(unlockErr, closeErr)
 }
 
-func ensurePrivateDirectory(directory string) error {
-	base := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(directory))))
+func ensurePrivateDirectory(base, directory string) error {
+	if base == "" {
+		return fmt.Errorf("private state base is unavailable")
+	}
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return err
 	}
+	relative, err := filepath.Rel(base, directory)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("scratch state directory is outside private state base")
+	}
 	current := base
-	for _, component := range []string{"reviewr", stateVersion, "scratch", filepath.Base(directory)} {
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
 		current = filepath.Join(current, component)
 		if err := os.Mkdir(current, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return err

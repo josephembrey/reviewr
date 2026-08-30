@@ -49,7 +49,11 @@ func (Client) ResolveRoot(path string) (string, error) {
 	if len(out) == 0 {
 		return "", fmt.Errorf("git returned an empty worktree root for %q", path)
 	}
-	return filepath.Clean(string(out)), nil
+	canonical, err := filepath.EvalSymlinks(filepath.Clean(string(out)))
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Git worktree root: %w", err)
+	}
+	return canonical, nil
 }
 
 // ResolveCommonDir returns the canonical absolute Git common directory. Git's
@@ -60,22 +64,38 @@ func (Client) ResolveCommonDir(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return canonicalGitPath(out, "common directory")
+}
+
+// ResolveGitDir returns the canonical per-worktree Git directory. It equals
+// ResolveCommonDir only for the primary checkout; linked worktrees have their
+// own administrative directory below the common directory.
+func (Client) ResolveGitDir(root string) (string, error) {
+	out, err := run(root, "rev-parse", "--path-format=absolute", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	return canonicalGitPath(out, "Git directory")
+}
+
+func canonicalGitPath(out []byte, label string) (string, error) {
 	value := strings.TrimSuffix(string(out), "\n")
 	if value == "" || strings.ContainsRune(value, '\n') || strings.ContainsRune(value, 0) {
-		return "", fmt.Errorf("git returned an invalid common directory")
+		return "", fmt.Errorf("git returned an invalid %s", label)
 	}
 	if strings.HasPrefix(value, "\"") {
-		value, err = strconv.Unquote(value)
+		decoded, err := strconv.Unquote(value)
 		if err != nil {
-			return "", fmt.Errorf("decode Git common directory: %w", err)
+			return "", fmt.Errorf("decode Git %s: %w", label, err)
 		}
+		value = decoded
 	}
 	if !filepath.IsAbs(value) {
-		return "", fmt.Errorf("git returned a non-absolute common directory %q", value)
+		return "", fmt.Errorf("git returned a non-absolute %s %q", label, value)
 	}
 	canonical, err := filepath.EvalSymlinks(filepath.Clean(value))
 	if err != nil {
-		return "", fmt.Errorf("canonicalize Git common directory: %w", err)
+		return "", fmt.Errorf("canonicalize Git %s: %w", label, err)
 	}
 	return canonical, nil
 }

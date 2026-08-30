@@ -125,7 +125,9 @@ type Model struct {
 	ReaderOffset     int
 	FooterWarning    string
 
-	Scratch       scratch.Presentation
-	ScratchStatus string
-	ScratchError  bool
+	Scratch            scratch.Presentation
+	ScratchStatus      string
+	ScratchError       bool
+	ScratchScope       scratch.Scope
+	ScratchHasWorktree bool
 }

@@ -18,6 +18,9 @@ const (
 	ShowFiles
 	ShowGit
 	ShowScratch
+	ToggleScratchScope
+	SelectProjectScratch
+	SelectWorktreeScratch
 	ToggleSecondary
 	ToggleTertiary
 	ToggleComparison
@@ -89,7 +92,8 @@ type Action struct {
 	Selecting bool
 }
 
-func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch.Presentation, selectionDragging, scrollbarDragging bool) (Action, bool) {
+func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch.Presentation, selectionDragging, scrollbarDragging bool, scoped ...bool) (Action, bool) {
+	hasWorktree := len(scoped) > 0 && scoped[0]
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		key := msg.Key()
@@ -114,6 +118,10 @@ func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch
 				return Action{Kind: ScratchUndo}, true
 			case 'y':
 				return Action{Kind: ScratchRedo}, true
+			case 't':
+				if hasWorktree {
+					return Action{Kind: ToggleScratchScope}, true
+				}
 			case tea.KeyLeft:
 				return Action{Kind: ScratchMoveWordLeft, Selecting: selecting}, true
 			case tea.KeyRight:
@@ -161,7 +169,7 @@ func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch
 		if mouse.Button != tea.MouseLeft {
 			return Action{}, false
 		}
-		hit := geometry.ScratchHitTest(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top)
+		hit := geometry.ScratchHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
 		switch hit.Kind {
 		case ui.HitFilesWorkspace:
 			return Action{Kind: ShowFiles}, true
@@ -169,6 +177,10 @@ func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch
 			return Action{Kind: ShowGit}, true
 		case ui.HitScratchWorkspace:
 			return Action{Kind: ShowScratch}, true
+		case ui.HitScratchProjectScope:
+			return Action{Kind: SelectProjectScratch}, true
+		case ui.HitScratchWorktreeScope:
+			return Action{Kind: SelectWorktreeScratch}, true
 		case ui.HitScratchScrollbar:
 			return Action{Kind: StartScratchScrollbarDrag, Position: mouse.Y, Grab: hit.GrabOffset}, true
 		case ui.HitScratchText:
@@ -176,7 +188,7 @@ func routeScratchMessage(msg tea.Msg, geometry ui.Geometry, presentation scratch
 		}
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
-		hit := geometry.ScratchHitTest(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top)
+		hit := geometry.ScratchHitTestWithScopes(mouse.X, mouse.Y, len(presentation.Document.Rows), presentation.Top, hasWorktree)
 		if hit.Kind != ui.HitScratchText && hit.Kind != ui.HitScratchScrollbar {
 			return Action{}, false
 		}
