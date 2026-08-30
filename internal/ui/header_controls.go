@@ -16,8 +16,6 @@ func layoutHeaderControls(geometry Geometry, active workspace.Kind, controls wor
 	switch active {
 	case workspace.Files:
 		definitions = append(definitions,
-			headerControl{hit: HitSecondaryControl, key: workspace.SecondaryControlKey, value: controls.Files.Label()},
-			headerControl{hit: HitTertiaryControl, key: workspace.TertiaryControlKey, value: controls.Reader.Label()},
 			headerControl{hit: HitComparisonControl, key: workspace.ComparisonControlKey, value: controls.Comparison.Label()},
 		)
 	case workspace.Git:
@@ -57,4 +55,40 @@ func layoutHeaderControls(geometry Geometry, active workspace.Kind, controls wor
 		position += controlWidth
 	}
 	return visible
+}
+
+type paneHeaderControls struct {
+	navigator headerControl
+	reader    headerControl
+}
+
+func layoutPaneHeaderControls(geometry Geometry, active workspace.Kind, controls workspace.Controls) paneHeaderControls {
+	if active != workspace.Files {
+		return paneHeaderControls{}
+	}
+	return paneHeaderControls{
+		navigator: layoutRightPaneControl(
+			geometry.NavigatorTitle,
+			HitSecondaryControl,
+			workspace.SecondaryControlKey,
+			controls.Files.Label(),
+		),
+		reader: layoutRightPaneControl(
+			geometry.ReaderTitle,
+			HitTertiaryControl,
+			workspace.TertiaryControlKey,
+			controls.Reader.Label(),
+		),
+	}
+}
+
+func layoutRightPaneControl(title Rect, hit HitKind, key, value string) headerControl {
+	width := len(key) + 1 + len(value) + 2
+	if title.Height == 0 || title.Width < width+2 {
+		return headerControl{}
+	}
+	return headerControl{
+		hit: hit, key: key, value: value,
+		rect: Rect{X: title.X + title.Width - width, Y: title.Y, Width: width, Height: title.Height},
+	}
 }

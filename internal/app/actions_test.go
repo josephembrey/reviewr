@@ -209,6 +209,17 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 	rowX, rowY := g.NavigatorRows.X, g.NavigatorRows.Y+1
 	navigatorBar, _ := ui.CalculateScrollbar(g.NavigatorRows, 30, 2)
 	readerBar, _ := ui.CalculateScrollbar(g.ReaderRows, 40, 5)
+	controlClick := func(kind ui.HitKind) tea.MouseClickMsg {
+		for y := g.Header.Y; y <= g.ReaderTitle.Y; y++ {
+			for x := 0; x < g.Screen.Width; x++ {
+				if g.HitTest(x, y, workspace.Files, workspace.Controls{}, 0, 0, 0, 0).Kind == kind {
+					return tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft})
+				}
+			}
+		}
+		t.Fatalf("missing mouse target for %v", kind)
+		return tea.MouseClickMsg{}
+	}
 	tests := []struct {
 		name       string
 		msg        tea.Msg
@@ -222,9 +233,9 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 		{name: "files label selects Files", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderFiles.X, Y: g.HeaderFiles.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowFiles}, ok: true},
 		{name: "git label selects Git", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowGit}, ok: true},
 		{name: "notes label selects Notes", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderNotes.X, Y: g.HeaderNotes.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowNotes}, ok: true},
-		{name: "secondary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 26, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleSecondary}, ok: true},
-		{name: "tertiary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 32, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleTertiary}, ok: true},
-		{name: "comparison control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 39, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleComparison}, ok: true},
+		{name: "secondary control cycles", msg: controlClick(ui.HitSecondaryControl), want: Action{Kind: ToggleSecondary}, ok: true},
+		{name: "tertiary control cycles", msg: controlClick(ui.HitTertiaryControl), want: Action{Kind: ToggleTertiary}, ok: true},
+		{name: "comparison control cycles", msg: controlClick(ui.HitComparisonControl), want: Action{Kind: ToggleComparison}, ok: true},
 		{name: "switcher separator is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 7, Y: g.Header.Y, Button: tea.MouseLeft})},
 		{name: "header gap is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderSwitcher.X + g.HeaderSwitcher.Width, Y: g.Header.Y, Button: tea.MouseLeft})},
 		{name: "wheel on workspace label is neutral", msg: tea.MouseWheelMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseWheelDown})},

@@ -340,7 +340,13 @@ func TestReaderHeaderContextControlExpandsAndRefoldsAllContext(t *testing.T) {
 	document := foldableDiffDocument()
 	model.files.readerPresentation = &document
 
-	target := model.geometry.ReaderContextFold
+	target := ui.LayoutReaderContextFold(
+		model.geometry,
+		model.files.readerTitle(),
+		true,
+		model.active,
+		model.presentationControls(),
+	)
 	click := tea.MouseClickMsg(tea.Mouse{X: target.X, Y: target.Y, Button: tea.MouseLeft})
 	for _, test := range []struct {
 		expanded bool

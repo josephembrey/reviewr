@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
@@ -128,25 +129,30 @@ func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
 	geometry := Calculate(80, 12)
 	model := Model{
 		Geometry:              geometry,
-		ReaderTitle:           "main.go  diff",
+		Workspace:             workspace.Files,
+		Controls:              workspace.Controls{Reader: workspace.DiffReader},
+		ReaderTitle:           "main.go  [diff]",
 		ReaderContextFoldable: true,
 	}
 
 	collapsed := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasPrefix(collapsed, model.ReaderTitle) || !strings.HasSuffix(collapsed, "▸ all context") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
+	if !strings.HasPrefix(collapsed, model.ReaderTitle+" ▸ all context") || !strings.HasSuffix(collapsed, "2 [diff]") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
 		t.Fatalf("collapsed reader title = %q", collapsed)
 	}
 	model.ReaderContextExpanded = true
 	expanded := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
-	if !strings.HasSuffix(expanded, "▾ all context") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
+	if !strings.HasPrefix(expanded, model.ReaderTitle+" ▾ all context") || !strings.HasSuffix(expanded, "2 [diff]") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
 		t.Fatalf("expanded reader title = %q", expanded)
 	}
 
-	target := geometry.ReaderContextFold
-	if !geometry.HitReaderContextFold(target.X, target.Y, true) ||
-		geometry.HitReaderContextFold(target.X-1, target.Y, true) ||
-		geometry.HitReaderContextFold(target.X, target.Y, false) {
+	target := LayoutReaderContextFold(geometry, model.ReaderTitle, true, model.Workspace, model.Controls)
+	if !target.Contains(target.X, target.Y) || target.Contains(target.X-1, target.Y) ||
+		LayoutReaderContextFold(geometry, model.ReaderTitle, false, model.Workspace, model.Controls) != (Rect{}) {
 		t.Fatalf("global context hit target disagrees with painted control: %+v", target)
+	}
+	wantX := geometry.ReaderTitle.X + lipgloss.Width(model.ReaderTitle) + 1
+	if target.X != wantX {
+		t.Fatalf("global context target x=%d, want left-cluster position %d", target.X, wantX)
 	}
 	model.ReaderContextFoldable = false
 	if title := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); strings.Contains(title, "all context") {

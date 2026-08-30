@@ -132,7 +132,7 @@ func TestHeaderKeepsSwitcherWhenSummaryCannotFit(t *testing.T) {
 func TestHeaderKeepsChangeTotalsWhenFullSummaryCannotFit(t *testing.T) {
 	t.Parallel()
 	model := Model{
-		Geometry:  Calculate(66, 1),
+		Geometry:  Calculate(52, 1),
 		Workspace: workspace.Files,
 		Controls: workspace.Controls{
 			Files:      workspace.ChangedFiles,

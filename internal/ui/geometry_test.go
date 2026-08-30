@@ -95,8 +95,7 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 				"navigator": g.Navigator, "navigator title": g.NavigatorTitle,
 				"navigator rows": g.NavigatorRows, "divider": g.Divider,
 				"reader": g.Reader, "reader title": g.ReaderTitle,
-				"reader context fold": g.ReaderContextFold,
-				"reader rows":         g.ReaderRows, "notes title": g.NotesTitle,
+				"reader rows": g.ReaderRows, "notes title": g.NotesTitle,
 				"project scope": g.NotesProjectScope, "worktree scope": g.NotesWorktreeScope,
 				"notes rows": g.NotesRows, "notes text": g.NotesText,
 				"notes bar": g.NotesBar, "footer": g.Footer, "footer help": g.FooterHelp,
@@ -184,9 +183,6 @@ func TestSwapPanesPreservesWidthsAndSharedHitGeometry(t *testing.T) {
 	}
 	assertSurfaceGeometry(t, swapped.Navigator, swapped.NavigatorTitle, swapped.NavigatorRows)
 	assertSurfaceGeometry(t, swapped.Reader, swapped.ReaderTitle, swapped.ReaderRows)
-	if swapped.ReaderContextFold.X+swapped.ReaderContextFold.Width != swapped.ReaderTitle.X+swapped.ReaderTitle.Width {
-		t.Fatalf("swapped reader context control is not right-aligned: control=%+v title=%+v", swapped.ReaderContextFold, swapped.ReaderTitle)
-	}
 	if got := swapped.HitTest(swapped.NavigatorRows.X, swapped.NavigatorRows.Y, workspace.Files, workspace.Controls{}, 0, 1, 0, 1); got != (Hit{Kind: HitNavigatorRow}) {
 		t.Fatalf("swapped navigator hit = %+v", got)
 	}

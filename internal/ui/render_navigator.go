@@ -75,7 +75,7 @@ func renderNavigator(model Model) string {
 		g.Navigator,
 		g.NavigatorTitle,
 		g.NavigatorRows,
-		renderTitle(title, model.Focus == navigation.FocusNavigator),
+		renderNavigatorTitle(model, title),
 		rows,
 	)
 }

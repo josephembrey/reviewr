@@ -90,7 +90,7 @@ func (state filesState) readerTitle() string {
 			title = state.readerEntry.PreviousPath + " → " + state.readerEntry.Path
 		}
 		if state.readerMode == workspace.DiffReader {
-			title += "  diff"
+			title += "  [diff]"
 			title += state.reviewBoundsTitle()
 		}
 	}

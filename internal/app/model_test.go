@@ -627,11 +627,17 @@ func TestFileScopeControlReusesOneSnapshotForKeyboardAndMouse(t *testing.T) {
 		t.Fatalf("keyboard scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())
 	}
 
-	next, _ = model.Update(tea.MouseClickMsg(tea.Mouse{
-		X:      model.geometry.HeaderSwitcher.X + model.geometry.HeaderSwitcher.Width + 1,
-		Y:      model.geometry.Header.Y,
-		Button: tea.MouseLeft,
-	}))
+	targetX := -1
+	for x := model.geometry.NavigatorTitle.X; x < model.geometry.NavigatorTitle.X+model.geometry.NavigatorTitle.Width; x++ {
+		if model.geometry.HitTest(x, model.geometry.NavigatorTitle.Y, workspace.Files, model.presentationControls(), 0, 0, 0, 0).Kind == ui.HitSecondaryControl {
+			targetX = x
+			break
+		}
+	}
+	if targetX < 0 {
+		t.Fatal("file scope control has no pane-header mouse target")
+	}
+	next, _ = model.Update(tea.MouseClickMsg(tea.Mouse{X: targetX, Y: model.geometry.NavigatorTitle.Y, Button: tea.MouseLeft}))
 	model = next.(Model)
 	if source.snapshots != 1 || model.controls.Files != workspace.AllFiles || model.files.tree.FileCount() != 3 {
 		t.Fatalf("mouse scope = snapshots %d controls %+v count %d", source.snapshots, model.controls, model.files.tree.FileCount())

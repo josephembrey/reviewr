@@ -541,9 +541,17 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
-		if mouse.Button == tea.MouseLeft && m.geometry.HitReaderContextFold(mouse.X, mouse.Y, true) {
+		if mouse.Button == tea.MouseLeft && m.geometry.ReaderTitle.Contains(mouse.X, mouse.Y) {
 			viewport, ok := m.activeReaderViewport()
-			if ok && viewport.foldable {
+			title := ""
+			switch {
+			case m.gitStashesActive():
+				title = m.stashes.readerTitle()
+			case m.active == workspace.Files:
+				title = m.files.readerTitle()
+			}
+			target := ui.LayoutReaderContextFold(m.geometry, title, ok && viewport.foldable, m.active, m.presentationControls())
+			if target.Contains(mouse.X, mouse.Y) {
 				return Action{Kind: ToggleReaderContext}, true
 			}
 		}

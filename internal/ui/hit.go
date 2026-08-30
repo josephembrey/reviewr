@@ -38,13 +38,6 @@ type rectHitTarget struct {
 	kind HitKind
 }
 
-// HitReaderContextFold reports whether a visible global context control owns
-// the terminal cell. Callers supply visibility because foldability is document
-// state while this exact target remains shared with rendering through Geometry.
-func (g Geometry) HitReaderContextFold(x, y int, visible bool) bool {
-	return visible && g.ReaderContextFold.Contains(x, y)
-}
-
 // NotesHitTest resolves the full-width editor using the same explicit
 // rectangles and scrollbar calculation used to paint it.
 func (g Geometry) NotesHitTest(x, y, totalRows, offset int) Hit {
@@ -89,6 +82,14 @@ func (g Geometry) HitTest(x, y int, active workspace.Kind, controls workspace.Co
 			return Hit{Kind: HitDivider}
 		}
 		return Hit{Kind: HitNone}
+	}
+	if active == workspace.Files {
+		paneControls := layoutPaneHeaderControls(g, active, controls)
+		for _, control := range [...]headerControl{paneControls.navigator, paneControls.reader} {
+			if control.rect.Contains(x, y) {
+				return Hit{Kind: control.hit}
+			}
+		}
 	}
 	if active != workspace.Notes {
 		if hit, ok := scrollbarHit(g.NavigatorRows, fileCount, top, x, y, HitNavigatorScrollbar); ok {

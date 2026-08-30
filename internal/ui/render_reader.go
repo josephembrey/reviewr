@@ -73,17 +73,22 @@ func renderReader(model Model) string {
 
 func renderReaderTitle(model Model, title string) string {
 	focused := model.Focus == navigation.FocusReader
-	control := model.Geometry.ReaderContextFold
-	if !model.ReaderContextFoldable || control.Width == 0 {
-		return renderTitle(title, focused)
+	layout := layoutReaderPaneTitle(model.Geometry, title, model.ReaderContextFoldable, model.Workspace, model.Controls)
+	left := clip(renderTitle(title, focused), layout.titleWidth)
+	if layout.fold.Width > 0 {
+		label := "▸ all context"
+		if model.ReaderContextExpanded {
+			label = "▾ all context"
+		}
+		gap := max(0, layout.fold.X-model.Geometry.ReaderTitle.X-lipgloss.Width(left))
+		left += strings.Repeat(" ", gap) + readerFoldStyle.Render(label)
 	}
-
-	label := "▸ all context"
-	if model.ReaderContextExpanded {
-		label = "▾ all context"
+	left = fit(left, layout.leftWidth)
+	if layout.control.rect.Width == 0 {
+		return left
 	}
-	leftWidth := max(0, control.X-model.Geometry.ReaderTitle.X-1)
-	return fit(renderTitle(title, focused), leftWidth) + " " + readerFoldStyle.Render(label)
+	gap := max(0, layout.control.rect.X-model.Geometry.ReaderTitle.X-layout.leftWidth)
+	return left + strings.Repeat(" ", gap) + renderHeaderControl(layout.control, true)
 }
 
 func readerContent(model Model, rows Rect) ([]Line, ReaderLayout, int, int) {
