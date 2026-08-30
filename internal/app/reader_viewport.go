@@ -229,7 +229,12 @@ func (m *Model) selectActiveReaderHunk(delta int) {
 	if !ok || delta == 0 {
 		return
 	}
-	targets := document.HunkNavigationTargets()
+	hunks := document.HunkNavigationTargets()
+	landmarks := make([]readerNavigationLandmark, len(hunks))
+	for index, row := range hunks {
+		landmarks[index] = readerNavigationLandmark{row: row, kind: readerHunkLandmark}
+	}
+	targets := m.settings.hunkNavigationTargets(landmarks)
 	if len(targets) == 0 {
 		return
 	}

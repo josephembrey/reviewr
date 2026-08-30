@@ -35,6 +35,9 @@ func Render(model Model) string {
 		return ""
 	}
 	frame := lipgloss.JoinVertical(lipgloss.Left, blocks...)
+	if model.Settings.Open {
+		return renderSettingsOverlay(frame, g.Screen, model.Settings)
+	}
 	if model.HelpOpen {
 		return renderHelpOverlay(frame, g.Screen)
 	}

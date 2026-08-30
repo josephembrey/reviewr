@@ -22,6 +22,9 @@ var (
 )
 
 func renderFooter(model Model) string {
+	if model.Settings.Open {
+		return fit(renderFooterEntry(footerEntry{key: ",/Esc", label: "close"}), model.Geometry.Footer.Width)
+	}
 	var content string
 	if model.Workspace == workspace.Files && model.FooterWarning != "" {
 		content = errorStyle.Render(SafeSingleLine(model.FooterWarning))

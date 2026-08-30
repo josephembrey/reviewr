@@ -1,11 +1,5 @@
 package ui
 
-import (
-	"strings"
-
-	"charm.land/lipgloss/v2"
-)
-
 const helpPopupWidth = 60
 
 type helpRow struct {
@@ -18,6 +12,7 @@ var helpRows = []helpRow{
 		section: "Browser",
 		entries: []footerEntry{
 			{key: "?", label: "help"},
+			{key: ",", label: "settings"},
 			{key: "q/ctrl+c", label: "quit"},
 			{key: "r", label: "refresh"},
 		},
@@ -101,40 +96,20 @@ var helpRows = []helpRow{
 }
 
 func renderHelpOverlay(frame string, screen Rect) string {
-	if !MeetsMinimumSize(screen.Width, screen.Height) {
-		return frame
-	}
 	width := min(helpPopupWidth, screen.Width)
 	popup := renderHelpPopup(width)
-	popupWidth, popupHeight := lipgloss.Size(popup)
-	x := max(0, (screen.Width-popupWidth)/2)
-	y := max(0, (screen.Height-popupHeight)/2)
-	return lipgloss.NewCompositor(
-		lipgloss.NewLayer(frame),
-		lipgloss.NewLayer(popup).X(x).Y(y).Z(1),
-	).Render()
+	return renderPopupOverlay(frame, screen, popup)
 }
 
 func renderHelpPopup(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if width < 3 {
-		return fit(headerStyle.Render("?"), width)
-	}
-
-	innerWidth := width - 2
-	caption := "─ hotkeys · ?/esc close "
-	top := "╭" + caption + strings.Repeat("─", max(0, innerWidth-lipgloss.Width(caption))) + "╮"
-	lines := make([]string, 0, len(helpRows)+2)
-	lines = append(lines, readerFoldStyle.Render(top))
+	lines := make([]string, 0, len(helpRows))
 	for _, row := range helpRows {
-		lines = append(lines,
-			readerFoldStyle.Render("│")+fit(renderHelpRow(row), innerWidth)+readerFoldStyle.Render("│"),
-		)
+		lines = append(lines, renderHelpRow(row))
 	}
-	lines = append(lines, readerFoldStyle.Render("╰"+strings.Repeat("─", innerWidth)+"╯"))
-	return strings.Join(lines, "\n")
+	return renderPopupCard(width, "hotkeys · ?/esc close", lines)
 }
 
 func renderHelpRow(row helpRow) string {

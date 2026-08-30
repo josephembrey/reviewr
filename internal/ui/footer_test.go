@@ -13,9 +13,8 @@ func TestFooterSeparatesKeyLabelAndSeparatorStyles(t *testing.T) {
 	frame := Render(Model{Geometry: geometry, Workspace: workspace.Files})
 	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
 
-	if !strings.Contains(footer, headerStyle.Render("j")) ||
-		!strings.Contains(footer, chromeStyle.Render("/")) ||
-		!strings.Contains(footer, headerStyle.Render("k")) {
+	styledMoveKey := headerStyle.Render("j") + chromeStyle.Render("/") + headerStyle.Render("k")
+	if !strings.Contains(footer, styledMoveKey) {
 		t.Fatalf("footer key does not use accent treatment: %q", footer)
 	}
 	if !strings.Contains(footer, chromeStyle.Render(" move")) {
@@ -25,7 +24,7 @@ func TestFooterSeparatesKeyLabelAndSeparatorStyles(t *testing.T) {
 		t.Fatalf("footer separator does not use subdued treatment: %q", footer)
 	}
 	if strings.Contains(footer, "cycle") {
-		t.Fatalf("footer contains a retired cycle hint: %q", footer)
+		t.Fatalf("footer advertises retired cycle wording: %q", footer)
 	}
 	if !strings.Contains(footer, headerStyle.Render("e")) || !strings.Contains(footer, chromeStyle.Render(" edit")) {
 		t.Fatalf("Files footer is missing contextual editor help: %q", footer)

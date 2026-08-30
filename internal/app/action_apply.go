@@ -25,8 +25,14 @@ func (m *Model) apply(action Action) effect {
 		return m.openEditor()
 	case ToggleReview, ActivateReviewBadge, ToggleReviewBounds, NextReviewGap:
 		return m.applyReviewAction(action)
-	case ToggleHelp:
-		m.helpOpen = !m.helpOpen
+	case ToggleHelp, ToggleSettings:
+		m.toggleModal(action.Kind)
+	case SelectNextSetting:
+		m.settings.selectDelta(1)
+	case SelectPreviousSetting:
+		m.settings.selectDelta(-1)
+	case ToggleSelectedSetting:
+		m.settings.toggleSelected()
 	case Reload:
 		return m.reloadActiveWorkspace()
 	case Resize,

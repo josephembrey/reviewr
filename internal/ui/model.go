@@ -224,12 +224,26 @@ type ChangeSummary struct {
 	Ready     bool
 }
 
+// SettingEntry is the narrow render seam for the session-scoped Settings
+// list. Storage and behavior remain owned by the application model.
+type SettingEntry struct {
+	Label    string
+	Enabled  bool
+	Selected bool
+}
+
+type Settings struct {
+	Open    bool
+	Entries []SettingEntry
+}
+
 // Model contains only the workspace-neutral derived state needed to paint a frame.
 type Model struct {
 	Geometry        Geometry
 	Workspace       workspace.Kind
 	DividerDragging bool
 	HelpOpen        bool
+	Settings        Settings
 	Controls        workspace.Controls
 	Changes         ChangeSummary
 

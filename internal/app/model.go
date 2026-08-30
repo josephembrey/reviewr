@@ -45,7 +45,8 @@ type Model struct {
 	lab            labState
 	layout         layoutState
 	scrollbar      scrollbarDragState
-	helpOpen       bool
+	modal          modalKind
+	settings       settingsState
 	geometry       ui.Geometry
 	files          filesState
 	history        historyState
@@ -93,6 +94,7 @@ func NewWithSessionAndNotesScopes(source Source, host herdr.Context, stores note
 		host:         host,
 		active:       workspace.Files,
 		lab:          newLabState(),
+		settings:     newSettingsState(),
 		files:        newFilesState(),
 		history:      newHistoryState(),
 		refs:         newRefsState(),
@@ -224,7 +226,8 @@ func (m Model) View() tea.View {
 	}
 	presentation.Workspace = m.active
 	presentation.DividerDragging = m.layout.dragging
-	presentation.HelpOpen = m.helpOpen
+	presentation.HelpOpen = m.modal == modalHelp
+	presentation.Settings = m.settings.presentation(m.modal == modalSettings)
 	presentation.Controls = m.presentationControls()
 	if presentation.Workspace == workspace.Files {
 		summary := m.files.snapshot.Summary()

@@ -28,6 +28,10 @@ const (
 	ToggleReviewBounds
 	NextReviewGap
 	ActivateReviewBadge
+	ToggleSettings
+	SelectNextSetting
+	SelectPreviousSetting
+	ToggleSelectedSetting
 	ToggleHelp
 	SelectNext
 	SelectPrevious
@@ -579,7 +583,7 @@ func ignoresBrowserWheel(kind ui.HitKind) bool {
 }
 
 func (m *Model) route(msg tea.Msg) (Action, bool) {
-	if action, handled := routeHelpInput(msg, m.geometry, m.helpOpen, m.active != workspace.Notes); handled {
+	if action, handled := routeModalInput(msg, m.geometry, m.modal, m.active != workspace.Notes); handled {
 		return action, true
 	}
 	if m.active == workspace.Notes {
@@ -642,44 +646,4 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		readerLineCount:   readerLineCount,
 		navigatorRows:     navigatorRows,
 	})
-}
-
-func routeHelpInput(msg tea.Msg, geometry ui.Geometry, open, keyboardAvailable bool) (Action, bool) {
-	if !open {
-		switch msg := msg.(type) {
-		case tea.KeyPressMsg:
-			if keyboardAvailable && msg.String() == "?" {
-				return Action{Kind: ToggleHelp}, true
-			}
-		case tea.MouseClickMsg:
-			mouse := msg.Mouse()
-			if mouse.Button == tea.MouseLeft && geometry.FooterHelp.Contains(mouse.X, mouse.Y) {
-				return Action{Kind: ToggleHelp}, true
-			}
-		}
-		return Action{}, false
-	}
-
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "?", "esc":
-			return Action{Kind: ToggleHelp}, true
-		case "q", "ctrl+c":
-			return Action{Kind: Quit}, true
-		default:
-			return Action{Kind: ActionNone}, true
-		}
-	case tea.WindowSizeMsg:
-		return Action{Kind: Resize, Width: msg.Width, Height: msg.Height}, true
-	case tea.MouseClickMsg:
-		if msg.Mouse().Button == tea.MouseLeft {
-			return Action{Kind: ToggleHelp}, true
-		}
-		return Action{Kind: ActionNone}, true
-	case tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.PasteMsg:
-		return Action{Kind: ActionNone}, true
-	default:
-		return Action{}, false
-	}
 }
