@@ -125,6 +125,7 @@ func (m *Model) restoreSession(state session.State) {
 	m.files.readerEntry = repository.Entry{Path: state.Files.ReaderPath}
 	m.files.readerMode = m.controls.Reader
 	m.files.readerContextExpanded = state.Files.ContextExpanded
+	m.files.readerContextProgress = readerContextTarget(state.Files.ContextExpanded)
 	m.files.restoredReaderRows = append([]string(nil), state.Files.ReaderRows...)
 	m.files.reviewFull = cloneBools(state.Files.ReviewFull)
 	m.files.reviewCursor = max(0, state.Files.ReviewCursor)
@@ -138,6 +139,7 @@ func (m *Model) restoreSession(state session.State) {
 	m.refs.restoredPreviewRows = append([]string(nil), state.Refs.PreviewRows...)
 	m.stashes.place = placeFromSession(state.Stashes.Place)
 	m.stashes.readerContextExpanded = state.Stashes.ContextExpanded
+	m.stashes.readerContextProgress = readerContextTarget(state.Stashes.ContextExpanded)
 	m.stashes.restoredReaderRows = append([]string(nil), state.Stashes.ReaderRows...)
 	m.stashes.readerPlaces = make(map[string]stashReaderPlace, len(state.Stashes.ReaderPlaces))
 	for oid, place := range state.Stashes.ReaderPlaces {

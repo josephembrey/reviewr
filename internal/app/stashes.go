@@ -21,17 +21,19 @@ type stashReaderPlace struct {
 type stashState struct {
 	place navigation.State
 
-	stashes               []repository.Stash
-	files                 []repository.ChangedFile
-	fileSelected          int
-	filesOID              string
-	reader                repository.ChangeDocument
-	readerPresentation    *ui.ReaderDocument
-	readerContextExpanded bool
-	restoredReaderRows    []string
-	readerOID             string
-	readerFileID          string
-	readerPlaces          map[string]stashReaderPlace
+	stashes                 []repository.Stash
+	files                   []repository.ChangedFile
+	fileSelected            int
+	filesOID                string
+	reader                  repository.ChangeDocument
+	readerPresentation      *ui.ReaderDocument
+	readerContextExpanded   bool
+	readerContextProgress   int
+	readerContextGeneration uint64
+	restoredReaderRows      []string
+	readerOID               string
+	readerFileID            string
+	readerPlaces            map[string]stashReaderPlace
 
 	listGeneration   uint64
 	filesGeneration  uint64
@@ -249,7 +251,7 @@ func (state *stashState) requestSelectedFile(_ int) effect {
 	if state.readerOID != stash.OID || state.readerFileID != fileIdentity {
 		state.reader = repository.ChangeDocument{}
 		state.readerPresentation = nil
-		state.readerContextExpanded = false
+		state.resetReaderContext()
 		state.restoredReaderRows = nil
 	}
 	state.readerOID = stash.OID
@@ -309,7 +311,7 @@ func (state *stashState) clearReader() {
 	state.readerGeneration++
 	state.reader = repository.ChangeDocument{}
 	state.readerPresentation = nil
-	state.readerContextExpanded = false
+	state.resetReaderContext()
 	state.restoredReaderRows = nil
 	state.readerOID = ""
 	state.readerFileID = ""
@@ -337,7 +339,7 @@ func (state stashState) selectedFileIdentity() string {
 }
 
 func (state stashState) readerDocument() ui.ReaderDocument {
-	return state.rawReaderDocument().WithContextFolds(state.readerContextExpanded)
+	return state.rawReaderDocument().WithContextFoldProgress(state.readerContextProgress, readerContextAnimationSteps)
 }
 
 func (state stashState) rawReaderDocument() ui.ReaderDocument {
@@ -347,20 +349,40 @@ func (state stashState) rawReaderDocument() ui.ReaderDocument {
 	return state.deriveReaderDocument()
 }
 
-func (state *stashState) setReaderContextExpanded(expanded bool) bool {
+func (state *stashState) setReaderContextExpanded(expanded bool) (bool, bool) {
 	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
-		return false
+		return false, false
 	}
+	state.readerContextExpanded = expanded
+	state.readerContextGeneration++
+	state.advanceReaderContextPresentation()
+	return true, readerContextAnimating(state.readerContextProgress, expanded)
+}
+
+func (state *stashState) advanceReaderContext(generation uint64) (bool, bool) {
+	if generation != state.readerContextGeneration || !readerContextAnimating(state.readerContextProgress, state.readerContextExpanded) {
+		return false, false
+	}
+	state.advanceReaderContextPresentation()
+	return true, readerContextAnimating(state.readerContextProgress, state.readerContextExpanded)
+}
+
+func (state *stashState) advanceReaderContextPresentation() {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
-	state.readerContextExpanded = expanded
+	state.readerContextProgress = stepReaderContext(state.readerContextProgress, state.readerContextExpanded)
 	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
 	if state.place.ReaderOffset != oldOffset {
 		state.place.ReaderColumn = 0
 	}
 	state.place.ClampReaderSource(len(state.readerRows()))
 	state.saveReaderPlace()
-	return true
+}
+
+func (state *stashState) resetReaderContext() {
+	state.readerContextExpanded = false
+	state.readerContextProgress = 0
+	state.readerContextGeneration++
 }
 
 func (state stashState) readerRows() []ui.ReaderRow {

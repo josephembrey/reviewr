@@ -43,15 +43,27 @@ func (document ReaderDocument) HasContextFold() bool {
 // WithContextFolds derives compact diff presentation without changing the
 // semantic source document. Expanded documents preserve their original rows.
 func (document ReaderDocument) WithContextFolds(expanded bool) ReaderDocument {
+	if expanded {
+		return document.WithContextFoldProgress(1, 1)
+	}
+	return document.WithContextFoldProgress(0, 1)
+}
+
+// WithContextFoldProgress derives an intermediate context-fold presentation.
+// Progress is shared by every fold in the document and expressed as a fraction
+// so callers can bound transition duration independently of hidden-run size.
+func (document ReaderDocument) WithContextFoldProgress(progress, steps int) ReaderDocument {
 	if !document.ContextFoldable() {
 		return document
 	}
+	steps = max(1, steps)
+	progress = max(0, min(progress, steps))
 	result := document
-	result.Rows = document.contextFoldRows(expanded)
+	result.Rows = document.contextFoldRows(progress, steps)
 	return result
 }
 
-func (document ReaderDocument) contextFoldRows(expanded bool) []ReaderRow {
+func (document ReaderDocument) contextFoldRows(progress, steps int) []ReaderRow {
 	if document.Kind != ReaderDiffDocument || len(document.Rows) == 0 {
 		return document.Rows
 	}
@@ -84,14 +96,25 @@ func (document ReaderDocument) contextFoldRows(expanded bool) []ReaderRow {
 			continue
 		}
 		rows = append(rows, document.Rows[start:hiddenStart]...)
-		rows = append(rows, contextFoldRow(document.Rows[hiddenStart:hiddenEnd], expanded))
-		if expanded {
-			rows = append(rows, document.Rows[hiddenStart:hiddenEnd]...)
-		}
+		hidden := document.Rows[hiddenStart:hiddenEnd]
+		visible := contextFoldVisibleRows(len(hidden), progress, steps)
+		rows = append(rows, contextFoldRow(hidden, visible > 0))
+		rows = append(rows, hidden[:visible]...)
 		rows = append(rows, document.Rows[hiddenEnd:end]...)
 		start = end
 	}
 	return rows
+}
+
+func contextFoldVisibleRows(hidden, progress, steps int) int {
+	if progress <= 0 {
+		return 0
+	}
+	if progress >= steps {
+		return hidden
+	}
+	// Round up so the first animation frame always changes the document.
+	return min(hidden, (hidden*progress+steps-1)/steps)
 }
 
 func contextRunEnd(rows []ReaderRow, start int) int {

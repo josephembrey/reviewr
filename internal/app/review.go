@@ -43,7 +43,7 @@ func (state *filesState) requestComparison(scope string) effect {
 	state.reviewSnapshot = review.Snapshot{Scope: scope, Comparisons: make(map[string]review.FileComparison)}
 	state.rederiveReviews()
 	state.comparisonWarning = ""
-	state.readerContextExpanded = false
+	state.resetReaderContext()
 	if state.readerEntry.Path != "" {
 		state.readerLoading = true
 	}
@@ -318,7 +318,7 @@ func (state *filesState) toggleReviewBounds(mode workspace.ReaderMode) effect {
 		return effect{}
 	}
 	state.reviewFull[state.readerEntry.Path] = !state.reviewFull[state.readerEntry.Path]
-	state.readerContextExpanded = false
+	state.resetReaderContext()
 	return state.requestReader(state.readerEntry, mode)
 }
 

@@ -20,35 +20,37 @@ type filesState struct {
 	snapshot       repository.Snapshot
 	entries        []repository.Entry
 
-	readerEntry           repository.Entry
-	readerMode            workspace.ReaderMode
-	reader                repository.File
-	diff                  repository.Diff
-	readerPresentation    *ui.ReaderDocument
-	readerContextExpanded bool
-	restoredReaderRows    []string
-	reviewSnapshot        review.Snapshot
-	ledger                review.Ledger
-	store                 *review.Store
-	reviewDocument        review.Document
-	reviewFile            review.Content
-	reviewFileDiff        review.Document
-	displayedComparison   *review.FileComparison
-	displayedBounds       *review.Bounds
-	requestedComparison   *review.FileComparison
-	requestedBounds       *review.Bounds
-	reviewScope           string
-	reviewWarning         string
-	comparisonWarning     string
-	reviewFull            map[string]bool
-	reviewQueue           []review.Delta
-	sessionDeltas         []review.Delta
-	reviewPersisting      bool
-	reviewLoaded          bool
-	reviewCursor          int
-	reviewSelectionAnchor int
-	reviewAssessments     map[string]review.Assessment
-	reviewProgress        map[string]reviewRollup
+	readerEntry             repository.Entry
+	readerMode              workspace.ReaderMode
+	reader                  repository.File
+	diff                    repository.Diff
+	readerPresentation      *ui.ReaderDocument
+	readerContextExpanded   bool
+	readerContextProgress   int
+	readerContextGeneration uint64
+	restoredReaderRows      []string
+	reviewSnapshot          review.Snapshot
+	ledger                  review.Ledger
+	store                   *review.Store
+	reviewDocument          review.Document
+	reviewFile              review.Content
+	reviewFileDiff          review.Document
+	displayedComparison     *review.FileComparison
+	displayedBounds         *review.Bounds
+	requestedComparison     *review.FileComparison
+	requestedBounds         *review.Bounds
+	reviewScope             string
+	reviewWarning           string
+	comparisonWarning       string
+	reviewFull              map[string]bool
+	reviewQueue             []review.Delta
+	sessionDeltas           []review.Delta
+	reviewPersisting        bool
+	reviewLoaded            bool
+	reviewCursor            int
+	reviewSelectionAnchor   int
+	reviewAssessments       map[string]review.Assessment
+	reviewProgress          map[string]reviewRollup
 
 	listGeneration    uint64
 	contentGeneration uint64
@@ -247,7 +249,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.displayedComparison = nil
 		state.displayedBounds = nil
 		state.readerPresentation = nil
-		state.readerContextExpanded = false
+		state.resetReaderContext()
 		state.restoredReaderRows = nil
 	}
 	state.readerEntry = entry
@@ -421,7 +423,7 @@ func (state *filesState) clearReader() {
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerPresentation = nil
-	state.readerContextExpanded = false
+	state.resetReaderContext()
 	state.restoredReaderRows = nil
 	state.requestedComparison = nil
 	state.requestedBounds = nil
@@ -543,7 +545,7 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 }
 
 func (state filesState) readerDocument() ui.ReaderDocument {
-	return state.rawReaderDocument().WithContextFolds(state.readerContextExpanded)
+	return state.rawReaderDocument().WithContextFoldProgress(state.readerContextProgress, readerContextAnimationSteps)
 }
 
 func (state filesState) rawReaderDocument() ui.ReaderDocument {
@@ -556,19 +558,39 @@ func (state filesState) rawReaderDocument() ui.ReaderDocument {
 	return state.deriveReaderDocument()
 }
 
-func (state *filesState) setReaderContextExpanded(expanded bool) bool {
+func (state *filesState) setReaderContextExpanded(expanded bool) (bool, bool) {
 	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
-		return false
+		return false, false
 	}
+	state.readerContextExpanded = expanded
+	state.readerContextGeneration++
+	state.advanceReaderContextPresentation()
+	return true, readerContextAnimating(state.readerContextProgress, expanded)
+}
+
+func (state *filesState) advanceReaderContext(generation uint64) (bool, bool) {
+	if generation != state.readerContextGeneration || !readerContextAnimating(state.readerContextProgress, state.readerContextExpanded) {
+		return false, false
+	}
+	state.advanceReaderContextPresentation()
+	return true, readerContextAnimating(state.readerContextProgress, state.readerContextExpanded)
+}
+
+func (state *filesState) advanceReaderContextPresentation() {
 	oldRows := readerRowIdentities(state.readerRows())
 	oldOffset := state.place.ReaderOffset
-	state.readerContextExpanded = expanded
+	state.readerContextProgress = stepReaderContext(state.readerContextProgress, state.readerContextExpanded)
 	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
 	if state.place.ReaderOffset != oldOffset {
 		state.place.ReaderColumn = 0
 	}
 	state.place.ClampReaderSource(len(state.readerRows()))
-	return true
+}
+
+func (state *filesState) resetReaderContext() {
+	state.readerContextExpanded = false
+	state.readerContextProgress = 0
+	state.readerContextGeneration++
 }
 
 func (state filesState) readerRows() []ui.ReaderRow {

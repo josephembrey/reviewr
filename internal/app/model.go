@@ -85,23 +85,25 @@ const (
 	effectDebounceNotes
 	effectSaveNotes
 	effectSaveSession
+	effectAnimateReaderContext
 	effectQuit
 )
 
 type effect struct {
-	kind        effectKind
-	generation  uint64
-	identity    string
-	entry       repository.Entry
-	query       repository.CommitQuery
-	refSource   repository.RefSource
-	stashSource repository.ChangeSource
-	changedFile repository.ChangedFile
-	text        string
-	session     session.State
-	background  bool
-	activity    uint64
-	notesScope  notes.Scope
+	kind               effectKind
+	generation         uint64
+	identity           string
+	entry              repository.Entry
+	query              repository.CommitQuery
+	refSource          repository.RefSource
+	stashSource        repository.ChangeSource
+	changedFile        repository.ChangedFile
+	text               string
+	session            session.State
+	background         bool
+	activity           uint64
+	notesScope         notes.Scope
+	readerContextOwner readerContextOwner
 
 	scope            string
 	reviewGeneration uint64
@@ -364,6 +366,8 @@ func (m Model) Init() tea.Cmd {
 // Update routes external input to one semantic action and lands tagged results.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case readerContextFrameMsg:
+		return m, m.command(m.landReaderContextFrame(msg))
 	case sessionSaveDueMsg:
 		if m.sessionStore == nil {
 			m.sessionPending = false
@@ -814,8 +818,8 @@ func (m *Model) apply(action Action) effect {
 			if kind, ok := m.files.selectedKind(); ok {
 				if kind == filetree.Directory {
 					m.files.expandSelected(m.geometry.NavigatorRows.Height)
-				} else if m.controls.Reader == workspace.DiffReader && m.files.setReaderContextExpanded(true) {
-					m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+				} else if m.controls.Reader == workspace.DiffReader {
+					return m.setFilesReaderContext(true)
 				}
 			}
 		}
@@ -824,42 +828,30 @@ func (m *Model) apply(action Action) effect {
 			if kind, ok := m.files.selectedKind(); ok {
 				if kind == filetree.Directory {
 					m.files.collapseSelected(m.geometry.NavigatorRows.Height)
-				} else if m.controls.Reader == workspace.DiffReader && m.files.setReaderContextExpanded(false) {
-					m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+				} else if m.controls.Reader == workspace.DiffReader {
+					return m.setFilesReaderContext(false)
 				}
 			}
 		}
 	case ExpandReaderContext:
 		if m.gitStashesActive() {
-			if m.stashes.setReaderContextExpanded(true) {
-				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
-			}
+			return m.setStashReaderContext(true)
 		} else if m.active == workspace.Files {
-			if m.files.setReaderContextExpanded(true) {
-				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
-			}
+			return m.setFilesReaderContext(true)
 		}
 	case CollapseReaderContext:
 		if m.gitStashesActive() {
-			if m.stashes.setReaderContextExpanded(false) {
-				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
-			}
+			return m.setStashReaderContext(false)
 		} else if m.active == workspace.Files {
-			if m.files.setReaderContextExpanded(false) {
-				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
-			}
+			return m.setFilesReaderContext(false)
 		}
 	case ToggleReaderContext:
 		if m.gitStashesActive() {
 			m.stashes.place.Focus = navigation.FocusReader
-			if m.stashes.setReaderContextExpanded(!m.stashes.readerContextExpanded) {
-				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
-			}
+			return m.setStashReaderContext(!m.stashes.readerContextExpanded)
 		} else if m.active == workspace.Files {
 			m.files.place.Focus = navigation.FocusReader
-			if m.files.setReaderContextExpanded(!m.files.readerContextExpanded) {
-				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
-			}
+			return m.setFilesReaderContext(!m.files.readerContextExpanded)
 		}
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
@@ -1275,6 +1267,11 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			return sessionSavedMsg{generation: generation, err: store.Save(generation, state)}
 		}
+	case effectAnimateReaderContext:
+		owner, generation := pending.readerContextOwner, pending.generation
+		return tea.Tick(readerContextFrameDelay, func(time.Time) tea.Msg {
+			return readerContextFrameMsg{owner: owner, generation: generation}
+		})
 	case effectLoadRefSources:
 		source := m.source
 		generation := pending.generation

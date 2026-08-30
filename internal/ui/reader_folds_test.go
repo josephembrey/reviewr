@@ -73,6 +73,23 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 	if !reflect.DeepEqual(restored, document.Rows) {
 		t.Fatal("expanded controls changed the semantic document rows")
 	}
+
+	half := document.WithContextFoldProgress(4, 8)
+	if len(half.Rows) <= len(compact.Rows) || len(half.Rows) >= len(expanded.Rows) {
+		t.Fatalf("half-expanded rows = %d, compact=%d expanded=%d", len(half.Rows), len(compact.Rows), len(expanded.Rows))
+	}
+	visibleContext := 0
+	for _, row := range half.Rows {
+		if row.Kind == ReaderFold && !row.FoldExpanded {
+			t.Fatalf("partially expanded control lacks state: %+v", row)
+		}
+		if row.Kind == ReaderContext {
+			visibleContext++
+		}
+	}
+	if visibleContext <= 18 || visibleContext >= 32 {
+		t.Fatalf("half-expanded visible context = %d, want an intermediate presentation", visibleContext)
+	}
 }
 
 func TestReaderContextFoldsLeaveSmallRunsAlone(t *testing.T) {

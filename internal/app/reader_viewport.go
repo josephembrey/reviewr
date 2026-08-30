@@ -10,10 +10,10 @@ import (
 // wrapped layout. Reader presentations are replaced, never mutated, when new
 // file content lands.
 type readerViewportKey struct {
-	workspace workspace.Kind
-	rows      ui.Rect
-	source    *ui.ReaderDocument
-	expanded  bool
+	workspace       workspace.Kind
+	rows            ui.Rect
+	source          *ui.ReaderDocument
+	contextProgress int
 }
 
 // readerViewport keeps input routing and painting on one wrapped geometry.
@@ -31,10 +31,10 @@ func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
 	switch {
 	case m.gitStashesActive():
 		key.source = m.stashes.readerPresentation
-		key.expanded = m.stashes.readerContextExpanded
+		key.contextProgress = m.stashes.readerContextProgress
 	case m.active == workspace.Files:
 		key.source = m.files.readerPresentation
-		key.expanded = m.files.readerContextExpanded
+		key.contextProgress = m.files.readerContextProgress
 	default:
 		return readerViewportKey{}, false
 	}
