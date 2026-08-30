@@ -3,6 +3,8 @@ package ui
 import (
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -29,6 +31,12 @@ type ReaderLayout struct {
 	Total    int
 	document ReaderDocument
 	starts   []int
+	wraps    [][]readerRange
+}
+
+type readerRange struct {
+	left  int
+	right int
 }
 
 // CalculateReaderLayout derives wrapping and scrollbar reservation together.
@@ -45,13 +53,15 @@ func CalculateReaderLayout(rows Rect, document ReaderDocument) ReaderLayout {
 
 func calculateReaderLayout(geometry ReaderGeometry, document ReaderDocument) ReaderLayout {
 	starts := make([]int, len(document.Rows)+1)
+	wraps := make([][]readerRange, len(document.Rows))
 	total := 0
 	for index, row := range document.Rows {
 		starts[index] = total
-		total += readerWrapCount(row, geometry.Code.Width)
+		wraps[index] = readerWrapRanges(SafeSingleLine(row.Text), geometry.Code.Width)
+		total += len(wraps[index])
 	}
 	starts[len(document.Rows)] = total
-	return ReaderLayout{Geometry: geometry, Total: total, document: document, starts: starts}
+	return ReaderLayout{Geometry: geometry, Total: total, document: document, starts: starts, wraps: wraps}
 }
 
 // VisualOffset maps a logical source row and source-cell column to the
@@ -61,12 +71,11 @@ func (layout ReaderLayout) VisualOffset(source, column int) int {
 		return 0
 	}
 	source = clamp(source, 0, len(layout.document.Rows)-1)
-	continuations := layout.starts[source+1] - layout.starts[source]
-	continuation := 0
-	if layout.Geometry.Code.Width > 0 {
-		continuation = max(0, column) / layout.Geometry.Code.Width
-	}
-	continuation = clamp(continuation, 0, max(0, continuations-1))
+	ranges := layout.wraps[source]
+	continuation := sort.Search(len(ranges), func(index int) bool {
+		return ranges[index].right > max(0, column)
+	})
+	continuation = clamp(continuation, 0, max(0, len(ranges)-1))
 	return layout.starts[source] + continuation
 }
 
@@ -79,7 +88,9 @@ func (layout ReaderLayout) SourceOffset(visual int) (source, column int) {
 	source = sort.Search(len(layout.document.Rows), func(index int) bool {
 		return layout.starts[index+1] > visual
 	})
-	return source, (visual - layout.starts[source]) * layout.Geometry.Code.Width
+	ranges := layout.wraps[source]
+	continuation := visual - layout.starts[source]
+	return source, ranges[continuation].left
 }
 
 // Row returns one wrapped visual segment and whether it continues its source
@@ -90,32 +101,79 @@ func (layout ReaderLayout) Row(visual int) (ReaderRow, bool) {
 		return ReaderRow{}, false
 	}
 	continuation := visual - layout.starts[source]
-	row := sliceReaderRow(layout.document.Rows[source], continuation, layout.Geometry.Code.Width)
+	wrapped := layout.wraps[source][continuation]
+	row := sliceReaderRow(layout.document.Rows[source], wrapped.left, wrapped.right)
 	return row, continuation > 0
 }
 
-func readerWrapCount(row ReaderRow, width int) int {
+// readerWrapRanges prefers whitespace and common code punctuation, then falls
+// back to a hard cell boundary only for a single chunk wider than the pane.
+// Every source cell remains represented exactly once.
+func readerWrapRanges(value string, width int) []readerRange {
 	if width <= 0 {
-		return 1
+		return []readerRange{{}}
 	}
-	payloadWidth := readerPayloadWidth(row)
-	return max(1, (payloadWidth+width-1)/width)
+	if value == "" {
+		return []readerRange{{}}
+	}
+	ranges := make([]readerRange, 0, max(1, ansi.StringWidth(value)/width))
+	segmentByte, segmentCell := 0, 0
+	for segmentByte < len(value) {
+		limit := segmentCell + width
+		position, index := segmentCell, segmentByte
+		endByte, endCell := segmentByte, segmentCell
+		breakByte, breakCell := -1, -1
+		for index < len(value) {
+			cluster, clusterWidth := firstReaderCluster(value[index:])
+			if position+clusterWidth > limit && endByte > segmentByte {
+				break
+			}
+			index += len(cluster)
+			position += clusterWidth
+			endByte, endCell = index, position
+			if readerBreakAfter(cluster) {
+				breakByte, breakCell = endByte, endCell
+			}
+			if position >= limit {
+				break
+			}
+		}
+		if endByte == len(value) {
+			ranges = append(ranges, readerRange{left: segmentCell, right: endCell})
+			break
+		}
+		if breakByte > segmentByte {
+			endByte, endCell = breakByte, breakCell
+		}
+		if endByte == segmentByte {
+			cluster, clusterWidth := firstReaderCluster(value[segmentByte:])
+			endByte += len(cluster)
+			endCell += clusterWidth
+		}
+		ranges = append(ranges, readerRange{left: segmentCell, right: endCell})
+		segmentByte, segmentCell = endByte, endCell
+	}
+	return ranges
 }
 
-func readerPayloadWidth(row ReaderRow) int {
-	// Text is the semantic payload and spans are only its presentation. Measuring
-	// it once avoids walking every syntax token on each frame.
-	return ansi.StringWidth(SafeSingleLine(row.Text))
+func firstReaderCluster(value string) (string, int) {
+	if value[0] < utf8.RuneSelf && (len(value) == 1 || value[1] < utf8.RuneSelf) {
+		return value[:1], 1
+	}
+	return ansi.FirstGraphemeCluster(value, ansi.GraphemeWidth)
 }
 
-func sliceReaderRow(row ReaderRow, continuation, width int) ReaderRow {
-	if width <= 0 {
+func readerBreakAfter(cluster string) bool {
+	r, _ := utf8.DecodeRuneInString(cluster)
+	return unicode.IsSpace(r) || strings.ContainsRune(".,;:/\\|=+-_*&?!%#@()[]{}<>", r)
+}
+
+func sliceReaderRow(row ReaderRow, left, right int) ReaderRow {
+	if right <= left {
 		row.Text = ""
 		row.Spans = nil
 		return row
 	}
-	left := continuation * width
-	right := left + width
 	if len(row.Spans) == 0 {
 		row.Text = ansi.Cut(SafeSingleLine(row.Text), left, right)
 		return row

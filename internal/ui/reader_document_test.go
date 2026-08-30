@@ -83,6 +83,29 @@ func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
 	}
 }
 
+func TestReaderLayoutPrefersWordAndCodeChunkBoundaries(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
+		Kind: ReaderFile, Text: "call(first, second)", NewLine: 1,
+	}}}
+	layout := CalculateReaderLayout(Rect{Width: 15, Height: 3}, document)
+	if layout.Geometry.Code.Width != 10 || layout.Total != 3 {
+		t.Fatalf("reader layout = %+v", layout)
+	}
+	want := []string{"call(", "first, ", "second)"}
+	var joined strings.Builder
+	for index, expected := range want {
+		row, continuation := layout.Row(index)
+		if row.Text != expected || continuation != (index > 0) {
+			t.Fatalf("wrapped row %d = %q continuation=%v, want %q", index, row.Text, continuation, expected)
+		}
+		joined.WriteString(row.Text)
+	}
+	if joined.String() != document.Rows[0].Text {
+		t.Fatalf("wrapping changed source text: %q", joined.String())
+	}
+}
+
 func TestReaderLayoutMapsWrappedVisualScrollToLogicalPlace(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
