@@ -1,8 +1,6 @@
 package review
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,11 +22,11 @@ type RepositoryID struct {
 // ResolveRepositoryID canonicalizes the read-only Git identity supplied by the
 // repository adapter. It does not invoke Git or enumerate status.
 func ResolveRepositoryID(worktree, commonGitDir string) (RepositoryID, error) {
-	canonicalWorktree, err := canonicalPath(worktree)
+	canonicalWorktree, err := appstate.CanonicalPath(worktree)
 	if err != nil {
 		return RepositoryID{}, fmt.Errorf("canonicalize worktree: %w", err)
 	}
-	canonicalCommon, err := canonicalPath(commonGitDir)
+	canonicalCommon, err := appstate.CanonicalPath(commonGitDir)
 	if err != nil {
 		return RepositoryID{}, fmt.Errorf("canonicalize common Git directory: %w", err)
 	}
@@ -37,16 +35,7 @@ func ResolveRepositoryID(worktree, commonGitDir string) (RepositoryID, error) {
 
 // FileKey returns a stable collision-resistant name for one worktree ledger.
 func (id RepositoryID) FileKey() string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(id.CommonGitDir))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(id.Worktree))
-	return hex.EncodeToString(hash.Sum(nil))
-}
-
-// DefaultStateRoot returns reviewr's platform application-state directory.
-func DefaultStateRoot() (string, error) {
-	return appstate.DefaultRoot()
+	return appstate.FileKey(id.CommonGitDir, id.Worktree)
 }
 
 type stateFile struct {
@@ -92,10 +81,11 @@ func (problem stateProblem) transactionError() string {
 
 // Store atomically persists one repository/worktree ledger outside the repository.
 type Store struct {
+	root       string
 	path       string
 	repository RepositoryID
 	writable   bool
-	replace    func(string, string, RepositoryID, Ledger) error
+	replace    func(string, RepositoryID, Ledger) error
 }
 
 // OpenStore loads one ledger. Passing an empty root selects DefaultStateRoot;
@@ -103,13 +93,13 @@ type Store struct {
 func OpenStore(repository RepositoryID, root string) (Ledger, *Store, string) {
 	if root == "" {
 		var err error
-		root, err = DefaultStateRoot()
+		root, err = appstate.DefaultRoot()
 		if err != nil {
 			return Ledger{}, &Store{repository: repository}, "review state unavailable; marks will not survive restart"
 		}
 	}
 	path := filepath.Join(root, "reviews", repository.FileKey()+".json")
-	store := &Store{path: path, repository: repository, writable: true, replace: replaceState}
+	store := &Store{root: root, path: path, repository: repository, writable: true, replace: replaceState}
 	ledger, exists, problem := readLedger(path, repository)
 	if problem != 0 {
 		store.writable = false
@@ -167,11 +157,8 @@ func (store *Store) commit(delta Delta) (Ledger, error) {
 		return Ledger{}, errors.New("review state location is unavailable")
 	}
 	parent := filepath.Dir(store.path)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
+	if err := appstate.EnsurePrivateSubdirectory(store.root, parent); err != nil && !errors.Is(err, os.ErrPermission) {
 		return Ledger{}, fmt.Errorf("cannot create review state directory: %w", err)
-	}
-	if err := os.Chmod(parent, 0o700); err != nil && !errors.Is(err, os.ErrPermission) {
-		return Ledger{}, fmt.Errorf("cannot make review state directory private: %w", err)
 	}
 
 	lockPath := store.path[:len(store.path)-len(filepath.Ext(store.path))] + ".lock"
@@ -191,7 +178,7 @@ func (store *Store) commit(delta Delta) (Ledger, error) {
 	}
 	if delta.Apply(&current) {
 		current.Compact()
-		if err := store.replace(store.path, parent, store.repository, current); err != nil {
+		if err := store.replace(store.path, store.repository, current); err != nil {
 			return Ledger{}, err
 		}
 	}
@@ -226,51 +213,15 @@ func readLedger(path string, repository RepositoryID) (Ledger, bool, stateProble
 	return state.Ledger, true, 0
 }
 
-func replaceState(path, parent string, repository RepositoryID, ledger Ledger) error {
+func replaceState(path string, repository RepositoryID, ledger Ledger) error {
 	state := stateFile{Version: StateVersion, Repository: repository, Ledger: ledger}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("cannot encode review state: %w", err)
 	}
 	data = append(data, '\n')
-	temp, err := os.CreateTemp(parent, ".review-state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("cannot create review state: %w", err)
-	}
-	tempPath := temp.Name()
-	keep := false
-	defer func() {
-		_ = temp.Close()
-		if !keep {
-			_ = os.Remove(tempPath)
-		}
-	}()
-	if err := temp.Chmod(0o600); err != nil {
-		return fmt.Errorf("cannot make review state private: %w", err)
-	}
-	if _, err := temp.Write(data); err != nil {
-		return fmt.Errorf("cannot write review state: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("cannot sync review state: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("cannot close review state: %w", err)
-	}
-	if err := os.Rename(tempPath, path); err != nil {
+	if err := appstate.ReplaceFile(path, ".review-state-*.tmp", data); err != nil {
 		return fmt.Errorf("cannot replace review state: %w", err)
-	}
-	keep = true
-	directory, err := os.Open(parent)
-	if err != nil {
-		return fmt.Errorf("cannot open review state directory for sync: %w", err)
-	}
-	if err := directory.Sync(); err != nil {
-		_ = directory.Close()
-		return fmt.Errorf("cannot sync review state directory: %w", err)
-	}
-	if err := directory.Close(); err != nil {
-		return fmt.Errorf("cannot close review state directory: %w", err)
 	}
 	return nil
 }
@@ -285,16 +236,4 @@ func openPrivateLock(path string) (*os.File, error) {
 		return nil, fmt.Errorf("cannot make review state lock private: %w", err)
 	}
 	return lock, nil
-}
-
-func canonicalPath(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(resolved), nil
 }

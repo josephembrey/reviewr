@@ -184,6 +184,45 @@ func TestPrivateStorePermissionsAtomicReplacementAndContention(t *testing.T) {
 	}
 }
 
+func TestPrivateStoreRejectsInvalidUTF8SaveAndSymlinkedNamespace(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid UTF-8 save", func(t *testing.T) {
+		base := t.TempDir()
+		lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+		store := NewPrivateStore("/clone/.git", lookup)
+		defer store.Close()
+		if _, _, err := store.Load(); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Save(string([]byte{0xff})); !errors.Is(err, ErrInvalidUTF8) {
+			t.Fatalf("invalid save error = %v", err)
+		}
+		paths, _ := StatePaths("/clone/.git", lookup)
+		if _, err := os.Stat(paths.Note); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("invalid save created a note: %v", err)
+		}
+	})
+
+	t.Run("symlinked namespace", func(t *testing.T) {
+		base := t.TempDir()
+		outside := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(base, "reviewr")); err != nil {
+			t.Fatal(err)
+		}
+		lookup := func(key string) (string, bool) { return base, key == "XDG_STATE_HOME" }
+		store := NewPrivateStore("/clone/.git", lookup)
+		defer store.Close()
+		if _, readOnly, err := store.Load(); err == nil || !readOnly {
+			t.Fatalf("symlinked load = readOnly %v, %v", readOnly, err)
+		}
+		entries, err := os.ReadDir(outside)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("notes state escaped through symlink: %v, %v", entries, err)
+		}
+	})
+}
+
 func TestPrivateStoreReadAndWriteFailuresAreRecoverable(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()

@@ -2,8 +2,6 @@
 package session
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,6 +117,7 @@ type diskState struct {
 // delayed Bubble Tea commands from replacing a newer authored snapshot.
 type Store struct {
 	mu         sync.Mutex
+	root       string
 	path       string
 	identity   Identity
 	generation uint64
@@ -138,6 +137,7 @@ func Open(root, commonGitDir, worktree string) (*Store, State, error) {
 		}
 	}
 	store := &Store{
+		root:     root,
 		path:     filepath.Join(root, "sessions", identity.fileKey()+".json"),
 		identity: identity,
 	}
@@ -178,7 +178,7 @@ func (store *Store) Save(generation uint64, state State) error {
 		return fmt.Errorf("encode session: %w", err)
 	}
 	data = append(data, '\n')
-	if err := replace(store.path, data); err != nil {
+	if err := replace(store.root, store.path, data); err != nil {
 		return err
 	}
 	store.generation = generation
@@ -186,70 +186,27 @@ func (store *Store) Save(generation uint64, state State) error {
 }
 
 func resolveIdentity(commonGitDir, worktree string) (Identity, error) {
-	common, err := canonicalPath(commonGitDir)
+	common, err := appstate.CanonicalPath(commonGitDir)
 	if err != nil {
 		return Identity{}, fmt.Errorf("canonicalize common Git directory: %w", err)
 	}
-	checkout, err := canonicalPath(worktree)
+	checkout, err := appstate.CanonicalPath(worktree)
 	if err != nil {
 		return Identity{}, fmt.Errorf("canonicalize worktree: %w", err)
 	}
 	return Identity{CommonGitDir: common, Worktree: checkout}, nil
 }
 
-func canonicalPath(path string) (string, error) {
-	if path == "" {
-		return "", errors.New("path is empty")
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	canonical, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(canonical), nil
-}
-
 func (identity Identity) fileKey() string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(identity.CommonGitDir))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write([]byte(identity.Worktree))
-	return hex.EncodeToString(hash.Sum(nil))
+	return appstate.FileKey(identity.CommonGitDir, identity.Worktree)
 }
 
-func replace(path string, data []byte) error {
+func replace(root, path string, data []byte) error {
 	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := appstate.EnsurePrivateSubdirectory(root, directory); err != nil {
 		return fmt.Errorf("prepare session directory: %w", err)
 	}
-	if err := os.Chmod(directory, 0o700); err != nil {
-		return fmt.Errorf("protect session directory: %w", err)
-	}
-	temporary, err := os.CreateTemp(directory, ".session-*.tmp")
-	if err != nil {
-		return fmt.Errorf("stage session: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("protect session: %w", err)
-	}
-	if _, err := temporary.Write(data); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("write session: %w", err)
-	}
-	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("flush session: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close session: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := appstate.ReplaceFile(path, ".session-*.tmp", data); err != nil {
 		return fmt.Errorf("replace session: %w", err)
 	}
 	return nil

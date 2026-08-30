@@ -83,6 +83,38 @@ func TestSessionIdentityCanonicalizesSymlinksAndSeparatesWorktrees(t *testing.T)
 	}
 }
 
+func TestSessionRefusesSymlinkedStateNamespace(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	common := filepath.Join(root, "repo", ".git")
+	worktree := filepath.Join(root, "repo")
+	if err := os.MkdirAll(common, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stateRoot := filepath.Join(root, "state")
+	outside := filepath.Join(root, "outside")
+	if err := os.MkdirAll(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(stateRoot, "sessions")); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err := Open(stateRoot, common, worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(1, State{Active: "notes"}); err == nil {
+		t.Fatal("session save followed a symlinked namespace")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("session escaped through symlink: %v, %v", entries, err)
+	}
+}
+
 func TestCorruptSessionCanBeRepairedByNextAuthoredSave(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

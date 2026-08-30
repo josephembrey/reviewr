@@ -56,15 +56,19 @@ func TestRepositoryIDCanonicalKeyAndWorktreeIsolation(t *testing.T) {
 	}
 }
 
-func TestDefaultStateRootHonorsAbsoluteXDGStateHome(t *testing.T) {
+func TestRepositoryIDRejectsMissingIdentityPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", root)
-	got, err := DefaultStateRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(root, "reviewr"); got != want {
-		t.Fatalf("state root = %q, want %q", got, want)
+	for _, test := range []struct {
+		worktree string
+		common   string
+	}{
+		{worktree: "", common: root},
+		{worktree: root, common: ""},
+	} {
+		if _, err := ResolveRepositoryID(test.worktree, test.common); err == nil {
+			t.Fatalf("ResolveRepositoryID(%q, %q) accepted a missing identity", test.worktree, test.common)
+		}
 	}
 }
 
@@ -120,6 +124,27 @@ func TestStoreMissingRoundTripRestartAndPrivateAtomicReplacement(t *testing.T) {
 	restarted, _, warning := OpenStore(repository, root)
 	if warning != "" || len(restarted.ReceiptData) != 2 || restarted.Assess(edge).State != Reviewed {
 		t.Fatalf("restart = warning %q ledger %+v", warning, restarted)
+	}
+}
+
+func TestStoreRefusesSymlinkedStateNamespace(t *testing.T) {
+	t.Parallel()
+	repository := testRepositoryID(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "reviews")); err != nil {
+		t.Fatal(err)
+	}
+	ledger, store, _ := OpenStore(repository, root)
+	edge := comparison("branch", endpoint("a", "old"), endpoint("a", "new"))
+	delta := Delta{Kind: MarkDelta, Comparison: edge, Bounds: Bounds{Old: edge.Old, New: edge.New}}
+	changed, err := store.Apply(&ledger, delta)
+	if !changed || err == nil || ledger.Assess(edge).State != Reviewed {
+		t.Fatalf("symlinked apply = %v, %v, %+v", changed, err, ledger)
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("review state escaped through symlink: %v, %v", entries, err)
 	}
 }
 
@@ -226,7 +251,7 @@ func TestPersistenceFailurePreservesValidInMemoryReceipt(t *testing.T) {
 		t.Run(stage, func(t *testing.T) {
 			root := t.TempDir()
 			ledger, store, _ := OpenStore(repository, root)
-			store.replace = func(string, string, RepositoryID, Ledger) error { return fmt.Errorf("injected %s failure", stage) }
+			store.replace = func(string, RepositoryID, Ledger) error { return fmt.Errorf("injected %s failure", stage) }
 			changed, err := store.Apply(&ledger, delta)
 			if !changed || err == nil || ledger.Assess(edge).State != Reviewed {
 				t.Fatalf("failure = changed %v err %v ledger %+v", changed, err, ledger)
