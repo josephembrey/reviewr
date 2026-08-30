@@ -28,8 +28,11 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "right expands navigator selection", key: tea.Key{Code: tea.KeyRight}, focus: navigation.FocusNavigator, want: Action{Kind: ExpandNavigatorSelection}},
 		{name: "h collapses navigator selection", key: tea.Key{Code: 'h', Text: "h"}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseNavigatorSelection}},
 		{name: "left collapses navigator selection", key: tea.Key{Code: tea.KeyLeft}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseNavigatorSelection}},
-		{name: "tab cycles destinations forward", key: tea.Key{Code: tea.KeyTab}, want: Action{Kind: CycleDestination}},
-		{name: "shift tab cycles destinations backward", key: tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}, want: Action{Kind: CyclePreviousDestination}},
+		{name: "tab focuses reader", key: tea.Key{Code: tea.KeyTab}, focus: navigation.FocusNavigator, want: Action{Kind: FocusReader}},
+		{name: "shift tab focuses reader", key: tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}, focus: navigation.FocusNavigator, want: Action{Kind: FocusReader}},
+		{name: "tab focuses navigator", key: tea.Key{Code: tea.KeyTab}, focus: navigation.FocusReader, want: Action{Kind: FocusNavigator}},
+		{name: "g opens Git", key: tea.Key{Code: 'g', Text: "g"}, want: Action{Kind: ShowGit}},
+		{name: "n opens Notes", key: tea.Key{Code: 'n', Text: "n"}, want: Action{Kind: ShowNotes}},
 		{name: "z swaps panes", key: tea.Key{Code: 'z', Text: "z"}, want: Action{Kind: SwapPanes}},
 		{name: "one toggles secondary", key: tea.Key{Code: '1', Text: "1"}, want: Action{Kind: ToggleSecondary}},
 		{name: "two toggles tertiary", key: tea.Key{Code: '2', Text: "2"}, want: Action{Kind: ToggleTertiary}},
@@ -131,8 +134,8 @@ func TestNotesRoutingIsModelessAndSemantic(t *testing.T) {
 		{name: "home", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyHome}), want: Action{Kind: NotesMoveHome}, ok: true},
 		{name: "page down", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}), want: Action{Kind: NotesPageDown}, ok: true},
 		{name: "enter", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}), want: Action{Kind: NotesInsert, Text: "\n"}, ok: true},
-		{name: "tab cycles destinations", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), want: Action{Kind: CycleDestination}, ok: true},
-		{name: "shift tab cycles destinations backward", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}), want: Action{Kind: CyclePreviousDestination}, ok: true},
+		{name: "tab inserts indentation", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), want: Action{Kind: NotesInsert, Text: "\t"}, ok: true},
+		{name: "shift tab is reserved", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift})},
 		{name: "delete", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyDelete}), want: Action{Kind: NotesDelete}, ok: true},
 		{name: "undo", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}), want: Action{Kind: NotesUndo}, ok: true},
 		{name: "redo", msg: tea.KeyPressMsg(tea.Key{Code: 'y', Mod: tea.ModCtrl}), want: Action{Kind: NotesRedo}, ok: true},
@@ -176,10 +179,10 @@ func TestNotesScopeKeyboardAndMouseRouting(t *testing.T) {
 	if got, ok := routeNotesMessage(ctrlT, g, presentation, false, false, true); !ok || got.Kind != ToggleNotesScope {
 		t.Fatalf("linked ctrl+t = (%+v, %v)", got, ok)
 	}
-	if got, ok := routeNotesMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), g, presentation, false, false, true); !ok || got != (Action{Kind: CycleDestination}) {
+	if got, ok := routeNotesMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), g, presentation, false, false, true); !ok || got != (Action{Kind: NotesInsert, Text: "\t"}) {
 		t.Fatalf("linked Tab = (%+v, %v)", got, ok)
 	}
-	if got, ok := routeNotesMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}), g, presentation, false, false, true); !ok || got != (Action{Kind: CyclePreviousDestination}) {
+	if got, ok := routeNotesMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}), g, presentation, false, false, true); ok {
 		t.Fatalf("linked Shift+Tab = (%+v, %v)", got, ok)
 	}
 	for _, test := range []struct {
@@ -219,10 +222,10 @@ func TestMouseRoutingPrecedence(t *testing.T) {
 		{name: "files label selects Files", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderFiles.X, Y: g.HeaderFiles.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowFiles}, ok: true},
 		{name: "git label selects Git", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowGit}, ok: true},
 		{name: "notes label selects Notes", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderNotes.X, Y: g.HeaderNotes.Y, Button: tea.MouseLeft}), want: Action{Kind: ShowNotes}, ok: true},
-		{name: "secondary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 22, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleSecondary}, ok: true},
-		{name: "tertiary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 28, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleTertiary}, ok: true},
-		{name: "comparison control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 35, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleComparison}, ok: true},
-		{name: "switcher separator is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 10, Y: g.Header.Y, Button: tea.MouseLeft})},
+		{name: "secondary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 26, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleSecondary}, ok: true},
+		{name: "tertiary control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 32, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleTertiary}, ok: true},
+		{name: "comparison control cycles", msg: tea.MouseClickMsg(tea.Mouse{X: 39, Y: g.Header.Y, Button: tea.MouseLeft}), want: Action{Kind: ToggleComparison}, ok: true},
+		{name: "switcher separator is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: 7, Y: g.Header.Y, Button: tea.MouseLeft})},
 		{name: "header gap is neutral", msg: tea.MouseClickMsg(tea.Mouse{X: g.HeaderSwitcher.X + g.HeaderSwitcher.Width, Y: g.Header.Y, Button: tea.MouseLeft})},
 		{name: "wheel on workspace label is neutral", msg: tea.MouseWheelMsg(tea.Mouse{X: g.HeaderGit.X, Y: g.HeaderGit.Y, Button: tea.MouseWheelDown})},
 		{name: "wheel on row navigates instead of clicking", msg: tea.MouseWheelMsg(tea.Mouse{X: rowX, Y: rowY, Button: tea.MouseWheelDown}), want: Action{Kind: SelectNext}, ok: true},

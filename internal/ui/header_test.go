@@ -37,13 +37,13 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	if !strings.HasPrefix(plain, switcher) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
 		t.Fatalf("normal header = %q", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(21, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(len(switcher), 1), Workspace: workspace.Files}))
 	if plain != switcher {
-		t.Fatalf("21-column header = %q, want switcher only", plain)
+		t.Fatalf("exact-width header = %q, want switcher only", plain)
 	}
-	plain = ansi.Strip(Render(Model{Geometry: Calculate(22, 1), Workspace: workspace.Files}))
+	plain = ansi.Strip(Render(Model{Geometry: Calculate(len(switcher)+1, 1), Workspace: workspace.Files}))
 	if plain != switcher+" " {
-		t.Fatalf("22-column header = %q, want switcher only", plain)
+		t.Fatalf("padded header = %q, want switcher only", plain)
 	}
 }
 
@@ -84,6 +84,11 @@ func TestWorkspaceSwitcherAccentsOnlyTheActiveLabel(t *testing.T) {
 		}
 		if plain := ansi.Strip(frame); plain != workspaceSwitcher {
 			t.Fatalf("active %v changed stable group: %q", active, plain)
+		}
+		for _, key := range []string{"g ", "n "} {
+			if !strings.Contains(frame, headerStyle.Render(key)) {
+				t.Fatalf("active %v lost destination key %q: %q", active, key, frame)
+			}
 		}
 	}
 }

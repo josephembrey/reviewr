@@ -1,7 +1,7 @@
 package workspace
 
-// Header action keys are local to the active tab. Tab and Shift+Tab own
-// top-level navigation, leaving the compact number row for view controls.
+// Header action keys are local to the active workspace. Tab and Shift+Tab
+// move pane focus, leaving the compact number row for view controls.
 const (
 	SecondaryControlKey  = "1"
 	TertiaryControlKey   = "2"

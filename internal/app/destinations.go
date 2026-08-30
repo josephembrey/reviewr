@@ -15,29 +15,6 @@ func (m *Model) showDestination(next workspace.Kind) effect {
 	return m.requestNotesExit(notesExitFiles)
 }
 
-func (m *Model) cycleDestination(previous bool) effect {
-	next := workspace.Files
-	switch m.active {
-	case workspace.Files:
-		if previous {
-			next = workspace.Notes
-		} else {
-			next = workspace.Git
-		}
-	case workspace.Git:
-		if previous {
-			next = workspace.Files
-		} else {
-			next = workspace.Notes
-		}
-	case workspace.Notes:
-		if previous {
-			next = workspace.Git
-		}
-	}
-	return m.showDestination(next)
-}
-
 func (m *Model) activate(next workspace.Kind) effect {
 	if next == m.active {
 		return effect{}

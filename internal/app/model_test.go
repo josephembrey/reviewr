@@ -223,41 +223,24 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 	model.files.tree.Rebuild([]string{"file.go"})
 	model.files.place.Reconcile(model.files.tree.Identities())
 	filesFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(filesFrame, "tab [files|git|notes]") || !strings.Contains(filesFrame, "\n1 files") {
+	if !strings.HasPrefix(filesFrame, "[files | g git | n notes]") || !strings.Contains(filesFrame, "\n1 files") {
 		t.Fatalf("Files frame = %q", filesFrame)
 	}
 
 	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
 	model = next.(Model)
+	if model.active != workspace.Files || model.files.place.Focus != navigation.FocusReader || command != nil {
+		t.Fatalf("Tab focus = active %v focus %v command=%v", model.active, model.files.place.Focus, command != nil)
+	}
+
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: 'g', Text: "g"}))
+	model = next.(Model)
 	if model.active != workspace.Git || command != nil {
 		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "tab [files|git|notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "[files | g git | n notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
-	}
-}
-
-func TestCycleDestinationUsesVisibleTabOrder(t *testing.T) {
-	t.Parallel()
-	model := newTestModel(&fakeSource{})
-	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Git || pending.kind != effectNone {
-		t.Fatalf("Files -> Git = active %v effect %+v", model.active, pending)
-	}
-	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Notes || pending.kind != effectLoadNotes {
-		t.Fatalf("Git -> Notes = active %v effect %+v", model.active, pending)
-	}
-	if pending := model.apply(Action{Kind: CycleDestination}); model.active != workspace.Files || pending.kind != effectNone {
-		t.Fatalf("Notes -> Files = active %v effect %+v", model.active, pending)
-	}
-	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Notes || pending.kind != effectLoadNotes {
-		t.Fatalf("Files -> Notes = active %v effect %+v", model.active, pending)
-	}
-	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Git || pending.kind != effectNone {
-		t.Fatalf("Notes -> Git = active %v effect %+v", model.active, pending)
-	}
-	if pending := model.apply(Action{Kind: CyclePreviousDestination}); model.active != workspace.Files || pending.kind != effectNone {
-		t.Fatalf("Git -> Files = active %v effect %+v", model.active, pending)
 	}
 }
 
@@ -297,12 +280,7 @@ func TestNotesDestinationEditsAndPreservesFilesPlace(t *testing.T) {
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
 	model.files.place = navigation.State{Items: []string{"a", "b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-	model = next.(Model)
-	if model.active != workspace.Git || command != nil {
-		t.Fatalf("first Tab = active %v command=%v", model.active, command != nil)
-	}
-	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'n', Text: "n"}))
 	model = next.(Model)
 	if model.active != workspace.Notes || command == nil {
 		t.Fatalf("Notes activation = active %v command=%v", model.active, command != nil)
@@ -446,7 +424,7 @@ func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 		t.Fatalf("minimum-size recovery = geometry %+v command=%v", model.geometry.Screen, command != nil)
 	}
 	frame = ansi.Strip(model.View().Content)
-	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "tab [files|git|notes]") {
+	if strings.Contains(frame, "terminal too small") || !strings.HasPrefix(frame, "[files | g git | n notes]") {
 		t.Fatalf("recovered frame = %q", frame)
 	}
 }
@@ -580,12 +558,6 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		model = next.(Model)
 		return command
 	}
-	pressTab := func() tea.Cmd {
-		next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
-		model = next.(Model)
-		return command
-	}
-
 	if command := press('1'); command != nil || model.controls.Files != workspace.ChangedFiles {
 		t.Fatalf("Files 1 = controls %+v command=%v", model.controls, command != nil)
 	}
@@ -599,8 +571,7 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		t.Fatalf("Changed -> All did not reset reader to File: %+v", model.controls)
 	}
 
-	pressTab()
-	pressTab()
+	press('n')
 	beforeNotes := model.controls
 	press('1')
 	press('2')
@@ -610,7 +581,7 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 	}
 	pressEscape()
 
-	if command := pressTab(); command != nil || model.active != workspace.Git {
+	if command := press('g'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git activation = active %v command=%v", model.active, command != nil)
 	}
 	press('1')

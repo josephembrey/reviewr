@@ -14,14 +14,6 @@ var (
 		HitComparisonControl:    yellowStyle,
 		HitDiffHighlightControl: headerStyle,
 	}
-	workspaceSwitcherLabels = [...]struct {
-		kind  workspace.Kind
-		label string
-	}{
-		{workspace.Files, "files"},
-		{workspace.Git, "git"},
-		{workspace.Notes, "notes"},
-	}
 )
 
 func renderHeader(model Model) string {
@@ -86,11 +78,13 @@ func renderChangeTotals(summary ChangeSummary) string {
 
 func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
 	var rendered strings.Builder
-	rendered.WriteString(headerStyle.Render("tab"))
-	rendered.WriteString(chromeStyle.Render(" ["))
-	for index, item := range workspaceSwitcherLabels {
+	rendered.WriteString(chromeStyle.Render("["))
+	for index, item := range workspaceSwitcherItems {
 		if index > 0 {
-			rendered.WriteString(mutedStyle.Render("|"))
+			rendered.WriteString(mutedStyle.Render(" | "))
+		}
+		if item.key != "" {
+			rendered.WriteString(headerStyle.Render(item.key + " "))
 		}
 		if item.kind == activeWorkspace {
 			rendered.WriteString(headerStyle.Render(item.label))

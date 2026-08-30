@@ -13,12 +13,14 @@ type footerEntry struct {
 
 var (
 	standardFooterEntries = []footerEntry{
+		{key: "tab", label: "focus"},
 		{key: "j/k or ↑/↓", label: "navigate"},
 		{key: "z", label: "swap"},
 		{key: "r", label: "refresh"},
 		{key: "q", label: "quit"},
 	}
 	filesFooterEntries = []footerEntry{
+		{key: "tab", label: "focus"},
 		{key: "j/k", label: "move"},
 		{key: "h/l", label: "less/more"},
 		{key: "z", label: "swap"},
@@ -71,6 +73,7 @@ func renderNotesFooter(model Model) string {
 
 func stashFooterEntries(contextFoldable bool) []footerEntry {
 	entries := []footerEntry{
+		{key: "tab", label: "focus"},
 		{key: "j/k", label: "move stashes"},
 		{key: "f/F", label: "move files"},
 	}

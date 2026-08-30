@@ -44,7 +44,17 @@ type Geometry struct {
 // only relaxes it for tiny component-test surfaces below the app minimum.
 const MinimumPaneWidth = 16
 
-const workspaceSwitcher = "tab [files|git|notes]"
+const workspaceSwitcher = "[files | g git | n notes]"
+
+var workspaceSwitcherItems = [...]struct {
+	kind  workspace.Kind
+	key   string
+	label string
+}{
+	{kind: workspace.Files, label: "files"},
+	{kind: workspace.Git, key: "g", label: "git"},
+	{kind: workspace.Notes, key: "n", label: "notes"},
+}
 
 // Calculate returns responsive pane geometry with the default split.
 func Calculate(width, height int) Geometry {
@@ -131,17 +141,24 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	return g
 }
 
-// workspaceSwitcherRect is the exact label-only paint and hit target inside
-// the stable "tab [files|git|notes]" control.
+// workspaceSwitcherRect is the exact item paint and hit target inside the
+// stable workspace control. Shortcut prefixes belong to their item target.
 func workspaceSwitcherRect(kind workspace.Kind) Rect {
-	switch kind {
-	case workspace.Git:
-		return Rect{X: 11, Width: 3, Height: 1}
-	case workspace.Notes:
-		return Rect{X: 15, Width: 5, Height: 1}
-	default:
-		return Rect{X: 5, Width: 5, Height: 1}
+	position := 1 // opening bracket
+	for index, item := range workspaceSwitcherItems {
+		if index > 0 {
+			position += len(" | ")
+		}
+		width := len(item.label)
+		if item.key != "" {
+			width += len(item.key) + 1
+		}
+		if item.kind == kind {
+			return Rect{X: position, Width: width, Height: 1}
+		}
+		position += width
 	}
+	return Rect{}
 }
 
 func clipTo(bounds, rect Rect) Rect {

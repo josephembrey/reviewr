@@ -15,8 +15,6 @@ const (
 	ShowFiles
 	ShowGit
 	ShowNotes
-	CycleDestination
-	CyclePreviousDestination
 	ToggleNotesScope
 	SelectProjectNotes
 	SelectWorktreeNotes
@@ -171,10 +169,10 @@ func routeNotesEditorKey(key tea.Key, selecting bool) (Action, bool) {
 	case tea.KeyEnter:
 		return Action{Kind: NotesInsert, Text: "\n"}, true
 	case tea.KeyTab:
-		if selecting {
-			return Action{Kind: CyclePreviousDestination}, true
+		if !selecting {
+			return Action{Kind: NotesInsert, Text: "\t"}, true
 		}
-		return Action{Kind: CycleDestination}, true
+		return Action{}, false
 	default:
 		return Action{}, false
 	}
@@ -331,10 +329,15 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 		if context.active == workspace.Git {
 			return Action{Kind: ShowFiles}, true
 		}
-	case "tab":
-		return Action{Kind: CycleDestination}, true
-	case "shift+tab":
-		return Action{Kind: CyclePreviousDestination}, true
+	case "g":
+		return Action{Kind: ShowGit}, true
+	case "n":
+		return Action{Kind: ShowNotes}, true
+	case "tab", "shift+tab":
+		if context.focus == navigation.FocusNavigator {
+			return Action{Kind: FocusReader}, true
+		}
+		return Action{Kind: FocusNavigator}, true
 	case "z":
 		return Action{Kind: SwapPanes}, true
 	case "r":

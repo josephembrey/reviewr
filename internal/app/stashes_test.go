@@ -40,7 +40,7 @@ func TestStashesHeaderControlLoadsAndRoutesSemanticTraversal(t *testing.T) {
 	key := func(value rune) tea.Cmd {
 		return update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
 	}
-	if command := update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab})); command != nil || model.active != workspace.Git {
+	if command := key('g'); command != nil || model.active != workspace.Git {
 		t.Fatalf("Git switch = active %v command=%v", model.active, command != nil)
 	}
 	if command := key('1'); command == nil || model.controls.Git != workspace.GitRefs || !model.refs.sourceLoading {

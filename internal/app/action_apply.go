@@ -15,8 +15,6 @@ func (m *Model) apply(action Action) effect {
 		ShowFiles,
 		ShowGit,
 		ShowNotes,
-		CycleDestination,
-		CyclePreviousDestination,
 		ToggleNotesScope,
 		SelectProjectNotes,
 		SelectWorktreeNotes:
@@ -65,10 +63,6 @@ func (m *Model) applyDestinationAction(action Action) effect {
 		return m.showDestination(workspace.Git)
 	case ShowNotes:
 		return m.showDestination(workspace.Notes)
-	case CycleDestination:
-		return m.cycleDestination(false)
-	case CyclePreviousDestination:
-		return m.cycleDestination(true)
 	case ToggleNotesScope:
 		return m.note.toggleScope()
 	case SelectProjectNotes:
