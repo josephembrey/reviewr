@@ -25,6 +25,7 @@ type filesState struct {
 	reader                repository.File
 	diff                  repository.Diff
 	readerPresentation    *ui.ReaderDocument
+	readerContextExpanded bool
 	reviewSnapshot        review.Snapshot
 	ledger                review.Ledger
 	store                 *review.Store
@@ -238,6 +239,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		state.displayedComparison = nil
 		state.displayedBounds = nil
 		state.readerPresentation = nil
+		state.readerContextExpanded = false
 	}
 	state.readerEntry = entry
 	state.readerMode = mode
@@ -400,6 +402,7 @@ func (state *filesState) clearReader() {
 	state.displayedComparison = nil
 	state.displayedBounds = nil
 	state.readerPresentation = nil
+	state.readerContextExpanded = false
 	state.requestedComparison = nil
 	state.requestedBounds = nil
 	state.readerLoading = false
@@ -492,23 +495,28 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 	}
 
 	return ui.Model{
-		Geometry:       geometry,
-		NavigatorTitle: fmt.Sprintf("%d files", state.tree.FileCount()),
-		NavigatorRows:  rows,
-		NavigatorEmpty: emptyNavigator,
-		Selected:       state.place.Selected,
-		Top:            state.place.Top,
-		Focus:          state.place.Focus,
-		ReaderTitle:    readerTitle,
-		ReaderDocument: state.readerDocument(),
-		ReaderEmpty:    readerEmpty,
-		ReaderOffset:   state.place.ReaderOffset,
-		ReaderColumn:   state.place.ReaderColumn,
-		FooterWarning:  firstWarning(state.reviewWarning, state.comparisonWarning),
+		Geometry:              geometry,
+		NavigatorTitle:        fmt.Sprintf("%d files", state.tree.FileCount()),
+		NavigatorRows:         rows,
+		NavigatorEmpty:        emptyNavigator,
+		Selected:              state.place.Selected,
+		Top:                   state.place.Top,
+		Focus:                 state.place.Focus,
+		ReaderTitle:           readerTitle,
+		ReaderDocument:        state.readerDocument(),
+		ReaderContextFoldable: state.rawReaderDocument().ContextFoldable(),
+		ReaderEmpty:           readerEmpty,
+		ReaderOffset:          state.place.ReaderOffset,
+		ReaderColumn:          state.place.ReaderColumn,
+		FooterWarning:         firstWarning(state.reviewWarning, state.comparisonWarning),
 	}
 }
 
 func (state filesState) readerDocument() ui.ReaderDocument {
+	return state.rawReaderDocument().WithContextFolds(state.readerContextExpanded)
+}
+
+func (state filesState) rawReaderDocument() ui.ReaderDocument {
 	if state.readerPresentation != nil {
 		return *state.readerPresentation
 	}
@@ -516,6 +524,21 @@ func (state filesState) readerDocument() ui.ReaderDocument {
 		return ui.ReaderDocument{}
 	}
 	return state.deriveReaderDocument()
+}
+
+func (state *filesState) setReaderContextExpanded(expanded bool) bool {
+	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
+		return false
+	}
+	oldRows := readerRowIdentities(state.readerRows())
+	oldOffset := state.place.ReaderOffset
+	state.readerContextExpanded = expanded
+	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
+	if state.place.ReaderOffset != oldOffset {
+		state.place.ReaderColumn = 0
+	}
+	state.place.ClampReaderSource(len(state.readerRows()))
+	return true
 }
 
 func (state filesState) readerRows() []ui.ReaderRow {

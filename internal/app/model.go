@@ -798,6 +798,26 @@ func (m *Model) apply(action Action) effect {
 		if m.active == workspace.Files {
 			m.files.collapseSelected(m.geometry.NavigatorRows.Height)
 		}
+	case ExpandReaderContext:
+		if m.gitStashesActive() {
+			if m.stashes.setReaderContextExpanded(true) {
+				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+			}
+		} else if m.active == workspace.Files {
+			if m.files.setReaderContextExpanded(true) {
+				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+			}
+		}
+	case CollapseReaderContext:
+		if m.gitStashesActive() {
+			if m.stashes.setReaderContextExpanded(false) {
+				m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+			}
+		} else if m.active == workspace.Files {
+			if m.files.setReaderContextExpanded(false) {
+				m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+			}
+		}
 	case ScrollReader:
 		m.scrollActiveReader(action.Amount)
 	default:

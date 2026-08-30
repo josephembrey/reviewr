@@ -21,15 +21,16 @@ type stashReaderPlace struct {
 type stashState struct {
 	place navigation.State
 
-	stashes            []repository.Stash
-	files              []repository.ChangedFile
-	fileSelected       int
-	filesOID           string
-	reader             repository.ChangeDocument
-	readerPresentation *ui.ReaderDocument
-	readerOID          string
-	readerFileID       string
-	readerPlaces       map[string]stashReaderPlace
+	stashes               []repository.Stash
+	files                 []repository.ChangedFile
+	fileSelected          int
+	filesOID              string
+	reader                repository.ChangeDocument
+	readerPresentation    *ui.ReaderDocument
+	readerContextExpanded bool
+	readerOID             string
+	readerFileID          string
+	readerPlaces          map[string]stashReaderPlace
 
 	listGeneration   uint64
 	filesGeneration  uint64
@@ -243,6 +244,7 @@ func (state *stashState) requestSelectedFile(_ int) effect {
 	if state.readerOID != stash.OID || state.readerFileID != fileIdentity {
 		state.reader = repository.ChangeDocument{}
 		state.readerPresentation = nil
+		state.readerContextExpanded = false
 	}
 	state.readerOID = stash.OID
 	state.readerFileID = fileIdentity
@@ -299,6 +301,7 @@ func (state *stashState) clearReader() {
 	state.readerGeneration++
 	state.reader = repository.ChangeDocument{}
 	state.readerPresentation = nil
+	state.readerContextExpanded = false
 	state.readerOID = ""
 	state.readerFileID = ""
 	state.readerLoading = false
@@ -325,10 +328,30 @@ func (state stashState) selectedFileIdentity() string {
 }
 
 func (state stashState) readerDocument() ui.ReaderDocument {
+	return state.rawReaderDocument().WithContextFolds(state.readerContextExpanded)
+}
+
+func (state stashState) rawReaderDocument() ui.ReaderDocument {
 	if state.readerPresentation != nil {
 		return *state.readerPresentation
 	}
 	return state.deriveReaderDocument()
+}
+
+func (state *stashState) setReaderContextExpanded(expanded bool) bool {
+	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
+		return false
+	}
+	oldRows := readerRowIdentities(state.readerRows())
+	oldOffset := state.place.ReaderOffset
+	state.readerContextExpanded = expanded
+	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
+	if state.place.ReaderOffset != oldOffset {
+		state.place.ReaderColumn = 0
+	}
+	state.place.ClampReaderSource(len(state.readerRows()))
+	state.saveReaderPlace()
+	return true
 }
 
 func (state stashState) readerRows() []ui.ReaderRow {
@@ -421,7 +444,8 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 		Geometry: geometry, NavigatorTitle: title, NavigatorRows: rows,
 		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
 		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: state.readerDocument(),
-		ReaderEmpty: readerEmpty, ReaderOffset: state.place.ReaderOffset,
+		ReaderContextFoldable: state.rawReaderDocument().ContextFoldable(),
+		ReaderEmpty:           readerEmpty, ReaderOffset: state.place.ReaderOffset,
 		ReaderColumn: state.place.ReaderColumn,
 	}
 }

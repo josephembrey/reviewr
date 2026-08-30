@@ -46,8 +46,6 @@ type TextSpan struct {
 }
 
 // ReaderRowKind owns reader presentation independently from source text.
-// ReaderFold is an explicit seam for later folding without another row-model
-// rewrite; this slice does not add fold behavior.
 type ReaderRowKind uint8
 
 const (
@@ -213,12 +211,13 @@ type Model struct {
 	Top            int
 	Focus          navigation.Focus
 
-	ReaderTitle      string
-	ReaderDocument   ReaderDocument
-	ReaderLines      []Line
-	ReaderCommitRows []commitrow.Row
-	ReaderEmpty      Line
-	ReaderOffset     int
+	ReaderTitle           string
+	ReaderDocument        ReaderDocument
+	ReaderContextFoldable bool
+	ReaderLines           []Line
+	ReaderCommitRows      []commitrow.Row
+	ReaderEmpty           Line
+	ReaderOffset          int
 	// ReaderColumn is the wrapped segment's source-cell offset within
 	// ReaderOffset's stable logical row.
 	ReaderColumn  int

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -213,4 +214,81 @@ func TestRichReaderScrollTraversesWrappedVisualRows(t *testing.T) {
 	if got := model.activeReaderVisualOffset(); got != want {
 		t.Fatalf("wrapped scroll bottom = %d, want %d; place=%+v", got, want, model.files.place)
 	}
+}
+
+func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
+	model.active = workspace.Files
+	model.controls.Reader = workspace.DiffReader
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerMode = workspace.DiffReader
+	model.files.place.Focus = navigation.FocusReader
+	document := foldableDiffDocument()
+	model.files.readerPresentation = &document
+
+	compact := model.files.readerDocument()
+	if !document.ContextFoldable() || len(compact.Rows) >= len(document.Rows) {
+		t.Fatalf("initial diff is not compact: source=%d compact=%d", len(document.Rows), len(compact.Rows))
+	}
+	model.files.place.ReaderOffset = readerIdentityIndex(compact.Rows, "removed")
+	model.apply(Action{Kind: ExpandReaderContext})
+	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows) ||
+		model.files.readerRows()[model.files.place.ReaderOffset].Identity != "removed" {
+		t.Fatalf("expand lost place: expanded=%v offset=%d rows=%+v", model.files.readerContextExpanded, model.files.place.ReaderOffset, model.files.readerRows())
+	}
+
+	model.files.place.ReaderOffset = readerIdentityIndex(model.files.readerRows(), "context:4")
+	model.apply(Action{Kind: CollapseReaderContext})
+	if model.files.readerContextExpanded || model.files.readerRows()[model.files.place.ReaderOffset].Identity != "context:8" {
+		t.Fatalf("collapse did not choose nearest surviving identity: expanded=%v offset=%d row=%+v", model.files.readerContextExpanded, model.files.place.ReaderOffset, model.files.readerRows()[model.files.place.ReaderOffset])
+	}
+
+	model.apply(Action{Kind: ExpandReaderContext})
+	model.files.contentGeneration = 9
+	model.files = model.files.landDiff(diffLoadedMsg{
+		generation:   9,
+		entry:        model.files.readerEntry,
+		presentation: document,
+	}, model.geometry.ReaderRows.Height)
+	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows) {
+		t.Fatalf("same-identity refresh reset authored fold state: expanded=%v rows=%d", model.files.readerContextExpanded, len(model.files.readerRows()))
+	}
+}
+
+func foldableDiffDocument() ui.ReaderDocument {
+	document := ui.ReaderDocument{Kind: ui.ReaderDiffDocument}
+	for line := 1; line <= 10; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ui.ReaderContext,
+			Text: fmt.Sprintf("context %d", line), OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	document.Rows = append(document.Rows,
+		ui.ReaderRow{Identity: "removed", Kind: ui.ReaderDeletion, Text: "old", OldLine: 11},
+		ui.ReaderRow{Identity: "added", Kind: ui.ReaderInsertion, Text: "new", NewLine: 11},
+	)
+	for line := 12; line <= 50; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ui.ReaderContext,
+			Text: fmt.Sprintf("context %d", line), OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	for line := 51; line <= 70; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("added:%d", line), Kind: ui.ReaderInsertion,
+			Text: fmt.Sprintf("added %d", line), NewLine: uint64(line),
+		})
+	}
+	return document
+}
+
+func readerIdentityIndex(rows []ui.ReaderRow, identity string) int {
+	for index, row := range rows {
+		if row.Identity == identity {
+			return index
+		}
+	}
+	return -1
 }

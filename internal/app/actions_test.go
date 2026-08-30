@@ -51,6 +51,23 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	); ok {
 		t.Fatalf("ineligible 7 routed as (%+v, true)", got)
 	}
+	for _, test := range []struct {
+		key  tea.Key
+		want ActionKind
+	}{
+		{key: tea.Key{Code: 'l', Text: "l"}, want: ExpandReaderContext},
+		{key: tea.Key{Code: tea.KeyRight}, want: ExpandReaderContext},
+		{key: tea.Key{Code: 'h', Text: "h"}, want: CollapseReaderContext},
+		{key: tea.Key{Code: tea.KeyLeft}, want: CollapseReaderContext},
+	} {
+		got, ok := routeMessage(
+			tea.KeyPressMsg(test.key), navigation.FocusReader, ui.Geometry{}, workspace.Git,
+			workspace.Controls{RichDiff: true}, false, false, 0, 0, 0, 1,
+		)
+		if !ok || got.Kind != test.want {
+			t.Fatalf("rich reader %v routed as (%+v, %v), want %v", test.key, got, ok, test.want)
+		}
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

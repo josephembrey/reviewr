@@ -123,6 +123,9 @@ func renderFooter(model Model) string {
 			{key: "r", label: "refresh"},
 			{key: "q", label: "quit"},
 		}
+		if model.ReaderContextFoldable {
+			entries = append(entries, footerEntry{key: "h/l", label: "context"})
+		}
 	}
 	if model.Controls.RichDiff {
 		entries = append(entries, footerEntry{key: workspace.DiffHighlightKey, label: "diff highlight"})
