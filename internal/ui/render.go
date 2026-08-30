@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -51,9 +52,13 @@ func Render(model Model) string {
 			footer = "j/k move • h/l fold • tab focus • r refresh • q quit"
 		}
 		if model.Workspace == workspace.Scratch {
-			footer = "esc close scratch  •  1 files/git  •  q quit"
+			footer = SafeSingleLine(model.ScratchStatus)
 		}
-		blocks = append(blocks, fit(dimStyle.Render(footer), g.Footer.Width))
+		style := dimStyle
+		if model.Workspace == workspace.Scratch && model.ScratchError {
+			style = errorStyle
+		}
+		blocks = append(blocks, fit(style.Render(footer), g.Footer.Width))
 	}
 	if len(blocks) == 0 {
 		return ""
@@ -153,14 +158,55 @@ func workspaceSwitcherCellStyle(index int, highlight Rect) switcherCellStyle {
 }
 
 func renderScratch(model Model) string {
-	title, rows := surfaceRows(model.Geometry.Body)
+	g := model.Geometry
+	presentation := model.Scratch
+	document := presentation.Document
+	rows := make([]string, 0, g.ScratchRows.Height)
+	bar := verticalScrollbar(g.ScratchRows.Height, len(document.Rows), presentation.Top, true)
+	cursorRow := document.RowForIndex(presentation.Cursor)
+	for visible := 0; visible < g.ScratchRows.Height; visible++ {
+		rowIndex := presentation.Top + visible
+		line := ""
+		if rowIndex < len(document.Rows) {
+			line = renderScratchRow(document.Rows[rowIndex], rowIndex == cursorRow, presentation, g.ScratchText.Width)
+		}
+		line = fit(line, g.ScratchText.Width)
+		if g.ScratchBar.Width > 0 {
+			lane := " "
+			if bar != nil {
+				lane = bar[visible]
+			}
+			line += lane
+		}
+		rows = append(rows, line)
+	}
 	return renderSurface(
-		model.Geometry.Body,
-		title,
-		rows,
+		g.Body,
+		g.ScratchTitle,
+		g.ScratchRows,
 		renderTitle("Scratch", true),
-		[]string{dimStyle.Render("Scratch editor coming next.")},
+		rows,
 	)
+}
+
+func renderScratchRow(row scratch.Row, cursorRow bool, presentation scratch.Presentation, width int) string {
+	var rendered strings.Builder
+	for _, cell := range row.Cells {
+		value := cell.Display
+		selected := presentation.HasSelection && cell.Index >= presentation.SelectionStart && cell.Index < presentation.SelectionEnd
+		cursor := cursorRow && cell.Index == presentation.Cursor
+		switch {
+		case cursor:
+			value = headerStyle.Reverse(true).Render(value)
+		case selected:
+			value = selectionStyle(true).Render(value)
+		}
+		rendered.WriteString(value)
+	}
+	if cursorRow && presentation.Cursor == row.End && lipgloss.Width(rendered.String()) < width {
+		rendered.WriteString(headerStyle.Reverse(true).Render(" "))
+	}
+	return rendered.String()
 }
 
 // SafeContentLines makes arbitrary worktree bytes inert before terminal output.

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
+	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 func TestOpenResolvesWorktreeRoot(t *testing.T) {
@@ -48,6 +50,45 @@ func TestOpenRejectsNonRepository(t *testing.T) {
 	t.Parallel()
 	if _, err := Open(t.TempDir()); err == nil {
 		t.Fatal("Open() succeeded outside a Git repository")
+	}
+}
+
+func TestCommonDirSharesLinkedWorktreesAndIsolatesClones(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "tracked\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+
+	linked := filepath.Join(t.TempDir(), "linked")
+	runGit(t, root, "worktree", "add", "-q", "-b", "linked-test", linked)
+	t.Cleanup(func() { runGit(t, root, "worktree", "remove", "--force", linked) })
+	clone := filepath.Join(t.TempDir(), "clone")
+	command := exec.Command("git", "clone", "-q", root, clone)
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git clone: %v: %s", err, bytes.TrimSpace(out))
+	}
+
+	openCommon := func(path string) string {
+		t.Helper()
+		repo, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		common, err := repo.CommonDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !filepath.IsAbs(common) {
+			t.Fatalf("common directory is not absolute: %q", common)
+		}
+		return common
+	}
+	mainCommon := openCommon(root)
+	if linkedCommon := openCommon(linked); linkedCommon != mainCommon {
+		t.Fatalf("linked common directory = %q, want %q", linkedCommon, mainCommon)
+	}
+	if cloneCommon := openCommon(clone); cloneCommon == mainCommon {
+		t.Fatalf("separate clone reused common directory %q", cloneCommon)
 	}
 }
 
@@ -144,6 +185,9 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if commonDir, err := repo.CommonDir(); err != nil || commonDir == "" {
+		t.Fatalf("CommonDir() = %q, %v", commonDir, err)
+	}
 	files, err := repo.ListFiles()
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +218,40 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	after := captureGitState(t, root)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("repository operations changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+func TestScratchPrivateStateDoesNotWriteRepository(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.txt", "tracked\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commonDir, err := repo.CommonDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateHome := t.TempDir()
+	store := scratch.NewPrivateStore(commonDir, func(key string) (string, bool) {
+		return stateHome, key == "XDG_STATE_HOME"
+	})
+	defer store.Close()
+	before := captureGitState(t, root)
+	if _, readOnly, err := store.Load(); err != nil || readOnly {
+		t.Fatalf("Load() = readOnly %v, %v", readOnly, err)
+	}
+	if err := store.Save("private note"); err != nil {
+		t.Fatal(err)
+	}
+	after := captureGitState(t, root)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("Scratch private state changed Git state\nbefore: %+v\nafter:  %+v", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".reviewr")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Scratch created repository state: %v", err)
 	}
 }
 

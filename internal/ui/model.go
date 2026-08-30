@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -58,4 +59,8 @@ type Model struct {
 	ReaderLines  []Line
 	ReaderEmpty  Line
 	ReaderOffset int
+
+	Scratch       scratch.Presentation
+	ScratchStatus string
+	ScratchError  bool
 }

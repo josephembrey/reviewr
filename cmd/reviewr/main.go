@@ -9,6 +9,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/app"
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/scratch"
 )
 
 func main() {
@@ -33,6 +34,12 @@ func run(args []string) error {
 	host := herdr.NewRuntime(herdr.Detect(os.LookupEnv))
 	host.Start()
 	defer host.Close()
-	_, err = tea.NewProgram(app.New(repo, host.Context())).Run()
-	return err
+	commonDir, _ := repo.CommonDir()
+	store := scratch.NewPrivateStore(commonDir, os.LookupEnv)
+	final, runErr := tea.NewProgram(app.NewWithScratch(repo, host.Context(), store)).Run()
+	model, ok := final.(app.Model)
+	if !ok {
+		return errors.Join(runErr, store.Close())
+	}
+	return errors.Join(runErr, model.Shutdown())
 }

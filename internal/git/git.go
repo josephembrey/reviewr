@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // Client invokes the Git executable without permitting optional lock writes.
@@ -44,6 +46,34 @@ func (Client) ResolveRoot(path string) (string, error) {
 		return "", fmt.Errorf("git returned an empty worktree root for %q", path)
 	}
 	return filepath.Clean(string(out)), nil
+}
+
+// ResolveCommonDir returns the canonical absolute Git common directory. Git's
+// machine-oriented rev-parse output is decoded when it quotes an unusual path.
+// Linked worktrees of one clone resolve to the same identity.
+func (Client) ResolveCommonDir(root string) (string, error) {
+	out, err := run(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	value := strings.TrimSuffix(string(out), "\n")
+	if value == "" || strings.ContainsRune(value, '\n') || strings.ContainsRune(value, 0) {
+		return "", fmt.Errorf("git returned an invalid common directory")
+	}
+	if strings.HasPrefix(value, "\"") {
+		value, err = strconv.Unquote(value)
+		if err != nil {
+			return "", fmt.Errorf("decode Git common directory: %w", err)
+		}
+	}
+	if !filepath.IsAbs(value) {
+		return "", fmt.Errorf("git returned a non-absolute common directory %q", value)
+	}
+	canonical, err := filepath.EvalSymlinks(filepath.Clean(value))
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Git common directory: %w", err)
+	}
+	return canonical, nil
 }
 
 // ListFiles returns tracked and untracked, nonignored paths relative to root.

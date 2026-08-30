@@ -64,6 +64,10 @@ func TestCalculatePartitionsScreen(t *testing.T) {
 		}
 		assertSurfaceGeometry(t, g.Navigator, g.NavigatorTitle, g.NavigatorRows)
 		assertSurfaceGeometry(t, g.Reader, g.ReaderTitle, g.ReaderRows)
+		assertSurfaceGeometry(t, g.Body, g.ScratchTitle, g.ScratchRows)
+		if g.ScratchText.Width+g.ScratchBar.Width != g.ScratchRows.Width || g.ScratchText.Y != g.ScratchRows.Y {
+			t.Fatalf("Scratch text and bar do not partition rows: %+v", g)
+		}
 	}
 }
 
@@ -78,7 +82,9 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 				"navigator": g.Navigator, "navigator title": g.NavigatorTitle,
 				"navigator rows": g.NavigatorRows, "divider": g.Divider,
 				"reader": g.Reader, "reader title": g.ReaderTitle,
-				"reader rows": g.ReaderRows, "footer": g.Footer,
+				"reader rows": g.ReaderRows, "scratch title": g.ScratchTitle,
+				"scratch rows": g.ScratchRows, "scratch text": g.ScratchText,
+				"scratch bar": g.ScratchBar, "footer": g.Footer,
 			} {
 				if rect.X < 0 || rect.Y < 0 || rect.Width < 0 || rect.Height < 0 ||
 					rect.X+rect.Width > width || rect.Y+rect.Height > height {
@@ -93,6 +99,27 @@ func TestCalculateTinyWidthsRemainBounded(t *testing.T) {
 				t.Fatalf("Calculate(%d, %d) divider separates empty surface: %+v", width, height, g)
 			}
 		}
+	}
+}
+
+func TestScratchHitTestUsesFullWidthRowsAndScrollbar(t *testing.T) {
+	t.Parallel()
+	g := Calculate(80, 12)
+	if got := g.ScratchHitTest(g.ScratchText.X+10, g.ScratchText.Y+2, 30, 3); got.Kind != HitScratchText {
+		t.Fatalf("Scratch text hit = %+v", got)
+	}
+	bar, ok := CalculateScrollbar(g.ScratchRows, 30, 3)
+	if !ok {
+		t.Fatal("missing Scratch scrollbar")
+	}
+	if got := g.ScratchHitTest(bar.Thumb.X, bar.Thumb.Y, 30, 3); got.Kind != HitScratchScrollbar || got.GrabOffset != 0 {
+		t.Fatalf("Scratch scrollbar hit = %+v", got)
+	}
+	if got := g.ScratchHitTest(g.ScratchTitle.X, g.ScratchTitle.Y, 30, 3); got.Kind != HitNone {
+		t.Fatalf("Scratch title hit = %+v", got)
+	}
+	if got := g.ScratchHitTest(g.HeaderFiles.X, g.HeaderFiles.Y, 30, 3); got.Kind != HitFilesWorkspace {
+		t.Fatalf("Scratch header hit = %+v", got)
 	}
 }
 

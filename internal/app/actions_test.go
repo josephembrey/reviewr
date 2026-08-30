@@ -2,10 +2,12 @@ package app
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -65,6 +67,61 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 				t.Fatalf("l routed as (%+v, true)", got)
 			}
 		})
+	}
+}
+
+func TestScratchRoutingIsModelessAndSemantic(t *testing.T) {
+	t.Parallel()
+	g := ui.Calculate(80, 12)
+	editor := scratch.NewEditor()
+	editor.Load(strings.Repeat("line\n", 30))
+	editor.Resize(g.ScratchText.Width, g.ScratchText.Height)
+	presentation := editor.Presentation()
+	tests := []struct {
+		name string
+		msg  tea.Msg
+		want Action
+		ok   bool
+	}{
+		{name: "h inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'h', Text: "h"}), want: Action{Kind: ScratchInsert, Text: "h"}, ok: true},
+		{name: "q inserts", msg: tea.KeyPressMsg(tea.Key{Code: 'q', Text: "q"}), want: Action{Kind: ScratchInsert, Text: "q"}, ok: true},
+		{name: "two inserts", msg: tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}), want: Action{Kind: ScratchInsert, Text: "2"}, ok: true},
+		{name: "one closes", msg: tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}), want: Action{Kind: ToggleWorkspace}, ok: true},
+		{name: "escape closes", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), want: Action{Kind: ToggleScratch}, ok: true},
+		{name: "ctrl c quits", msg: tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}), want: Action{Kind: Quit}, ok: true},
+		{name: "shift left selects", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}), want: Action{Kind: ScratchMoveLeft, Selecting: true}, ok: true},
+		{name: "ctrl right words", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyRight, Mod: tea.ModCtrl}), want: Action{Kind: ScratchMoveWordRight}, ok: true},
+		{name: "home", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyHome}), want: Action{Kind: ScratchMoveHome}, ok: true},
+		{name: "page down", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown}), want: Action{Kind: ScratchPageDown}, ok: true},
+		{name: "enter", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}), want: Action{Kind: ScratchInsert, Text: "\n"}, ok: true},
+		{name: "tab", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}), want: Action{Kind: ScratchInsert, Text: "\t"}, ok: true},
+		{name: "delete", msg: tea.KeyPressMsg(tea.Key{Code: tea.KeyDelete}), want: Action{Kind: ScratchDelete}, ok: true},
+		{name: "undo", msg: tea.KeyPressMsg(tea.Key{Code: 'z', Mod: tea.ModCtrl}), want: Action{Kind: ScratchUndo}, ok: true},
+		{name: "redo", msg: tea.KeyPressMsg(tea.Key{Code: 'y', Mod: tea.ModCtrl}), want: Action{Kind: ScratchRedo}, ok: true},
+		{name: "paste", msg: tea.PasteMsg{Content: "a\nb"}, want: Action{Kind: ScratchInsert, Text: "a\nb"}, ok: true},
+		{name: "click text", msg: tea.MouseClickMsg(tea.Mouse{X: g.ScratchText.X + 3, Y: g.ScratchText.Y + 2, Button: tea.MouseLeft}), want: Action{Kind: ScratchBeginSelection, X: 3, Y: 2}, ok: true},
+		{name: "wheel text", msg: tea.MouseWheelMsg(tea.Mouse{X: g.ScratchText.X, Y: g.ScratchText.Y, Button: tea.MouseWheelDown}), want: Action{Kind: ScratchScroll, Amount: 3}, ok: true},
+		{name: "drag selection", msg: tea.MouseMotionMsg(tea.Mouse{X: g.ScratchText.X + 4, Y: g.ScratchText.Y + 3, Button: tea.MouseLeft}), want: Action{Kind: ScratchDragSelection, X: 4, Y: 3}, ok: true},
+		{name: "release selection", msg: tea.MouseReleaseMsg(tea.Mouse{Button: tea.MouseLeft}), want: Action{Kind: ScratchEndSelection}, ok: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			selectionDragging := strings.Contains(test.name, "selection")
+			got, ok := routeScratchMessage(test.msg, g, presentation, selectionDragging, false)
+			if ok != test.ok || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("routeScratchMessage() = (%+v, %v), want (%+v, %v)", got, ok, test.want, test.ok)
+			}
+		})
+	}
+
+	bar, ok := ui.CalculateScrollbar(g.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	if !ok {
+		t.Fatal("long Scratch note has no scrollbar")
+	}
+	got, routed := routeScratchMessage(tea.MouseClickMsg(tea.Mouse{X: bar.Thumb.X, Y: bar.Thumb.Y, Button: tea.MouseLeft}), g, presentation, false, false)
+	if !routed || got.Kind != StartScratchScrollbarDrag || got.Position != bar.Thumb.Y {
+		t.Fatalf("scratch scrollbar click = (%+v, %v)", got, routed)
 	}
 }
 

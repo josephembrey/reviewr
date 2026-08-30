@@ -184,7 +184,7 @@ func TestWorkspaceToggleChangesHeaderAndBodyInSameFrame(t *testing.T) {
 	}
 }
 
-func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
+func TestScratchOverlayEditsAndPreservesPrimaryWorkspace(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	model.apply(Action{Kind: Resize, Width: 80, Height: 24})
@@ -192,18 +192,35 @@ func TestScratchIsAStubThatPreservesPrimaryWorkspace(t *testing.T) {
 
 	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	model = next.(Model)
-	if !model.scratch || model.active != workspace.Files || command != nil {
+	if !model.scratch || model.active != workspace.Files || command == nil {
 		t.Fatalf("Scratch activation = scratch %v primary %v command=%v", model.scratch, model.active, command != nil)
 	}
+	next, _ = model.Update(command())
+	model = next.(Model)
 	frame := ansi.Strip(model.View().Content)
-	if !strings.Contains(frame, "Scratch editor coming next.") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
-		t.Fatalf("Scratch stub frame = %q", frame)
+	if !strings.Contains(frame, "Scratch") || !strings.Contains(frame, "Ln 1, Col 1") || strings.Contains(frame, "│") || strings.Contains(frame, "Navigator") {
+		t.Fatalf("Scratch editor frame = %q", frame)
 	}
 	if model.files.place.Selected != 1 || model.files.place.Top != 1 || model.files.place.ReaderOffset != 3 {
 		t.Fatalf("Scratch activation changed Files place: %+v", model.files.place)
 	}
 
-	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	for _, value := range []rune{'h', 'j', 'k', 'l'} {
+		next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: value, Text: string(value)}))
+		model = next.(Model)
+		if command == nil {
+			t.Fatalf("typing %q did not schedule autosave", value)
+		}
+	}
+	if model.note.editor.Text() != "hjkl" {
+		t.Fatalf("modeless text = %q", model.note.editor.Text())
+	}
+	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: '1', Text: "1"}))
+	model = next.(Model)
+	if !model.scratch || command == nil {
+		t.Fatalf("1 did not synchronously save before closing: scratch %v command=%v", model.scratch, command != nil)
+	}
+	next, _ = model.Update(command())
 	model = next.(Model)
 	if model.scratch || model.active != workspace.Files {
 		t.Fatalf("1 from Scratch = scratch %v primary %v", model.scratch, model.active)

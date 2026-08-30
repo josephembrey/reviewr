@@ -83,6 +83,13 @@ func (r *Repository) Root() string {
 	return r.root
 }
 
+// CommonDir returns the canonical absolute Git common directory used for
+// clone-scoped private state. It performs no writes and is called only during
+// executable startup.
+func (r *Repository) CommonDir() (string, error) {
+	return r.git.ResolveCommonDir(r.root)
+}
+
 // ListFiles returns tracked and untracked, nonignored raw path identities.
 func (r *Repository) ListFiles() ([]string, error) {
 	return r.git.ListFiles(r.root)
