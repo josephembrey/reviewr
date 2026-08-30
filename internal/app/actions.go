@@ -327,11 +327,8 @@ func routeReaderJumpKey(msg tea.KeyPressMsg, context browserRouteContext) (Actio
 	if context.focus != navigation.FocusReader || !context.hasStructuredReader() {
 		return Action{}, false
 	}
-	halfPage := max(1, context.geometry.ReaderRows.Height/2)
 	fullPage := max(1, context.geometry.ReaderRows.Height)
 	switch msg.String() {
-	case "G":
-		return Action{Kind: SelectReaderBoundary, Amount: 1}, true
 	case "home":
 		return Action{Kind: SelectReaderBoundary, Amount: -1}, true
 	case "end":
@@ -342,10 +339,6 @@ func routeReaderJumpKey(msg tea.KeyPressMsg, context browserRouteContext) (Actio
 		return Action{Kind: SelectReaderViewport}, true
 	case "L":
 		return Action{Kind: SelectReaderViewport, Amount: 1}, true
-	case "ctrl+u":
-		return Action{Kind: MoveReaderPage, Amount: -halfPage}, true
-	case "ctrl+d":
-		return Action{Kind: MoveReaderPage, Amount: halfPage}, true
 	case "pgup":
 		return Action{Kind: MoveReaderPage, Amount: -fullPage}, true
 	case "pgdown":
@@ -382,7 +375,7 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 		return Action{Kind: ShowGit}, true
 	case "n":
 		return Action{Kind: ShowNotes}, true
-	case "tab", "shift+tab":
+	case "tab":
 		if context.focus == navigation.FocusNavigator {
 			return Action{Kind: FocusReader}, true
 		}

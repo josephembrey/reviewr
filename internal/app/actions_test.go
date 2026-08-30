@@ -29,17 +29,13 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "h collapses navigator selection", key: tea.Key{Code: 'h', Text: "h"}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseNavigatorSelection}},
 		{name: "left collapses navigator selection", key: tea.Key{Code: tea.KeyLeft}, focus: navigation.FocusNavigator, want: Action{Kind: CollapseNavigatorSelection}},
 		{name: "tab focuses reader", key: tea.Key{Code: tea.KeyTab}, focus: navigation.FocusNavigator, want: Action{Kind: FocusReader}},
-		{name: "shift tab focuses reader", key: tea.Key{Code: tea.KeyTab, Mod: tea.ModShift}, focus: navigation.FocusNavigator, want: Action{Kind: FocusReader}},
 		{name: "tab focuses navigator", key: tea.Key{Code: tea.KeyTab}, focus: navigation.FocusReader, want: Action{Kind: FocusNavigator}},
 		{name: "g opens Git", key: tea.Key{Code: 'g', Text: "g"}, want: Action{Kind: ShowGit}},
-		{name: "reader G selects end", key: tea.Key{Code: 'G', Text: "G"}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderBoundary, Amount: 1}},
 		{name: "reader home selects start", key: tea.Key{Code: tea.KeyHome}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderBoundary, Amount: -1}},
 		{name: "reader end selects end", key: tea.Key{Code: tea.KeyEnd}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderBoundary, Amount: 1}},
 		{name: "reader H selects viewport top", key: tea.Key{Code: 'H', Text: "H"}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderViewport, Amount: -1}},
 		{name: "reader M selects viewport middle", key: tea.Key{Code: 'M', Text: "M"}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderViewport}},
 		{name: "reader L selects viewport bottom", key: tea.Key{Code: 'L', Text: "L"}, focus: navigation.FocusReader, want: Action{Kind: SelectReaderViewport, Amount: 1}},
-		{name: "reader ctrl-u moves half page", key: tea.Key{Code: 'u', Mod: tea.ModCtrl}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: -1}},
-		{name: "reader ctrl-d moves half page", key: tea.Key{Code: 'd', Mod: tea.ModCtrl}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: 1}},
 		{name: "reader page up moves page", key: tea.Key{Code: tea.KeyPgUp}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: -1}},
 		{name: "reader page down moves page", key: tea.Key{Code: tea.KeyPgDown}, focus: navigation.FocusReader, want: Action{Kind: MoveReaderPage, Amount: 1}},
 		{name: "n opens Notes", key: tea.Key{Code: 'n', Text: "n"}, want: Action{Kind: ShowNotes}},
@@ -50,6 +46,19 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		{name: "r reloads", key: tea.Key{Code: 'r', Text: "r"}, want: Action{Kind: Reload}},
 		{name: "q quits", key: tea.Key{Code: 'q', Text: "q"}, want: Action{Kind: Quit}},
 		{name: "ctrl-c quits", key: tea.Key{Code: 'c', Mod: tea.ModCtrl}, want: Action{Kind: Quit}},
+	}
+	for _, key := range []tea.Key{
+		{Code: tea.KeyTab, Mod: tea.ModShift},
+		{Code: 'G', Text: "G"},
+		{Code: 'u', Mod: tea.ModCtrl},
+		{Code: 'd', Mod: tea.ModCtrl},
+	} {
+		if got, ok := routeMessage(
+			tea.KeyPressMsg(key), navigation.FocusReader, ui.Geometry{}, workspace.Files,
+			workspace.Controls{}, false, false, 0, 0, 0, 1,
+		); ok {
+			t.Errorf("retired key %q routed as %+v", key.String(), got)
+		}
 	}
 	if got, ok := routeMessage(
 		tea.KeyPressMsg(tea.Key{Code: '4', Text: "4"}), navigation.FocusReader, ui.Geometry{}, workspace.Files,

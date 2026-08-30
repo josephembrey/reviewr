@@ -328,11 +328,11 @@ func TestReaderVimJumpsMoveCursorAndViewport(t *testing.T) {
 	delta := max(1, height/2)
 	model.apply(Action{Kind: MoveReaderPage, Amount: delta})
 	if model.files.place.ReaderCursor != 30+delta || model.activeReaderVisualOffset() != 25+delta {
-		t.Fatalf("Ctrl-d place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+		t.Fatalf("page down place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
 	}
 	model.apply(Action{Kind: MoveReaderPage, Amount: -delta})
 	if model.files.place.ReaderCursor != 30 || model.activeReaderVisualOffset() != 25 {
-		t.Fatalf("Ctrl-u place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+		t.Fatalf("page up place = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
 	}
 
 }

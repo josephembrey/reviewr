@@ -37,12 +37,11 @@ Keep the keymap small and contextual rather than reproducing either application 
 familiar bindings, avoid custom modes and configurable mapping machinery, and introduce a new key
 only when no established convention fits.
 
-The file reader follows Neovim's core movement vocabulary: `j`/`k` and arrows move by line,
-`G` selects the last line, `Ctrl-u`/`Ctrl-d` move half a viewport,
-`PageUp`/`PageDown` move a full viewport, and `H`/`M`/`L` select the top, middle, or bottom visible
-line. `Home` selects the first line because the otherwise-idiomatic `gg` conflicts with reviewr's
-instant global `g` shortcut for Git; `End` is also accepted for the last line. Reader `h`/`l` and
-`[`/`]` retain their contextual fold and hunk meanings.
+The file reader follows a small Neovim-inspired movement vocabulary: `j`/`k` and arrows move by
+line, `PageUp`/`PageDown` move a full viewport, and `H`/`M`/`L` select the top, middle, or bottom
+visible line. `Home`/`End` select the first/last line because the otherwise-idiomatic `gg` conflicts
+with reviewr's instant global `g` shortcut for Git. Reader `h`/`l` and `[`/`]` retain their
+contextual fold and hunk meanings.
 
 ## Go architecture
 

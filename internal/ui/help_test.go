@@ -48,12 +48,17 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	for _, expected := range []string{
 		"hotkeys · ?/esc close",
 		"Browser", "q/ctrl+c quit", "r refresh",
-		"Files", "[/] hunks", "home/G ends", "H/M/L view", "C-u/C-d half", "pgup/dn page", "x review", "R bounds", "X gap",
+		"Files", "[/] hunks", "home/end ends", "H/M/L view", "pgup/dn page", "x review", "R bounds", "X gap",
 		"Git", "f/F files", "h/l fold",
 		"Notes", "ctrl+z/y undo/redo", "backspace/delete edit",
 	} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("help popup is missing %q", expected)
+		}
+	}
+	for _, retired := range []string{"tab/S-tab", "home/G ends", "C-u/C-d half"} {
+		if strings.Contains(plain, retired) {
+			t.Errorf("help popup still contains retired binding %q", retired)
 		}
 	}
 }
