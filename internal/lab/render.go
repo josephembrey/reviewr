@@ -30,6 +30,7 @@ const (
 const (
 	labPageSwitchers = iota
 	labPageFolds
+	labPageFoldMotion
 	labPageANSIPalette
 	labPageCount
 )
@@ -65,6 +66,8 @@ func (model Model) View(width, height int) string {
 	switch model.page {
 	case labPageFolds:
 		return model.viewFolds(width, height)
+	case labPageFoldMotion:
+		return model.viewFoldMotion(width, height)
 	case labPageANSIPalette:
 		return model.viewANSIPalette(width, height)
 	default:

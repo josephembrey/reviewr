@@ -25,23 +25,24 @@ func (m *Model) updateLab(msg tea.Msg) (bool, tea.Cmd) {
 	if !m.lab.active {
 		return false, nil
 	}
-	if !isKey {
-		switch msg.(type) {
-		case tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseMotionMsg:
+	if isKey {
+		switch key.String() {
+		case "esc":
+			m.lab.active = false
 			return true, nil
-		default:
+		case "q", "ctrl+c":
 			return false, nil
 		}
 	}
-	switch key.String() {
-	case "esc":
-		m.lab.active = false
+	if next, command, handled := m.lab.model.Update(msg); handled {
+		m.lab.model = next
+		return true, command
+	}
+	switch msg.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg, tea.MouseMotionMsg:
 		return true, nil
-	case "q", "ctrl+c":
-		return false, nil
 	default:
-		m.lab.model = m.lab.model.Update(key)
-		return true, nil
+		return false, nil
 	}
 }
 

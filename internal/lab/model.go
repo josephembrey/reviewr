@@ -7,14 +7,18 @@ import tea "charm.land/bubbletea/v2"
 
 // Model is the place state for the switcher comparison page.
 type Model struct {
-	selected     int
-	destination  int
-	fileSet      int
-	reader       int
-	comparison   int
-	page         int
-	foldSelected int
-	foldExpanded [3]bool
+	selected             int
+	destination          int
+	fileSet              int
+	reader               int
+	comparison           int
+	page                 int
+	foldSelected         int
+	foldExpanded         [3]bool
+	foldMotionVisible    int
+	foldMotionTarget     int
+	foldMotionSpeed      int
+	foldMotionGeneration uint64
 }
 
 // New returns the initial lab state.
@@ -22,19 +26,35 @@ func New() Model {
 	return Model{}
 }
 
-// Update handles only lab-local controls.
-func (model Model) Update(msg tea.KeyPressMsg) Model {
-	if msg.String() == "tab" {
+// Update handles only lab-local controls and animation frames. Unknown messages
+// remain available to the real application behind the development overlay.
+func (model Model) Update(msg tea.Msg) (Model, tea.Cmd, bool) {
+	if tick, ok := msg.(foldMotionTick); ok {
+		return model.updateFoldMotionTick(tick)
+	}
+	key, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return model, nil, false
+	}
+	if key.String() == "tab" {
+		if model.page == labPageFoldMotion {
+			model.foldMotionTarget = model.foldMotionVisible
+			model.foldMotionGeneration++
+		}
 		model.page = (model.page + 1) % labPageCount
-		return model
+		return model, nil, true
 	}
 	if model.page == labPageFolds {
-		return model.updateFolds(msg)
+		return model.updateFolds(key), nil, true
+	}
+	if model.page == labPageFoldMotion {
+		model, command := model.updateFoldMotion(key)
+		return model, command, true
 	}
 	if model.page == labPageANSIPalette {
-		return model
+		return model, nil, true
 	}
-	switch msg.String() {
+	switch key.String() {
 	case "j", "down":
 		model.selected = min(model.selected+1, len(variants)-1)
 	case "k", "up":
@@ -53,7 +73,7 @@ func (model Model) Update(msg tea.KeyPressMsg) Model {
 	case "3":
 		model.comparison = (model.comparison + 1) % len(comparisonLabels)
 	}
-	return model
+	return model, nil, true
 }
 
 func (model Model) updateFolds(msg tea.KeyPressMsg) Model {
