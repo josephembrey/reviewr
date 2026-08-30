@@ -138,6 +138,47 @@ type hunkPosition struct {
 	active       bool
 }
 
+func (position *hunkPosition) takeRow(text string) (ui.ReaderRow, diffCodeKind, bool) {
+	if !position.active || text == "" {
+		return ui.ReaderRow{}, diffContext, false
+	}
+	marker, payload := text[0], text[1:]
+	row := ui.ReaderRow{Text: payload}
+	kind := diffContext
+	valid := false
+	switch marker {
+	case ' ':
+		if position.oldRemaining > 0 && position.newRemaining > 0 {
+			row.Kind = ui.ReaderContext
+			row.OldLine, row.NewLine = position.oldLine, position.newLine
+			position.oldLine, position.newLine = incrementLine(position.oldLine), incrementLine(position.newLine)
+			position.oldRemaining--
+			position.newRemaining--
+			valid = true
+		}
+	case '-':
+		if position.oldRemaining > 0 {
+			row.Kind, kind = ui.ReaderDeletion, diffRemoved
+			row.OldLine = position.oldLine
+			position.oldLine = incrementLine(position.oldLine)
+			position.oldRemaining--
+			valid = true
+		}
+	case '+':
+		if position.newRemaining > 0 {
+			row.Kind, kind = ui.ReaderInsertion, diffAdded
+			row.NewLine = position.newLine
+			position.newLine = incrementLine(position.newLine)
+			position.newRemaining--
+			valid = true
+		}
+	}
+	if valid {
+		row.Identity = diffRowIdentity(row)
+	}
+	return row, kind, valid
+}
+
 func parseHunkHeader(line string) (hunkPosition, bool) {
 	match := unifiedHunkHeader.FindStringSubmatch(line)
 	if match == nil {
@@ -179,49 +220,15 @@ func unifiedDiffDocument(path, content string) ui.ReaderDocument {
 			document.Rows = append(document.Rows, ui.ReaderRow{Kind: ui.ReaderMetadata, Text: text, Tone: ui.ToneAccent})
 			continue
 		}
-		if position.active && text != "" {
-			marker, payload := text[0], text[1:]
-			row := ui.ReaderRow{Text: payload}
-			kind := diffContext
-			valid := false
-			switch marker {
-			case ' ':
-				if position.oldRemaining > 0 && position.newRemaining > 0 {
-					row.Kind = ui.ReaderContext
-					row.OldLine, row.NewLine = position.oldLine, position.newLine
-					position.oldLine, position.newLine = incrementLine(position.oldLine), incrementLine(position.newLine)
-					position.oldRemaining--
-					position.newRemaining--
-					valid = true
-				}
-			case '-':
-				if position.oldRemaining > 0 {
-					row.Kind, kind = ui.ReaderDeletion, diffRemoved
-					row.OldLine = position.oldLine
-					position.oldLine = incrementLine(position.oldLine)
-					position.oldRemaining--
-					valid = true
-				}
-			case '+':
-				if position.newRemaining > 0 {
-					row.Kind, kind = ui.ReaderInsertion, diffAdded
-					row.NewLine = position.newLine
-					position.newLine = incrementLine(position.newLine)
-					position.newRemaining--
-					valid = true
-				}
+		if row, kind, ok := position.takeRow(text); ok {
+			index := len(document.Rows)
+			document.Rows = append(document.Rows, row)
+			group = append(group, diffCodeRow{index: index, payload: row.Text, kind: kind})
+			if position.oldRemaining == 0 && position.newRemaining == 0 {
+				flush()
+				position.active = false
 			}
-			if valid {
-				index := len(document.Rows)
-				row.Identity = diffRowIdentity(row)
-				document.Rows = append(document.Rows, row)
-				group = append(group, diffCodeRow{index: index, payload: payload, kind: kind})
-				if position.oldRemaining == 0 && position.newRemaining == 0 {
-					flush()
-					position.active = false
-				}
-				continue
-			}
+			continue
 		}
 		flush()
 		position.active = false
@@ -247,6 +254,60 @@ func incrementLine(line uint64) uint64 {
 
 func diffRowIdentity(row ui.ReaderRow) string {
 	return fmt.Sprintf("%d:%d:%d:%s", row.Kind, row.OldLine, row.NewLine, row.Text)
+}
+
+func readerRowIdentities(rows []ui.ReaderRow) []string {
+	identities := make([]string, len(rows))
+	occurrences := make(map[string]int, len(rows))
+	for index, row := range rows {
+		identity := row.Identity
+		if identity == "" {
+			identity = diffRowIdentity(row)
+		}
+		occurrences[identity]++
+		identities[index] = fmt.Sprintf("%s\x00%d", identity, occurrences[identity])
+	}
+	return identities
+}
+
+func reconcileLogicalLine(old []string, oldIndex int, current []string) int {
+	if len(current) == 0 {
+		return 0
+	}
+	if len(old) == 0 {
+		return clampIndex(oldIndex, len(current))
+	}
+	oldIndex = clampIndex(oldIndex, len(old))
+	indices := make(map[string]int, len(current))
+	for index, identity := range current {
+		indices[identity] = index
+	}
+	if index, ok := indices[old[oldIndex]]; ok {
+		return index
+	}
+	for distance := 1; distance < len(old); distance++ {
+		if next := oldIndex + distance; next < len(old) {
+			if index, ok := indices[old[next]]; ok {
+				return index
+			}
+		}
+		if previous := oldIndex - distance; previous >= 0 {
+			if index, ok := indices[old[previous]]; ok {
+				return index
+			}
+		}
+	}
+	return clampIndex(oldIndex, len(current))
+}
+
+func clampIndex(index, length int) int {
+	if length <= 0 || index < 0 {
+		return 0
+	}
+	if index >= length {
+		return length - 1
+	}
+	return index
 }
 
 func changeNoticeRows(change repository.ChangedFile) []ui.ReaderRow {

@@ -73,34 +73,52 @@ func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (hi
 	oldSelection, hadSelection := state.place.SelectedIdentity()
 	state.commits = append([]repository.Commit(nil), msg.commits...)
 	state.rows = buildCommitRows(state.commits, state.traversal)
-	identities := make([]string, len(state.commits))
-	for index, commit := range state.commits {
-		identities[index] = commit.OID
-	}
-	state.place.Reconcile(identities)
-	if !hadSelection {
-		for index, commit := range state.commits {
-			if commit.Head {
-				state.place.SelectIndex(index, visibleRows)
-				break
-			}
-		}
-	}
+	state.place.Reconcile(commitIdentities(state.commits))
+	state.selectHeadOnFirstLoad(hadSelection, visibleRows)
 	state.place.EnsureSelectionVisible(visibleRows)
 	if _, ok := state.place.SelectedIdentity(); !ok {
-		state.summaryGeneration++
-		state.summary = repository.CommitSummary{}
-		state.summaryOID = ""
-		state.summaryLoading = false
-		state.summaryError = nil
-		state.place.ReaderOffset = 0
+		state.clearSummary()
 		return state, effect{}
 	}
-	if selected, ok := state.place.SelectedIdentity(); msg.background && ok && hadSelection && selected == oldSelection &&
-		state.summaryOID == selected && (state.summary.OID != "" || state.summaryLoading) {
+	if state.keepsLoadedSummary(msg.background, oldSelection, hadSelection) {
 		return state, effect{}
 	}
 	return state, state.requestSelectedSummary()
+}
+
+func commitIdentities(commits []repository.Commit) []string {
+	identities := make([]string, len(commits))
+	for index, commit := range commits {
+		identities[index] = commit.OID
+	}
+	return identities
+}
+
+func (state *historyState) selectHeadOnFirstLoad(hadSelection bool, visibleRows int) {
+	if hadSelection {
+		return
+	}
+	for index, commit := range state.commits {
+		if commit.Head {
+			state.place.SelectIndex(index, visibleRows)
+			return
+		}
+	}
+}
+
+func (state *historyState) clearSummary() {
+	state.summaryGeneration++
+	state.summary = repository.CommitSummary{}
+	state.summaryOID = ""
+	state.summaryLoading = false
+	state.summaryError = nil
+	state.place.ReaderOffset = 0
+}
+
+func (state historyState) keepsLoadedSummary(background bool, oldSelection string, hadSelection bool) bool {
+	selected, ok := state.place.SelectedIdentity()
+	return background && ok && hadSelection && selected == oldSelection && state.summaryOID == selected &&
+		(state.summary.OID != "" || state.summaryLoading)
 }
 
 func (state historyState) landSummary(msg commitLoadedMsg, visibleRows int) historyState {

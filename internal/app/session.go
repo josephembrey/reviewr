@@ -69,10 +69,7 @@ func (m Model) sessionState() session.State {
 
 	refRows := m.refs.restoredPreviewRows
 	if len(m.refs.commits) != 0 {
-		refRows = make([]string, len(m.refs.commits))
-		for index, commit := range m.refs.commits {
-			refRows[index] = commit.OID
-		}
+		refRows = refCommitIdentities(m.refs.commits)
 	}
 
 	return session.State{

@@ -1,13 +1,9 @@
 package app
 
 import (
-	"fmt"
-	"time"
-
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
-	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 type stashReaderPlace struct {
@@ -98,7 +94,7 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 	return state, state.requestSelectedFiles()
 }
 
-func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (stashState, effect) {
+func (state stashState) landFiles(msg stashFilesLoadedMsg, _ int) (stashState, effect) {
 	selectedOID, selected := state.place.SelectedIdentity()
 	if msg.generation != state.filesGeneration || !selected || msg.oid != selectedOID || msg.oid != state.filesOID {
 		return state, effect{}
@@ -123,8 +119,17 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 		state.place.ReaderColumn = 0
 		return state, effect{}
 	}
+	identity := state.reconcileFilePlace(selectedOID, oldFiles, oldIdentity)
+	if msg.background && identity == oldIdentity {
+		return state, state.requestSelectedFileQuiet()
+	}
+	return state, state.requestSelectedFile()
+}
+
+func (state *stashState) reconcileFilePlace(selectedOID string, oldFiles []repository.ChangedFile, oldIdentity string) string {
 	wanted := oldIdentity
-	if saved := state.readerPlaces[selectedOID]; saved.fileIdentity != "" {
+	saved := state.readerPlaces[selectedOID]
+	if saved.fileIdentity != "" {
 		wanted = saved.fileIdentity
 	}
 	oldIdentities := changedFileIdentities(oldFiles)
@@ -134,42 +139,14 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 		identity = newIdentities[0]
 	}
 	state.fileSelected = indexIdentity(newIdentities, identity)
-	if saved := state.readerPlaces[selectedOID]; saved.fileIdentity == identity {
+	if saved.fileIdentity == identity {
 		state.place.ReaderOffset = saved.readerOffset
 		state.place.ReaderColumn = saved.readerColumn
 	} else if oldIdentity != identity {
 		state.place.ReaderOffset = 0
 		state.place.ReaderColumn = 0
 	}
-	if msg.background && identity == oldIdentity {
-		return state, state.requestSelectedFileQuiet()
-	}
-	return state, state.requestSelectedFile(visibleRows)
-}
-
-func (state stashState) landReader(msg stashFileLoadedMsg, _ int) stashState {
-	selectedOID, selected := state.place.SelectedIdentity()
-	if msg.generation != state.readerGeneration || !selected || msg.oid != selectedOID ||
-		msg.oid != state.readerOID || msg.fileIdentity != state.readerFileID {
-		return state
-	}
-	oldLines := readerRowIdentities(state.readerRows())
-	if len(oldLines) == 0 && len(state.restoredReaderRows) != 0 {
-		oldLines = append([]string(nil), state.restoredReaderRows...)
-	}
-	oldOffset := state.place.ReaderOffset
-	state.reader = msg.document
-	state.readerLoading = false
-	presentation := msg.presentation
-	if presentation.Kind == ui.ReaderDocumentNone {
-		presentation = state.deriveReaderDocument()
-	}
-	state.readerPresentation = &presentation
-	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
-	state.restoredReaderRows = nil
-	state.place.ClampReaderSource(len(state.readerRows()))
-	state.saveReaderPlace()
-	return state
+	return identity
 }
 
 func (state *stashState) selectStashDelta(delta, visibleRows int) effect {
@@ -202,7 +179,7 @@ func (state *stashState) selectFileDelta(delta, visibleRows int) effect {
 			state.place.ReaderColumn = saved.readerColumn
 		}
 	}
-	return state.requestSelectedFile(visibleRows)
+	return state.requestSelectedFile()
 }
 
 func (state *stashState) requestSelectedFiles() effect {
@@ -238,63 +215,6 @@ func (state *stashState) requestSelectedFilesQuiet() effect {
 	}
 }
 
-func (state *stashState) requestSelectedFile(_ int) effect {
-	stash, stashOK := state.selectedStash()
-	if !stashOK || state.fileSelected < 0 || state.fileSelected >= len(state.files) {
-		state.clearReader()
-		return effect{}
-	}
-	change := state.files[state.fileSelected]
-	fileIdentity := change.Identity()
-	state.readerGeneration++
-	state.readerLoading = true
-	if state.readerOID != stash.OID || state.readerFileID != fileIdentity {
-		state.reader = repository.ChangeDocument{}
-		state.readerPresentation = nil
-		state.resetReaderContext()
-		state.restoredReaderRows = nil
-	}
-	state.readerOID = stash.OID
-	state.readerFileID = fileIdentity
-	if len(state.restoredReaderRows) == 0 {
-		state.place.ClampReaderSource(len(state.readerRows()))
-	}
-	return effect{
-		kind: effectLoadStashFile, generation: state.readerGeneration, identity: stash.OID,
-		stashSource: stash.Source, changedFile: change,
-	}
-}
-
-func (state *stashState) requestSelectedFileQuiet() effect {
-	stash, stashOK := state.selectedStash()
-	if !stashOK || state.fileSelected < 0 || state.fileSelected >= len(state.files) {
-		return effect{}
-	}
-	change := state.files[state.fileSelected]
-	state.readerGeneration++
-	state.readerOID = stash.OID
-	state.readerFileID = change.Identity()
-	return effect{
-		kind: effectLoadStashFile, generation: state.readerGeneration,
-		identity: stash.OID, stashSource: stash.Source, changedFile: change, background: true,
-	}
-}
-
-func (state *stashState) saveReaderPlace() {
-	oid, ok := state.place.SelectedIdentity()
-	if !ok {
-		return
-	}
-	identity := state.selectedFileIdentity()
-	if identity == "" {
-		return
-	}
-	state.readerPlaces[oid] = stashReaderPlace{
-		fileIdentity: identity, readerOffset: state.place.ReaderOffset,
-		readerColumn: state.place.ReaderColumn,
-	}
-}
-
 func (state *stashState) clearFiles() {
 	state.filesGeneration++
 	state.files = nil
@@ -305,17 +225,6 @@ func (state *stashState) clearFiles() {
 	state.clearReader()
 	state.place.ReaderOffset = 0
 	state.place.ReaderColumn = 0
-}
-
-func (state *stashState) clearReader() {
-	state.readerGeneration++
-	state.reader = repository.ChangeDocument{}
-	state.readerPresentation = nil
-	state.resetReaderContext()
-	state.restoredReaderRows = nil
-	state.readerOID = ""
-	state.readerFileID = ""
-	state.readerLoading = false
 }
 
 func (state stashState) selectedStash() (repository.Stash, bool) {
@@ -338,154 +247,6 @@ func (state stashState) selectedFileIdentity() string {
 	return state.files[state.fileSelected].Identity()
 }
 
-func (state stashState) readerDocument() ui.ReaderDocument {
-	return state.rawReaderDocument().WithContextFoldProgress(state.readerContextProgress, readerContextAnimationSteps)
-}
-
-func (state stashState) rawReaderDocument() ui.ReaderDocument {
-	if state.readerPresentation != nil {
-		return *state.readerPresentation
-	}
-	return state.deriveReaderDocument()
-}
-
-func (state *stashState) setReaderContextExpanded(expanded bool) (bool, bool) {
-	if state.readerContextExpanded == expanded || !state.rawReaderDocument().ContextFoldable() {
-		return false, false
-	}
-	state.readerContextExpanded = expanded
-	state.readerContextGeneration++
-	state.advanceReaderContextPresentation()
-	return true, readerContextAnimating(state.readerContextProgress, expanded)
-}
-
-func (state *stashState) advanceReaderContext(generation uint64) (bool, bool) {
-	if generation != state.readerContextGeneration || !readerContextAnimating(state.readerContextProgress, state.readerContextExpanded) {
-		return false, false
-	}
-	state.advanceReaderContextPresentation()
-	return true, readerContextAnimating(state.readerContextProgress, state.readerContextExpanded)
-}
-
-func (state *stashState) advanceReaderContextPresentation() {
-	oldRows := readerRowIdentities(state.readerRows())
-	oldOffset := state.place.ReaderOffset
-	state.readerContextProgress = stepReaderContext(state.readerContextProgress, state.readerContextExpanded)
-	state.place.ReaderOffset = reconcileLogicalLine(oldRows, oldOffset, readerRowIdentities(state.readerRows()))
-	if state.place.ReaderOffset != oldOffset {
-		state.place.ReaderColumn = 0
-	}
-	state.place.ClampReaderSource(len(state.readerRows()))
-	state.saveReaderPlace()
-}
-
-func (state *stashState) resetReaderContext() {
-	state.readerContextExpanded = false
-	state.readerContextProgress = 0
-	state.readerContextGeneration++
-}
-
-func (state stashState) readerRows() []ui.ReaderRow {
-	return state.readerDocument().Rows
-}
-
-func (state stashState) deriveReaderDocument() ui.ReaderDocument {
-	if state.readerFileID == "" || state.reader.Change.Path == "" {
-		return ui.ReaderDocument{}
-	}
-	return (readerDocument{Change: &state.reader, Mode: workspace.DiffReader}).build()
-}
-
-func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model {
-	document := state.readerDocument()
-	return state.viewModelWithReader(geometry, now, document, document.HasContextFold())
-}
-
-func (state stashState) viewModelWithReader(geometry ui.Geometry, now time.Time, document ui.ReaderDocument, contextFoldable bool) ui.Model {
-	rows := make([]ui.NavigatorRow, len(state.stashes))
-	for index, stash := range state.stashes {
-		prose := stash.Message
-		if stash.Branch != "" {
-			prose = stash.Branch + " · " + prose
-		}
-		if prose == "" {
-			prose = "(no message)"
-		}
-		additions, deletions := ui.FormatLineChanges(ui.LineChanges{
-			Additions: stash.Additions,
-			Deletions: stash.Deletions,
-		})
-		suffix := []ui.Segment{{Text: fmt.Sprintf("  %df", stash.Files), Tone: ui.ToneQuiet}}
-		if additions != "" {
-			suffix = append(suffix, ui.Segment{Text: " " + additions, Tone: ui.ToneAdded})
-		}
-		if deletions != "" {
-			suffix = append(suffix, ui.Segment{Text: " " + deletions, Tone: ui.ToneRemoved})
-		}
-		suffix = append(suffix, ui.Segment{Text: " " + ageLabel(now, stash.Timestamp), Tone: ui.ToneQuiet})
-		rows[index] = ui.NavigatorRow{
-			Identity: stash.OID,
-			Prefix:   []ui.Segment{{Text: stash.Selector + " ", Tone: ui.ToneAccent}},
-			Label:    prose,
-			Suffix:   suffix,
-		}
-	}
-
-	emptyNavigator := ui.Line{Text: "No stashes yet.", Tone: ui.ToneQuiet}
-	if state.listLoading && len(rows) == 0 {
-		emptyNavigator.Text = "Loading stashes…"
-	} else if state.listError != nil && len(rows) == 0 {
-		emptyNavigator = ui.Line{Text: "Git error: " + state.listError.Error(), Tone: ui.ToneError}
-	}
-	title := fmt.Sprintf("stashes · %d", len(rows))
-	if state.listError != nil && len(rows) > 0 {
-		title += " · refresh failed"
-	}
-
-	readerTitle := "No stash selected"
-	if stash, ok := state.selectedStash(); ok {
-		readerTitle = stash.Selector
-		if len(state.files) > 0 && state.fileSelected >= 0 && state.fileSelected < len(state.files) {
-			change := state.files[state.fileSelected]
-			path := change.Path
-			if change.PreviousPath != "" {
-				path = change.PreviousPath + " → " + change.Path
-			}
-			readerTitle = fmt.Sprintf("%s · %d/%d · %s", stash.Selector, state.fileSelected+1, len(state.files), path)
-		}
-	}
-	if state.readerLoading {
-		readerTitle += " · loading…"
-	}
-
-	readerEmpty := ui.Line{Text: "Select a stash to inspect its files.", Tone: ui.ToneQuiet}
-	switch {
-	case len(state.stashes) == 0 && state.listLoading:
-		readerEmpty.Text = "Loading stashes…"
-	case len(state.stashes) == 0 && state.listError != nil:
-		readerEmpty = ui.Line{Text: "Stashes are unavailable: " + state.listError.Error(), Tone: ui.ToneError}
-	case len(state.stashes) == 0:
-		readerEmpty.Text = "No stashes yet."
-	case state.filesLoading:
-		readerEmpty.Text = "Loading files stored in this stash…"
-	case state.filesError != nil:
-		readerEmpty = ui.Line{Text: "Stash is no longer available: " + state.filesError.Error(), Tone: ui.ToneError}
-	case len(state.files) == 0:
-		readerEmpty.Text = "No files stored in this stash."
-	case state.readerLoading:
-		readerEmpty.Text = "Loading stash diff…"
-	}
-
-	return ui.Model{
-		Geometry: geometry, NavigatorTitle: title, NavigatorRows: rows,
-		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
-		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: document,
-		ReaderContextFoldable: contextFoldable,
-		ReaderEmpty:           readerEmpty, ReaderOffset: state.place.ReaderOffset,
-		ReaderColumn: state.place.ReaderColumn,
-	}
-}
-
 func changedFileIdentities(files []repository.ChangedFile) []string {
 	identities := make([]string, len(files))
 	for index, file := range files {
@@ -501,24 +262,4 @@ func indexIdentity(identities []string, identity string) int {
 		}
 	}
 	return 0
-}
-
-func ageLabel(now time.Time, timestamp int64) string {
-	seconds := max(int64(0), now.Unix()-timestamp)
-	switch {
-	case seconds < 60:
-		return "now"
-	case seconds < 60*60:
-		return fmt.Sprintf("%dm", seconds/60)
-	case seconds < 24*60*60:
-		return fmt.Sprintf("%dh", seconds/(60*60))
-	case seconds < 7*24*60*60:
-		return fmt.Sprintf("%dd", seconds/(24*60*60))
-	case seconds < 30*24*60*60:
-		return fmt.Sprintf("%dw", seconds/(7*24*60*60))
-	case seconds < 365*24*60*60:
-		return fmt.Sprintf("%dmo", seconds/(30*24*60*60))
-	default:
-		return fmt.Sprintf("%dy", seconds/(365*24*60*60))
-	}
 }
