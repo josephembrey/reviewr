@@ -304,11 +304,11 @@ func TestDirectoryRollupUsesHiddenChangedDescendantsAndUnchangedHasNoBadge(t *te
 	for _, row := range rows {
 		switch row.Identity {
 		case filetree.DirectoryIdentity("src"):
-			if row.Progress != "1/2" || row.Review != nil {
+			if row.Progress != "1/2" || row.Reviewable {
 				t.Fatalf("directory rollup = %+v", row)
 			}
 		case filetree.FileIdentity("plain.go"):
-			if row.Review != nil {
+			if row.Reviewable {
 				t.Fatalf("unchanged row has review badge: %+v", row)
 			}
 		}
@@ -355,19 +355,19 @@ func TestInitialChangedExpansionCoexistsWithReviewBadgesAndRollups(t *testing.T)
 	for _, row := range view.NavigatorRows {
 		switch row.Identity {
 		case filetree.DirectoryIdentity("src"):
-			if row.Progress != "1/3" || row.Review != nil {
+			if row.Progress != "1/3" || row.Reviewable {
 				t.Fatalf("source directory review presentation = %+v", row)
 			}
 		case filetree.DirectoryIdentity("src/nested"):
-			if row.Progress != "0/2" || row.Review != nil {
+			if row.Progress != "0/2" || row.Reviewable {
 				t.Fatalf("nested directory review presentation = %+v", row)
 			}
 		case filetree.FileIdentity("src/reviewed.go"):
-			if row.Review == nil || *row.Review != reviewdomain.Reviewed || row.Progress != "" {
+			if !row.Reviewable || row.Review != reviewdomain.Reviewed || row.Progress != "" {
 				t.Fatalf("reviewed file presentation = %+v", row)
 			}
 		case filetree.FileIdentity("root.go"), filetree.FileIdentity("src/nested/gap.go"), filetree.FileIdentity("src/nested/other.go"):
-			if row.Review == nil || *row.Review != reviewdomain.Unreviewed || row.Progress != "" {
+			if !row.Reviewable || row.Review != reviewdomain.Unreviewed || row.Progress != "" {
 				t.Fatalf("visible changed-file review presentation = %+v", row)
 			}
 		default:
@@ -511,10 +511,25 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	}
 }
 
+func TestReviewAssessmentCacheRequiresComparisonIdentity(t *testing.T) {
+	oldComparison := testComparison("a.go", "old-head", "old-base", "old-current")
+	currentComparison := testComparison("a.go", "current-head", "current-base", "current")
+	state := newFilesState()
+	state.reviewSnapshot = reviewdomain.Snapshot{
+		Scope:       "uncommitted",
+		Comparisons: map[string]reviewdomain.FileComparison{"a.go": currentComparison},
+	}
+	state.reviewAssessments = map[string]reviewdomain.Assessment{
+		"a.go": {State: reviewdomain.Reviewed},
+	}
+	if got := state.reviewAssessment("a.go", oldComparison).State; got != reviewdomain.Unreviewed {
+		t.Fatalf("stale comparison borrowed current cached assessment %v", got)
+	}
+}
+
 func TestReviewRoutingIsFilesOnlyAndBadgeUsesSemanticAction(t *testing.T) {
 	g := ui.Calculate(80, 20)
-	state := reviewdomain.Unreviewed
-	rows := []ui.NavigatorRow{{Label: "a.go", Tree: true, Review: &state}}
+	rows := []ui.NavigatorRow{{Label: "a.go", Tree: true, Reviewable: true, Review: reviewdomain.Unreviewed}}
 	for _, key := range []tea.Key{{Code: 'x', Text: "x"}, {Code: 'R', Text: "R"}, {Code: 'X', Text: "X"}} {
 		if _, ok := routeMessageWithRows(tea.KeyPressMsg(key), navigation.FocusNavigator, g, workspace.Git, workspace.Controls{}, false, false, 0, 1, 0, 0, rows); ok {
 			t.Fatalf("Git consumed review key %q", key.Text)
@@ -693,7 +708,7 @@ func TestMissingReviewProviderLeavesRowsAndActionsReviewInert(t *testing.T) {
 		t.Fatal("ordinary reader did not load")
 	}
 	rows := model.files.viewModel(model.geometry).NavigatorRows
-	if len(rows) != 1 || rows[0].Review != nil {
+	if len(rows) != 1 || rows[0].Reviewable {
 		t.Fatalf("missing provider advertised review: %#v", rows)
 	}
 	if pending := model.apply(Action{Kind: ToggleReview, Index: -1}); pending.kind != effectNone || len(model.files.ledger.Receipts()) != 0 {

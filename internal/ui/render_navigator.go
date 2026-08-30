@@ -153,7 +153,7 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 		row += chromeStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
 	}
 	if layout.Changes.Width > 0 {
-		additions, deletions := FormatLineChanges(*item.Changes)
+		additions, deletions := FormatLineChanges(item.Changes)
 		if additions != "" {
 			row += selection.Render(" ") + addedStyle.Inherit(selection).Render(additions)
 		}
@@ -163,7 +163,7 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 	}
 	if layout.Review.Width > 0 {
 		badge := " " + item.Review.Badge()
-		row += reviewBadgeStyle(*item.Review).Inherit(selection).Render(badge)
+		row += reviewBadgeStyle(item.Review).Inherit(selection).Render(badge)
 	}
 	return row
 }

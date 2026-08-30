@@ -17,6 +17,7 @@ type filesState struct {
 	treeScopeReady bool
 	snapshot       repository.Snapshot
 	entries        []repository.Entry
+	entriesByPath  map[string]repository.Entry
 
 	readerEntry             repository.Entry
 	readerMode              workspace.ReaderMode
@@ -147,7 +148,7 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	state.treeScopeReady = true
 	state.folds[scope] = state.tree.Folds()
 	state.reconcileCursor(oldRows)
-	state.entries = orderEntries(entries, state.tree.Files())
+	state.entries, state.entriesByPath = orderEntries(entries, state.tree.Files())
 	if firstLoad && !hadSelection {
 		state.selectFirstVisibleFile()
 	}
@@ -286,6 +287,10 @@ func (state *filesState) selectIdentity(identity string) {
 }
 
 func (state filesState) entry(path string) (repository.Entry, bool) {
+	if state.entriesByPath != nil {
+		entry, ok := state.entriesByPath[path]
+		return entry, ok
+	}
 	for _, entry := range state.entries {
 		if entry.Path == path {
 			return entry, true
@@ -309,7 +314,7 @@ func entryPaths(entries []repository.Entry) []string {
 	return paths
 }
 
-func orderEntries(entries []repository.Entry, paths []string) []repository.Entry {
+func orderEntries(entries []repository.Entry, paths []string) ([]repository.Entry, map[string]repository.Entry) {
 	byPath := make(map[string]repository.Entry, len(entries))
 	for _, entry := range entries {
 		byPath[entry.Path] = entry
@@ -320,7 +325,7 @@ func orderEntries(entries []repository.Entry, paths []string) []repository.Entry
 			ordered = append(ordered, entry)
 		}
 	}
-	return ordered
+	return ordered, byPath
 }
 
 func reconcileReaderEntry(old []repository.Entry, entry repository.Entry, current []repository.Entry) (repository.Entry, bool) {

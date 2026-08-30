@@ -26,12 +26,11 @@ func (state filesState) navigatorRows() []ui.NavigatorRow {
 			presentation.Status = navigatorStatus(entry.State)
 			presentation.Dimmed = entry.State == repository.FileIgnored
 			if entry.Changed() && !entry.Binary {
-				changes := ui.LineChanges{Additions: entry.Additions, Deletions: entry.Deletions}
-				presentation.Changes = &changes
+				presentation.Changes = ui.LineChanges{Additions: entry.Additions, Deletions: entry.Deletions}
 			}
 			if comparison, reviewable := state.reviewSnapshot.Comparisons[row.Path]; reviewable && entry.Changed() {
-				reviewState := state.reviewAssessment(row.Path, comparison).State
-				presentation.Review = &reviewState
+				presentation.Reviewable = true
+				presentation.Review = state.reviewAssessment(row.Path, comparison).State
 			}
 		} else if row.Kind == filetree.Directory {
 			reviewed, changed := state.directoryReviewProgress(row.Path)
@@ -104,7 +103,7 @@ func (state filesState) reviewBoundsTitle() string {
 	if state.displayedBounds == nil || state.displayedComparison == nil {
 		return ""
 	}
-	assessment := state.ledger.Assess(*state.displayedComparison)
+	assessment := state.reviewAssessment(state.readerEntry.Path, *state.displayedComparison)
 	switch {
 	case assessment.State == review.Updated && state.displayedBounds.Old != state.displayedComparison.Old:
 		return "  since reviewed"

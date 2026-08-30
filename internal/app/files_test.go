@@ -24,19 +24,21 @@ func TestFilePaneTitlesAndStatusDescribeTypedEntries(t *testing.T) {
 		t.Fatalf("pane titles = %q / %q", view.NavigatorTitle, view.ReaderTitle)
 	}
 	ignored := false
-	var changes *ui.LineChanges
+	var changes ui.LineChanges
+	foundChanges := false
 	for _, row := range view.NavigatorRows {
 		if row.Identity == filetree.FileIdentity("path/to/file.ext") {
 			ignored = row.Status == ui.StatusIgnored && row.Dimmed
 		}
 		if row.Identity == filetree.FileIdentity("one.go") {
 			changes = row.Changes
+			foundChanges = true
 		}
 	}
 	if !ignored {
 		t.Fatalf("ignored row lacks explicit dimmed status: %#v", view.NavigatorRows)
 	}
-	if changes == nil || *changes != (ui.LineChanges{Additions: 12, Deletions: 3}) {
+	if !foundChanges || changes != (ui.LineChanges{Additions: 12, Deletions: 3}) {
 		t.Fatalf("changed row stats = %#v", changes)
 	}
 }

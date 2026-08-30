@@ -18,12 +18,12 @@ func LayoutNavigatorRow(row NavigatorRow, width int) NavigatorRowLayout {
 	width = max(0, width)
 	right := width
 	layout := NavigatorRowLayout{}
-	if row.Review != nil && right >= 4 {
+	if row.Reviewable && right >= 4 {
 		layout.Review = Rect{X: right - 4, Width: 4, Height: 1}
 		right -= 4
 	}
-	if row.Changes != nil {
-		additions, deletions := FormatLineChanges(*row.Changes)
+	if row.Changes != (LineChanges{}) {
+		additions, deletions := FormatLineChanges(row.Changes)
 		changesWidth := lineChangesWidth(additions, deletions)
 		if changesWidth > 0 && changesWidth <= right {
 			layout.Changes = Rect{X: right - changesWidth, Width: changesWidth, Height: 1}

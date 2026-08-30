@@ -183,12 +183,13 @@ type NavigatorRow struct {
 	Expanded  bool
 	Status    NavigatorStatus
 	Dimmed    bool
-	// Changes is a right-aligned per-file statistic. Nil keeps unchanged and
+	// Changes is a right-aligned per-file statistic. Zero keeps unchanged and
 	// binary rows visually quiet.
-	Changes *LineChanges
-	// Review is an independent right-side file badge. Nil means the row is
-	// observation-only (including unchanged All-scope files).
-	Review *review.State
+	Changes LineChanges
+	// Review is an independent right-side file badge. Reviewable distinguishes
+	// Unreviewed, whose enum value is zero, from observation-only rows.
+	Reviewable bool
+	Review     review.State
 	// Progress is derived directory reviewed/changed coverage.
 	Progress string
 }

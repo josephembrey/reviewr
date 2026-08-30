@@ -95,7 +95,7 @@ func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode w
 		}
 	} else {
 		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
-			assessment := state.ledger.Assess(comparison)
+			assessment := state.reviewAssessment(entry.Path, comparison)
 			bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
 			var retained *string
 			if assessment.State == review.Updated && !state.reviewFull[entry.Path] && assessment.Frontier != nil && assessment.Retained != nil {

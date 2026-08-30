@@ -197,7 +197,7 @@ func (state *filesState) requestReviewToggle(focus navigation.Focus, rowIndex in
 	if !ok {
 		return effect{}
 	}
-	assessment := state.ledger.Assess(comparison)
+	assessment := state.reviewAssessment(path, comparison)
 	delta := review.Delta{Kind: review.MarkDelta, Comparison: comparison, Bounds: bounds}
 	if assessment.State == review.Reviewed {
 		delta.Kind = review.ClearDelta
@@ -296,7 +296,7 @@ func (state *filesState) toggleReviewBounds(mode workspace.ReaderMode) effect {
 		return effect{}
 	}
 	comparison, ok := state.reviewSnapshot.Comparisons[state.readerEntry.Path]
-	if !ok || state.ledger.Assess(comparison).State != review.Updated {
+	if !ok || state.reviewAssessment(state.readerEntry.Path, comparison).State != review.Updated {
 		return effect{}
 	}
 	state.reviewFull[state.readerEntry.Path] = !state.reviewFull[state.readerEntry.Path]
@@ -306,13 +306,14 @@ func (state *filesState) toggleReviewBounds(mode workspace.ReaderMode) effect {
 
 func (state *filesState) selectNextReviewGap(visibleRows int, mode workspace.ReaderMode) effect {
 	ordered := make([]string, 0)
+	files := state.tree.Files()
 	for priority := 0; priority < 4; priority++ {
-		for _, path := range state.tree.Files() {
+		for _, path := range files {
 			comparison, ok := state.reviewSnapshot.Comparisons[path]
 			if !ok {
 				continue
 			}
-			candidatePriority, gap := state.ledger.Assess(comparison).State.GapPriority()
+			candidatePriority, gap := state.reviewAssessment(path, comparison).State.GapPriority()
 			if gap && candidatePriority == priority {
 				ordered = append(ordered, path)
 			}
@@ -353,7 +354,7 @@ func (state filesState) directoryReviewProgress(directory string) (int, int) {
 			continue
 		}
 		changed++
-		if state.ledger.Assess(comparison).State == review.Reviewed {
+		if state.reviewAssessment(path, comparison).State == review.Reviewed {
 			reviewed++
 		}
 	}
@@ -361,7 +362,8 @@ func (state filesState) directoryReviewProgress(directory string) (int, int) {
 }
 
 func (state filesState) reviewAssessment(path string, comparison review.FileComparison) review.Assessment {
-	if assessment, ok := state.reviewAssessments[path]; ok {
+	current, currentOK := state.reviewSnapshot.Comparisons[path]
+	if assessment, ok := state.reviewAssessments[path]; ok && currentOK && current == comparison {
 		return assessment
 	}
 	return state.ledger.Assess(comparison)
