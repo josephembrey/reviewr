@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
+
+	"github.com/josephembrey/reviewr/internal/appstate"
 )
 
 // StateVersion is the persisted review-ledger schema version.
@@ -45,19 +46,7 @@ func (id RepositoryID) FileKey() string {
 
 // DefaultStateRoot returns reviewr's platform application-state directory.
 func DefaultStateRoot() (string, error) {
-	if runtime.GOOS != "windows" {
-		if root := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(root) {
-			return filepath.Join(root, "reviewr"), nil
-		}
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			return filepath.Join(home, ".local", "state", "reviewr"), nil
-		}
-	}
-	root, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve application state directory: %w", err)
-	}
-	return filepath.Join(root, "reviewr"), nil
+	return appstate.DefaultRoot()
 }
 
 type stateFile struct {

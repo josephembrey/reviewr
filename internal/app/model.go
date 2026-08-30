@@ -30,6 +30,11 @@ type Source interface {
 	ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument
 }
 
+// PaneStateStore persists authored pane-side choices outside the repository.
+type PaneStateStore interface {
+	SavePaneSwapped(generation uint64, swapped bool) error
+}
+
 // Model is the Bubble Tea root. Input routing and effects are delegated to
 // semantic actions and workspace-scoped transitions.
 type Model struct {
@@ -49,6 +54,8 @@ type Model struct {
 	summary   summaryState
 	note      scratchState
 	poll      repositoryPollState
+	paneStore PaneStateStore
+	paneSave  uint64
 
 	reviewStateRoot string
 }
@@ -77,6 +84,7 @@ const (
 	effectLoadScratch
 	effectDebounceScratch
 	effectSaveScratch
+	effectSavePaneState
 	effectQuit
 )
 
@@ -90,6 +98,7 @@ type effect struct {
 	stashSource repository.ChangeSource
 	changedFile repository.ChangedFile
 	text        string
+	swapped     bool
 	background  bool
 	activity    uint64
 
@@ -223,6 +232,11 @@ type scratchSavedMsg struct {
 	err        error
 }
 
+type paneStateSavedMsg struct {
+	generation uint64
+	err        error
+}
+
 type refSourcesLoadedMsg struct {
 	generation uint64
 	sources    []repository.RefSource
@@ -275,17 +289,25 @@ func New(source Source, host herdr.Context) Model {
 
 // NewWithScratch creates a model with an explicit clone-scoped Scratch store.
 func NewWithScratch(source Source, host herdr.Context, store scratch.Store) Model {
+	return NewWithPaneState(source, host, store, nil, false)
+}
+
+// NewWithPaneState creates a model with a startup pane-side preference and
+// its external persistence boundary.
+func NewWithPaneState(source Source, host herdr.Context, scratchStore scratch.Store, paneStore PaneStateStore, swapped bool) Model {
 	return Model{
-		source:  source,
-		host:    host,
-		active:  workspace.Files,
-		lab:     newLabState(),
-		files:   newFilesState(),
-		history: newHistoryState(),
-		refs:    newRefsState(),
-		stashes: newStashState(),
-		summary: newSummaryState(),
-		note:    newScratchState(store),
+		source:    source,
+		host:      host,
+		active:    workspace.Files,
+		layout:    layoutState{swapped: swapped},
+		lab:       newLabState(),
+		files:     newFilesState(),
+		history:   newHistoryState(),
+		refs:      newRefsState(),
+		stashes:   newStashState(),
+		summary:   newSummaryState(),
+		note:      newScratchState(scratchStore),
+		paneStore: paneStore,
 	}
 }
 
@@ -422,6 +444,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			next = m.finishScratchExit(exit)
 		}
 		return m, m.command(next)
+	case paneStateSavedMsg:
+		return m, nil
 	case refSourcesLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
 			return m, nil
@@ -661,6 +685,10 @@ func (m *Model) apply(action Action) effect {
 		m.scrollbar.finish()
 		m.geometry = m.layout.swap(m.geometry.Screen.Width, m.geometry.Screen.Height)
 		m.resizeWorkspaceState()
+		if m.paneStore != nil {
+			m.paneSave++
+			return effect{kind: effectSavePaneState, generation: m.paneSave, swapped: m.layout.swapped}
+		}
 	case StartScrollbarDrag:
 		m.layout.finishDrag()
 		m.scrollbar.start(action.Pane, action.Grab)
@@ -1069,6 +1097,15 @@ func (m Model) command(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			return scratchSavedMsg{generation: generation, err: store.Save(text)}
 		}
+	case effectSavePaneState:
+		store := m.paneStore
+		generation, swapped := pending.generation, pending.swapped
+		if store == nil {
+			return nil
+		}
+		return func() tea.Msg {
+			return paneStateSavedMsg{generation: generation, err: store.SavePaneSwapped(generation, swapped)}
+		}
 	case effectLoadRefSources:
 		source := m.source
 		generation := pending.generation
@@ -1144,7 +1181,8 @@ func (m Model) command(pending effect) tea.Cmd {
 }
 
 // Shutdown reliably flushes an edited note and releases the OS-backed lock.
-// The executable owns this final lifecycle step after Bubble Tea returns.
+// Pane order is saved when it changes so an older concurrent process cannot
+// overwrite a newer choice merely by exiting.
 func (m *Model) Shutdown() error {
 	return m.note.shutdown()
 }

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/app"
 	"github.com/josephembrey/reviewr/internal/herdr"
+	"github.com/josephembrey/reviewr/internal/preferences"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/scratch"
 )
@@ -36,7 +37,9 @@ func run(args []string) error {
 	defer host.Close()
 	commonDir, _ := repo.CommonDir()
 	store := scratch.NewPrivateStore(commonDir, os.LookupEnv)
-	final, runErr := tea.NewProgram(app.NewWithScratch(repo, host.Context(), store)).Run()
+	paneStore, paneState, _ := preferences.Open("")
+	model := app.NewWithPaneState(repo, host.Context(), store, paneStore, paneState.PanesSwapped)
+	final, runErr := tea.NewProgram(model).Run()
 	model, ok := final.(app.Model)
 	if !ok {
 		return errors.Join(runErr, store.Close())
