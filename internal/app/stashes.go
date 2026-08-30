@@ -341,16 +341,23 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 		if prose == "" {
 			prose = "(no message)"
 		}
+		additions, deletions := ui.FormatLineChanges(ui.LineChanges{
+			Additions: stash.Additions,
+			Deletions: stash.Deletions,
+		})
+		suffix := []ui.Segment{{Text: fmt.Sprintf("  %df", stash.Files), Tone: ui.ToneQuiet}}
+		if additions != "" {
+			suffix = append(suffix, ui.Segment{Text: " " + additions, Tone: ui.ToneAdded})
+		}
+		if deletions != "" {
+			suffix = append(suffix, ui.Segment{Text: " " + deletions, Tone: ui.ToneRemoved})
+		}
+		suffix = append(suffix, ui.Segment{Text: " " + ageLabel(now, stash.Timestamp), Tone: ui.ToneQuiet})
 		rows[index] = ui.NavigatorRow{
 			Identity: stash.OID,
 			Prefix:   []ui.Segment{{Text: stash.Selector + " ", Tone: ui.ToneAccent}},
 			Label:    prose,
-			Suffix: []ui.Segment{
-				{Text: fmt.Sprintf("  %df ", stash.Files), Tone: ui.ToneQuiet},
-				{Text: fmt.Sprintf("+%d ", stash.Additions), Tone: ui.ToneAdded},
-				{Text: fmt.Sprintf("-%d ", stash.Deletions), Tone: ui.ToneRemoved},
-				{Text: ageLabel(now, stash.Timestamp), Tone: ui.ToneQuiet},
-			},
+			Suffix:   suffix,
 		}
 	}
 

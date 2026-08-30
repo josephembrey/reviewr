@@ -23,9 +23,9 @@ func LayoutNavigatorRow(row NavigatorRow, width int) NavigatorRowLayout {
 		right -= 4
 	}
 	if row.Changes != nil {
-		additions, deletions := formatLineChanges(*row.Changes)
-		changesWidth := len(additions) + len(deletions) + 2
-		if changesWidth <= right {
+		additions, deletions := FormatLineChanges(*row.Changes)
+		changesWidth := lineChangesWidth(additions, deletions)
+		if changesWidth > 0 && changesWidth <= right {
 			layout.Changes = Rect{X: right - changesWidth, Width: changesWidth, Height: 1}
 			right -= changesWidth
 		}
@@ -41,8 +41,27 @@ func LayoutNavigatorRow(row NavigatorRow, width int) NavigatorRowLayout {
 	return layout
 }
 
-func formatLineChanges(changes LineChanges) (string, string) {
-	return "+" + strconv.FormatUint(changes.Additions, 10), "-" + strconv.FormatUint(changes.Deletions, 10)
+// FormatLineChanges returns only non-zero diff statistics. Every caller uses
+// this shared rule so zero counts never consume space or appear in the UI.
+func FormatLineChanges(changes LineChanges) (additions, deletions string) {
+	if changes.Additions > 0 {
+		additions = "+" + strconv.FormatUint(changes.Additions, 10)
+	}
+	if changes.Deletions > 0 {
+		deletions = "-" + strconv.FormatUint(changes.Deletions, 10)
+	}
+	return additions, deletions
+}
+
+func lineChangesWidth(additions, deletions string) int {
+	width := 0
+	if additions != "" {
+		width += len(additions) + 1
+	}
+	if deletions != "" {
+		width += len(deletions) + 1
+	}
+	return width
 }
 
 // HitNavigatorReview resolves a click against the same content width and row

@@ -165,6 +165,9 @@ func renderHeader(model Model) string {
 		return fit(left, g.Header.Width)
 	}
 	for _, summary := range []string{renderChangeSummary(model.Changes), renderChangeTotals(model.Changes)} {
+		if summary == "" {
+			continue
+		}
 		summaryX := g.Header.Width - lipgloss.Width(summary)
 		minimumSummaryX := lipgloss.Width(left) + 2
 		if summaryX >= minimumSummaryX {
@@ -193,12 +196,26 @@ func renderHeaderControl(control headerControl, wide bool) string {
 }
 
 func renderChangeSummary(summary ChangeSummary) string {
-	return chromeStyle.Render(fmt.Sprintf("%d changes ", summary.Files)) + renderChangeTotals(summary)
+	result := chromeStyle.Render(fmt.Sprintf("%d changes", summary.Files))
+	if totals := renderChangeTotals(summary); totals != "" {
+		result += " " + totals
+	}
+	return result
 }
 
 func renderChangeTotals(summary ChangeSummary) string {
-	return addedStyle.Render(fmt.Sprintf("+%d", summary.Additions)) + " " +
-		errorStyle.Render(fmt.Sprintf("-%d", summary.Deletions))
+	additions, deletions := FormatLineChanges(LineChanges{
+		Additions: summary.Additions,
+		Deletions: summary.Deletions,
+	})
+	parts := make([]string, 0, 2)
+	if additions != "" {
+		parts = append(parts, addedStyle.Render(additions))
+	}
+	if deletions != "" {
+		parts = append(parts, errorStyle.Render(deletions))
+	}
+	return strings.Join(parts, " ")
 }
 
 func renderWorkspaceSwitcher(width int, activeWorkspace, primaryWorkspace workspace.Kind) string {
@@ -488,9 +505,13 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 		row += chromeStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
 	}
 	if layout.Changes.Width > 0 {
-		additions, deletions := formatLineChanges(*item.Changes)
-		row += selection.Render(" ") + addedStyle.Inherit(selection).Render(additions) +
-			selection.Render(" ") + errorStyle.Inherit(selection).Render(deletions)
+		additions, deletions := FormatLineChanges(*item.Changes)
+		if additions != "" {
+			row += selection.Render(" ") + addedStyle.Inherit(selection).Render(additions)
+		}
+		if deletions != "" {
+			row += selection.Render(" ") + errorStyle.Inherit(selection).Render(deletions)
+		}
 	}
 	if layout.Review.Width > 0 {
 		badge := " " + item.Review.Badge()

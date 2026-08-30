@@ -61,6 +61,54 @@ func TestChangedTreeRowRightAlignsLineStatsBeforeReviewBadge(t *testing.T) {
 	}
 }
 
+func TestLineChangeFormattingOmitsZeroSides(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name                 string
+		changes              LineChanges
+		additions, deletions string
+	}{
+		{name: "Neither", changes: LineChanges{}},
+		{name: "Additions only", changes: LineChanges{Additions: 12}, additions: "+12"},
+		{name: "Deletions only", changes: LineChanges{Deletions: 3}, deletions: "-3"},
+		{name: "Both", changes: LineChanges{Additions: 12, Deletions: 3}, additions: "+12", deletions: "-3"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			additions, deletions := FormatLineChanges(test.changes)
+			if additions != test.additions || deletions != test.deletions {
+				t.Fatalf("FormatLineChanges(%+v) = %q, %q", test.changes, additions, deletions)
+			}
+		})
+	}
+}
+
+func TestChangedTreeRowOmitsZeroLineStats(t *testing.T) {
+	t.Parallel()
+	state := review.Reviewed
+	for _, test := range []struct {
+		name    string
+		changes LineChanges
+		want    string
+	}{
+		{name: "Additions only", changes: LineChanges{Additions: 12}, want: " +12 [x]"},
+		{name: "Deletions only", changes: LineChanges{Deletions: 3}, want: " -3 [x]"},
+		{name: "Neither", changes: LineChanges{}, want: " [x]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			row := NavigatorRow{Label: "main.go", Tree: true, Status: StatusModified, Changes: &test.changes, Review: &state}
+			plain := ansi.Strip(renderNavigatorPresentationRow(row, 30, false, false, commitrow.Columns{}, time.Time{}))
+			if !strings.HasSuffix(plain, test.want) || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
+				t.Fatalf("changed row = %q, want suffix %q without zero stats", plain, test.want)
+			}
+			if test.changes == (LineChanges{}) && LayoutNavigatorRow(row, 30).Changes.Width != 0 {
+				t.Fatalf("zero stats reserved layout space: %+v", LayoutNavigatorRow(row, 30))
+			}
+		})
+	}
+}
+
 func TestEveryBadgeCellHitsReviewWithoutActivatingTheRow(t *testing.T) {
 	g := Calculate(80, 20)
 	state := review.Unreviewed

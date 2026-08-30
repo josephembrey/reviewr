@@ -39,7 +39,7 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 		Geometry: Calculate(80, 1), Workspace: workspace.Files,
 		Changes: ChangeSummary{Ready: true},
 	}))
-	if !strings.HasPrefix(plain, switchers[workspace.Files]) || !strings.HasSuffix(plain, "0 changes +0 -0") {
+	if !strings.HasPrefix(plain, switchers[workspace.Files]) || !strings.HasSuffix(plain, "0 changes") || strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
 		t.Fatalf("normal header = %q", plain)
 	}
 	plain = ansi.Strip(Render(Model{Geometry: Calculate(30, 1), Workspace: workspace.Files}))
@@ -49,6 +49,27 @@ func TestHeaderRendersPersistentWorkspaceSwitcher(t *testing.T) {
 	plain = ansi.Strip(Render(Model{Geometry: Calculate(31, 1), Workspace: workspace.Files}))
 	if plain != switchers[workspace.Files]+" " {
 		t.Fatalf("31-column header = %q, want switcher only", plain)
+	}
+}
+
+func TestHeaderOmitsEachZeroChangeTotal(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		changes ChangeSummary
+		want    string
+		absent  string
+	}{
+		{name: "Additions only", changes: ChangeSummary{Files: 2, Additions: 7, Ready: true}, want: "2 changes +7", absent: "-0"},
+		{name: "Deletions only", changes: ChangeSummary{Files: 2, Deletions: 9, Ready: true}, want: "2 changes -9", absent: "+0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			plain := ansi.Strip(Render(Model{Geometry: Calculate(80, 1), Workspace: workspace.Files, Changes: test.changes}))
+			if !strings.HasSuffix(plain, test.want) || strings.Contains(plain, test.absent) {
+				t.Fatalf("header = %q, want suffix %q without %q", plain, test.want, test.absent)
+			}
+		})
 	}
 }
 

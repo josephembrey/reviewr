@@ -276,6 +276,29 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 	}
 }
 
+func TestStashRowsOmitZeroChangeTotals(t *testing.T) {
+	t.Parallel()
+	state := newStashState()
+	state.stashes = []repository.Stash{
+		{OID: "added", Selector: "stash@{0}", Files: 1, Additions: 4},
+		{OID: "removed", Selector: "stash@{1}", Files: 1, Deletions: 6},
+		{OID: "empty", Selector: "stash@{2}", Files: 1},
+	}
+	state.place = navigation.State{Items: []string{"added", "removed", "empty"}, Focus: navigation.FocusNavigator}
+	model := state.viewModel(ui.Calculate(100, 12), time.Unix(2_000_000_000, 0))
+	model.Workspace = workspace.Git
+	model.Controls.Git = workspace.GitStashes
+	plain := ansi.Strip(ui.Render(model))
+	if strings.Contains(plain, "+0") || strings.Contains(plain, "-0") {
+		t.Fatalf("stash rows include zero totals:\n%s", plain)
+	}
+	for _, want := range []string{"stash@{0}", "+4", "stash@{1}", "-6", "stash@{2}"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("stash rows miss %q:\n%s", want, plain)
+		}
+	}
+}
+
 func TestStashViewUsesSharedNavigatorAndReaderScrollbars(t *testing.T) {
 	t.Parallel()
 	state := newStashState()
