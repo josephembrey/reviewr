@@ -4,6 +4,7 @@ package lab
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -158,9 +159,10 @@ func TestLabDiffTintsCompareANSIAndTruecolorBackgrounds(t *testing.T) {
 	for _, want := range []string{
 		"lab / diff background tints",
 		"current ANSI blocks",
-		"proposed truecolor tint",
-		"#173D2B",
-		"#48242A",
+		"background-blended truecolor",
+		"background #1A1B26 · dark fallback",
+		"addition #223C2F",
+		"removal  #49262D",
 		"preserves syntax foregrounds",
 	} {
 		if !strings.Contains(plain, want) {
@@ -168,11 +170,32 @@ func TestLabDiffTintsCompareANSIAndTruecolorBackgrounds(t *testing.T) {
 		}
 	}
 	for name, sequence := range map[string]string{
-		"addition": "48;2;23;61;43m",
-		"removal":  "48;2;72;36;42m",
+		"addition": "48;2;34;60;47m",
+		"removal":  "48;2;73;38;45m",
 	} {
 		if !strings.Contains(frame, sequence) {
 			t.Errorf("diff-tint lab does not emit %s truecolor background", name)
 		}
+	}
+}
+
+func TestLabDiffTintsBlendReportedTerminalBackground(t *testing.T) {
+	t.Parallel()
+	model := New()
+	model, _, handled := model.Update(tea.BackgroundColorMsg{Color: color.RGBA{R: 0x20, G: 0x30, B: 0x40, A: 0xff}})
+	if !handled || !model.backgroundReported || model.terminalBackground != (color.RGBA{R: 0x20, G: 0x30, B: 0x40, A: 0xff}) {
+		t.Fatalf("reported background was not retained: %+v", model)
+	}
+	addition, removal := model.diffTints()
+	if addition != blendColor(model.terminalBackground, additionTintSource, tintAlpha) ||
+		removal != blendColor(model.terminalBackground, removalTintSource, tintAlpha) {
+		t.Fatalf("blended tints = %v / %v", addition, removal)
+	}
+	model.page = labPageDiffTints
+	plain := ansi.Strip(model.View(100, 24))
+	if !strings.Contains(plain, "background #203040 · terminal reported") ||
+		!strings.Contains(plain, "addition "+colorHex(addition)) ||
+		!strings.Contains(plain, "removal  "+colorHex(removal)) {
+		t.Fatalf("reported background/tints are not visible:\n%s", plain)
 	}
 }

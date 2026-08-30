@@ -17,8 +17,8 @@ func TestDevLabTogglesWithoutChangingApplicationPlace(t *testing.T) {
 
 	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'l', Mod: tea.ModCtrl}))
 	model = next.(Model)
-	if command != nil || !model.lab.active || !strings.Contains(model.View().Content, "lab / switchers") {
-		t.Fatalf("opening lab = active %v command=%v", model.lab.active, command != nil)
+	if command == nil || !model.lab.active || !strings.Contains(model.View().Content, "lab / switchers") {
+		t.Fatalf("opening lab = active %v background request=%v", model.lab.active, command != nil)
 	}
 	next, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
 	model = next.(Model)
