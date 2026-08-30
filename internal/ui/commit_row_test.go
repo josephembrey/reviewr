@@ -64,6 +64,32 @@ func TestCommitRowUsesGraphAndSemanticANSIPalette(t *testing.T) {
 	}
 }
 
+func TestCommitGraphPaletteUsesSixDistinctANSIColors(t *testing.T) {
+	t.Parallel()
+	want := [...]ansi.BasicColor{
+		lipgloss.Cyan,
+		lipgloss.Magenta,
+		lipgloss.Green,
+		lipgloss.Yellow,
+		lipgloss.Blue,
+		lipgloss.Red,
+	}
+	seen := make(map[ansi.BasicColor]struct{}, len(want))
+	for index, color := range graphPalette {
+		basic, ok := color.(ansi.BasicColor)
+		if !ok {
+			t.Fatalf("graph color %d is %T, want terminal ANSI", index, color)
+		}
+		if basic != want[index] {
+			t.Errorf("graph color %d = %v, want %v", index, basic, want[index])
+		}
+		if _, duplicate := seen[basic]; duplicate {
+			t.Errorf("graph color %d duplicates ANSI slot %v", index, basic)
+		}
+		seen[basic] = struct{}{}
+	}
+}
+
 func TestMeasureNavigatorCommitsOnlyScansCommitViewports(t *testing.T) {
 	t.Parallel()
 	commits := commitFixtureRows()[:2]

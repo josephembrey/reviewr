@@ -89,7 +89,7 @@ func TestTokenStylesRetainTerminalColorSemantics(t *testing.T) {
 		{token: chroma.Keyword, want: Style{Foreground: "4"}},
 		{token: chroma.NameDecorator, want: Style{Foreground: "4"}},
 		{token: chroma.CommentSingle, want: Style{Foreground: "8"}},
-		{token: chroma.Operator, want: Style{Foreground: "8"}},
+		{token: chroma.Operator, want: Style{Foreground: "6"}},
 		{token: chroma.GenericHeading, want: Style{Foreground: "4", Bold: true}},
 		{token: chroma.GenericStrong, want: Style{Bold: true}},
 		{token: chroma.GenericEmph, want: Style{Italic: true}},

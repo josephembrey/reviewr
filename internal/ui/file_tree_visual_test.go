@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestFileTreeIconResolver(t *testing.T) {
@@ -94,6 +95,34 @@ func TestNixIconUsesCanonicalTruecolorBlue(t *testing.T) {
 			t.Fatalf("treeFileIcon(%q) = %#v, want Nix snowflake", name, icon)
 		}
 		assertSameColor(t, fileTreeIconColor(icon.tone), color.RGBA{R: 0x7e, G: 0xba, B: 0xe4, A: 0xff})
+	}
+}
+
+func TestFileTypeIconTruecolorCatalog(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		tone fileIconTone
+		want color.RGBA
+	}{
+		{name: "red", tone: fileIconRed, want: color.RGBA{R: 0xe0, G: 0x6c, B: 0x75, A: 0xff}},
+		{name: "green", tone: fileIconGreen, want: color.RGBA{R: 0x98, G: 0xc3, B: 0x79, A: 0xff}},
+		{name: "yellow", tone: fileIconYellow, want: color.RGBA{R: 0xe5, G: 0xc0, B: 0x7b, A: 0xff}},
+		{name: "orange", tone: fileIconOrange, want: color.RGBA{R: 0xd1, G: 0x9a, B: 0x66, A: 0xff}},
+		{name: "purple", tone: fileIconPurple, want: color.RGBA{R: 0xc6, G: 0x78, B: 0xdd, A: 0xff}},
+		{name: "blue", tone: fileIconBlue, want: color.RGBA{R: 0x61, G: 0xaf, B: 0xef, A: 0xff}},
+		{name: "cyan", tone: fileIconCyan, want: color.RGBA{R: 0x56, G: 0xb6, B: 0xc2, A: 0xff}},
+		{name: "nix blue", tone: fileIconNix, want: color.RGBA{R: 0x7e, G: 0xba, B: 0xe4, A: 0xff}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := fileTreeIconColor(test.tone)
+			if _, isANSI := got.(ansi.BasicColor); isANSI {
+				t.Fatalf("file icon %s unexpectedly uses ANSI slot %v", test.name, got)
+			}
+			assertSameColor(t, got, test.want)
+		})
 	}
 }
 

@@ -217,7 +217,7 @@ func unifiedDiffDocument(path, content string) ui.ReaderDocument {
 		if header, ok := parseHunkHeader(text); ok {
 			flush()
 			position = header
-			document.Rows = append(document.Rows, ui.ReaderRow{Kind: ui.ReaderMetadata, Text: text, Tone: ui.ToneAccent})
+			document.Rows = append(document.Rows, ui.ReaderRow{Kind: ui.ReaderMetadata, Text: text, Tone: ui.ToneSpecial})
 			continue
 		}
 		if row, kind, ok := position.takeRow(text); ok {

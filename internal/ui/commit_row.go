@@ -11,13 +11,15 @@ import (
 	"github.com/josephembrey/reviewr/internal/commitrow"
 )
 
-var graphPalette = []color.Color{
+// Six distinct terminal hues keep adjacent graph lanes identifiable without
+// imposing RGB values on the user's palette.
+var graphPalette = [...]color.Color{
 	accentColor,
-	lipgloss.Magenta,
-	lipgloss.Green,
-	lipgloss.Yellow,
-	lipgloss.Yellow,
-	lipgloss.Red,
+	specialColor,
+	addedColor,
+	warningColor,
+	lipgloss.Blue,
+	errorColor,
 }
 
 func renderCommitRow(row commitrow.Row, columns commitrow.Columns, width int, selected, focused bool, now time.Time) string {
@@ -137,9 +139,9 @@ func commitRefStyle(kind commitrow.RefKind) (string, color.Color) {
 	case commitrow.Remote:
 		return "", accentColor
 	case commitrow.Tag:
-		return "", lipgloss.Yellow
+		return "", warningColor
 	default:
-		return "", lipgloss.Green
+		return "", addedColor
 	}
 }
 

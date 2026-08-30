@@ -9,8 +9,8 @@ import (
 
 var (
 	headerControlStyles = map[HitKind]lipgloss.Style{
-		HitTertiaryControl:      purpleStyle,
-		HitComparisonControl:    yellowStyle,
+		HitTertiaryControl:      specialStyle,
+		HitComparisonControl:    warningStyle,
 		HitDiffHighlightControl: headerStyle,
 	}
 )

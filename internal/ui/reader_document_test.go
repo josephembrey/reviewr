@@ -77,7 +77,7 @@ func TestReaderCursorSelectionOwnsTheWholeVisualLine(t *testing.T) {
 	}, false)
 	row := ReaderRow{
 		Kind: ReaderInsertion, Text: "changed", NewLine: 12,
-		Spans: []TextSpan{{Text: "changed", Tone: ToneAccent}},
+		Spans: []TextSpan{{Text: "changed", Tone: ToneSpecial}},
 	}
 	base := renderReaderRowPart(row, geometry, workspace.DiffHighlightBackground, false)
 	selected := renderReaderRowPartSelected(row, geometry, workspace.DiffHighlightBackground, false, true, true)

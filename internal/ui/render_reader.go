@@ -200,10 +200,10 @@ func readerLineNumber(row ReaderRow, digits int, continuation bool) string {
 }
 
 func renderReaderBackgroundRow(row ReaderRow, bar, number string, width int) string {
-	backgroundColor := lipgloss.Green
+	backgroundColor := addedColor
 	barColor := lipgloss.BrightGreen
 	if row.Kind == ReaderDeletion {
-		backgroundColor = lipgloss.Red
+		backgroundColor = errorColor
 		barColor = lipgloss.BrightRed
 	}
 	base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black)

@@ -251,7 +251,7 @@ func TestRefsPresentationCoversLoadingErrorsAndTypedRowMetadata(t *testing.T) {
 		previewError: errors.New("preview failed\x1b[31m"),
 	}
 	view = state.viewModel(geometry)
-	if len(view.NavigatorRows) != 2 || view.NavigatorRows[0].Prefix[0].Tone != ui.ToneAccent || view.NavigatorRows[1].Suffix[0].Text != "  origin/topic >" {
+	if len(view.NavigatorRows) != 2 || view.NavigatorRows[0].Prefix[0].Tone != ui.ToneSpecial || view.NavigatorRows[1].Suffix[0].Text != "  origin/topic >" {
 		t.Fatalf("typed navigator metadata = %#v", view.NavigatorRows)
 	}
 	if view.ReaderEmpty.Tone != ui.ToneError || !strings.Contains(view.ReaderTitle, "topic") || !strings.Contains(view.ReaderTitle, refsOIDb[:7]) {

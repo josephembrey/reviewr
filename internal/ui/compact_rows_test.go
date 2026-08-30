@@ -11,7 +11,7 @@ import (
 func TestCompactNavigatorRowsPreservePrimaryProseAndFullWidthSelection(t *testing.T) {
 	t.Parallel()
 	row := NavigatorRow{
-		Prefix: []Segment{{Text: "stash@{0} ", Tone: ToneAccent}},
+		Prefix: []Segment{{Text: "stash@{0} ", Tone: ToneSpecial}},
 		Label:  "long subject\nwith hostile controls\x1b",
 		Suffix: []Segment{
 			{Text: "99f ", Tone: ToneQuiet},
@@ -37,7 +37,7 @@ func TestCompactNavigatorRowsPreservePrimaryProseAndFullWidthSelection(t *testin
 			t.Fatalf("wide compact row misses %q: %q", want, plain)
 		}
 	}
-	if !strings.Contains(wide, purpleStyle.Render("stash@{0} ")) ||
+	if !strings.Contains(wide, specialStyle.Render("stash@{0} ")) ||
 		!strings.Contains(wide, addedStyle.Render("+123 ")) ||
 		!strings.Contains(wide, errorStyle.Render("-45 2h")) {
 		t.Fatalf("compact row lacks semantic segment styles: %q", wide)

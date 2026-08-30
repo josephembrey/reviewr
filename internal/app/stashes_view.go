@@ -48,7 +48,7 @@ func (state stashState) navigatorRows(now time.Time) []ui.NavigatorRow {
 		suffix = append(suffix, ui.Segment{Text: " " + ageLabel(now, stash.Timestamp), Tone: ui.ToneQuiet})
 		rows[index] = ui.NavigatorRow{
 			Identity: stash.OID,
-			Prefix:   []ui.Segment{{Text: stash.Selector + " ", Tone: ui.ToneAccent}},
+			Prefix:   []ui.Segment{{Text: stash.Selector + " ", Tone: ui.ToneSpecial}},
 			Label:    prose,
 			Suffix:   suffix,
 		}

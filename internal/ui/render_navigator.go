@@ -20,7 +20,7 @@ var (
 	reviewBadgeStyles = [...]lipgloss.Style{
 		review.Reviewed:     addedStyle,
 		review.Updated:      headerStyle,
-		review.Partial:      yellowStyle,
+		review.Partial:      warningStyle,
 		review.BasisChanged: errorStyle,
 	}
 	treeStatusPresentations = [...]treeStatusPresentation{

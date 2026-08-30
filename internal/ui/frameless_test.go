@@ -126,7 +126,7 @@ func TestSelectionStyleUsesTerminalReverseWithoutAccentColor(t *testing.T) {
 
 func TestStructuralPaletteUsesTerminalANSIRoles(t *testing.T) {
 	t.Parallel()
-	got := []ansi.BasicColor{accentColor, secondaryColor, mutedColor, errorColor, addedColor, purpleColor, yellowColor}
+	got := []ansi.BasicColor{accentColor, secondaryColor, mutedColor, errorColor, addedColor, specialColor, warningColor}
 	want := []ansi.BasicColor{
 		lipgloss.Cyan,
 		lipgloss.White,

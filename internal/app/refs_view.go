@@ -98,11 +98,11 @@ func (state refsState) readerEmpty() ui.Line {
 func refSourcePresentation(source repository.RefSource) (icon string, tone ui.Tone, trail string) {
 	switch source.ID.Kind {
 	case repository.RefSourceAll:
-		return "", ui.ToneAccent, "public refs"
+		return "", ui.ToneSpecial, "public refs"
 	case repository.RefSourceCurrentWorktree:
 		return "", ui.ToneAdded, "current worktree"
 	case repository.RefSourceLinkedWorktree:
-		return "", ui.ToneAccent, source.Path
+		return "", ui.ToneSpecial, source.Path
 	case repository.RefSourceLocalBranch:
 		trail = "local branch"
 		if source.Upstream != "" {

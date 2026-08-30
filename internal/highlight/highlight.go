@@ -20,6 +20,18 @@ type Style struct {
 	Underline  bool
 }
 
+// Syntax colors are ANSI slots rather than RGB values so highlighting follows
+// the terminal palette. Names make the numeric Lip Gloss color contract
+// explicit at the tokenizer boundary.
+const (
+	ansiRed         = "1"
+	ansiGreen       = "2"
+	ansiYellow      = "3"
+	ansiBlue        = "4"
+	ansiCyan        = "6"
+	ansiBrightBlack = "8"
+)
+
 // Span is one contiguous source fragment with a shared token style.
 type Span struct {
 	Text  string
@@ -162,26 +174,26 @@ func tokenForeground(tokenType chroma.TokenType) string {
 	case tokenType == chroma.Error, tokenType == chroma.NameException,
 		tokenType == chroma.NameTag, tokenType == chroma.GenericError,
 		tokenType == chroma.GenericTraceback, tokenType == chroma.GenericDeleted:
-		return "1"
+		return ansiRed
 	case tokenType == chroma.GenericInserted:
-		return "2"
+		return ansiGreen
 	case tokenType == chroma.NameConstant, tokenType == chroma.LiteralDate,
 		tokenType.InSubCategory(chroma.LiteralNumber), tokenType == chroma.LiteralStringInterpol:
-		return "3"
+		return ansiYellow
 	case tokenType == chroma.KeywordNamespace, tokenType == chroma.NameAttribute,
 		tokenType.InSubCategory(chroma.NameBuiltin), tokenType.InSubCategory(chroma.NameFunction),
 		tokenType == chroma.NameNamespace, tokenType == chroma.LiteralStringEscape:
-		return "6"
+		return ansiCyan
 	case tokenType.InSubCategory(chroma.LiteralString),
 		tokenType == chroma.KeywordType, tokenType == chroma.NameClass:
-		return "2"
+		return ansiGreen
 	case tokenType.InCategory(chroma.Keyword), tokenType == chroma.NameDecorator,
 		tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
-		return "4"
+		return ansiBlue
 	case tokenType.InCategory(chroma.Comment):
-		return "8"
+		return ansiBrightBlack
 	case tokenType.InCategory(chroma.Operator):
-		return "8"
+		return ansiCyan
 	default:
 		return ""
 	}

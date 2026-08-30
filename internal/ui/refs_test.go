@@ -16,9 +16,9 @@ import (
 func TestRefsRowsRenderDistinctRestrainedIconsTonesAndTrails(t *testing.T) {
 	t.Parallel()
 	rows := []NavigatorRow{
-		{Identity: "all", Prefix: []Segment{{Text: "  ", Tone: ToneAccent}}, Label: "All refs", Suffix: []Segment{{Text: "  public refs", Tone: ToneQuiet}}},
+		{Identity: "all", Prefix: []Segment{{Text: "  ", Tone: ToneSpecial}}, Label: "All refs", Suffix: []Segment{{Text: "  public refs", Tone: ToneQuiet}}},
 		{Identity: "current", Prefix: []Segment{{Text: "  ", Tone: ToneAdded}}, Label: "main", Suffix: []Segment{{Text: "  current worktree", Tone: ToneQuiet}}},
-		{Identity: "linked", Prefix: []Segment{{Text: "  ", Tone: ToneAccent}}, Label: "feature", Suffix: []Segment{{Text: "  /very/long/linked/worktree/path", Tone: ToneQuiet}}},
+		{Identity: "linked", Prefix: []Segment{{Text: "  ", Tone: ToneSpecial}}, Label: "feature", Suffix: []Segment{{Text: "  /very/long/linked/worktree/path", Tone: ToneQuiet}}},
 		{Identity: "branch", Prefix: []Segment{{Text: "  ", Tone: ToneAdded}}, Label: "topic", Suffix: []Segment{{Text: "  origin/topic >", Tone: ToneQuiet}}},
 		{Identity: "remote", Prefix: []Segment{{Text: "  ", Tone: ToneInfo}}, Label: "origin/main", Suffix: []Segment{{Text: "  remote", Tone: ToneQuiet}}},
 		{Identity: "tag", Prefix: []Segment{{Text: "  ", Tone: ToneWarning}}, Label: "v1", Suffix: []Segment{{Text: "  tag", Tone: ToneQuiet}}},
@@ -42,10 +42,10 @@ func TestRefsRowsRenderDistinctRestrainedIconsTonesAndTrails(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		purpleStyle.Render("  "),
+		specialStyle.Render("  "),
 		addedStyle.Render("  "),
 		headerStyle.Render("  "),
-		yellowStyle.Render("  "),
+		warningStyle.Render("  "),
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("Refs frame lacks colored icon %q:\n%q", want, frame)
@@ -63,7 +63,7 @@ func TestRefsNavigatorPrioritizesLabelAndKeepsSelectionFullWidth(t *testing.T) {
 	t.Parallel()
 	row := NavigatorRow{
 		Identity: "worktree",
-		Prefix:   []Segment{{Text: "  ", Tone: ToneAccent}},
+		Prefix:   []Segment{{Text: "  ", Tone: ToneSpecial}},
 		Label:    "important-source-label",
 		Suffix:   []Segment{{Text: "  /an/extremely/long/worktree/path/that/is/secondary", Tone: ToneQuiet}},
 	}

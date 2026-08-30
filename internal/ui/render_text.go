@@ -9,11 +9,11 @@ import (
 var toneStyles = [...]lipgloss.Style{
 	ToneQuiet:   mutedStyle,
 	ToneError:   errorStyle,
-	ToneAccent:  purpleStyle,
+	ToneSpecial: specialStyle,
 	ToneAdded:   addedStyle,
 	ToneRemoved: errorStyle,
 	ToneInfo:    headerStyle,
-	ToneWarning: yellowStyle,
+	ToneWarning: warningStyle,
 }
 
 func renderSegments(segments []Segment) string {
