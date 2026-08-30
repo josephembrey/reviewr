@@ -40,7 +40,7 @@ func TestReaderContextFoldsHideOnlyLongUnchangedGaps(t *testing.T) {
 	for _, row := range compact.Rows {
 		if row.Kind == ReaderFold {
 			folds++
-			if row.DisplayLine() != 0 || !strings.Contains(row.Text, "unchanged lines") {
+			if row.DisplayLine() != 0 || row.Tone != ToneDefault || !strings.Contains(row.Text, "unchanged lines") {
 				t.Fatalf("fold row = %+v", row)
 			}
 		}

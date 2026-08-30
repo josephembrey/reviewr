@@ -27,8 +27,8 @@ func TestLinesDetectsLexerAndPreservesSource(t *testing.T) {
 		t.Fatalf("package color = %q, want terminal cyan", got)
 	}
 	comment := styleForText(lines[2], "comment")
-	if comment.Foreground != "8" || !comment.Italic {
-		t.Fatalf("comment style = %+v, want italic comment color", comment)
+	if comment.Foreground != "" || !comment.Italic {
+		t.Fatalf("comment style = %+v, want readable inherited foreground with italics", comment)
 	}
 	if got := styleForText(lines[3], "42").Foreground; got != "3" {
 		t.Fatalf("number color = %q, want terminal yellow", got)

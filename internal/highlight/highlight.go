@@ -161,7 +161,6 @@ func tokenStyle(tokenType chroma.TokenType) Style {
 	case tokenType.InCategory(chroma.Keyword), tokenType == chroma.NameDecorator:
 		style.Foreground = "4"
 	case tokenType.InCategory(chroma.Comment):
-		style.Foreground = "8"
 		style.Italic = true
 	case tokenType.InCategory(chroma.Operator):
 		style.Foreground = "8"
