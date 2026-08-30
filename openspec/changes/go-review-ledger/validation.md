@@ -67,4 +67,4 @@ fixture:
 - `nix develop -c just check`: pass, including all hooks, ordinary and `dev` tests, and the full
   repository race suite.
 - Source/tests and specification/documentation were committed as focused local commits. No push or
-  merge was performed.
+  merge commit was performed; the branch retains the user-authorized fast-forward to `640515b`.
