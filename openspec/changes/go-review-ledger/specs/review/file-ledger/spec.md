@@ -52,12 +52,13 @@ advance, or remove receipts.
 - **THEN** no review receipt or comparison bound is inferred from that activity
 
 ### Requirement: Review status is derived honestly
-Reviewr SHALL derive exactly five per-file states for changed files: `[ ]` Unreviewed when no receipt
-covers the active comparison from its left endpoint; `[x]` Reviewed when exact coverage reaches the
-exact current endpoint; `[+]` Updated when a contiguous reviewed prefix safely supports an
-incremental comparison to current; `[~]` Partial when related coverage exists but an older or
-noncontiguous gap remains; and `[!]` Basis changed when related coverage exists but incremental proof
-is unsafe.
+Reviewr SHALL derive exactly five internal per-file proof states for changed files: Unreviewed when
+no receipt covers the active comparison from its left endpoint; Reviewed when exact coverage reaches
+the exact current endpoint; Updated when a contiguous reviewed prefix safely supports an incremental
+comparison to current; Partial when related coverage exists but an older or noncontiguous gap
+remains; and Basis changed when related coverage exists but incremental proof is unsafe. The UI
+SHALL expose four states by mapping them to `[ ]` Unreviewed, `[x]` Reviewed, `[~]` Updated since
+review, and `[!]` Re-review required for either Partial or Basis changed.
 
 #### Scenario: No related receipt exists
 - **WHEN** a concrete changed-file comparison has no related receipt
@@ -194,13 +195,14 @@ descendants, and SHALL never own receipts.
 
 ### Requirement: Review presentation keeps independent signals
 Every changed-file row SHALL reserve a distinct rightmost review field using fixed-width ASCII
-badges `[ ]`, `[x]`, `[+]`, `[~]`, and `[!]`. The review field SHALL remain semantically and visually
+badges `[ ]`, `[x]`, `[~]`, and `[!]`. The review field SHALL remain semantically and visually
 distinct from filetype icons, Git status, file names, and statistics. Unchanged files visible in All
 scope SHALL reserve no review badge.
 
-#### Scenario: All five states render together
-- **WHEN** visible changed rows represent all five review states
-- **THEN** each row renders the corresponding distinct aligned three-column ASCII badge
+#### Scenario: All five internal states render together
+- **WHEN** visible changed rows represent all five internal review states
+- **THEN** each row renders an aligned three-column badge, with Updated rendered as `[~]` and both
+  Partial and Basis changed rendered as `[!]`
 
 #### Scenario: Unchanged All-scope file renders
 - **WHEN** an unchanged file is visible in All scope

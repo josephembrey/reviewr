@@ -142,10 +142,8 @@ func (state filesState) reviewBoundsTitle() string {
 		return "  since reviewed"
 	case assessment.State == review.Updated && state.reviewFull[state.readerEntry.Path]:
 		return "  full comparison"
-	case assessment.State == review.Partial:
-		return "  older review gap; full comparison"
-	case assessment.State == review.BasisChanged:
-		return "  review basis changed; full comparison"
+	case assessment.State == review.Partial || assessment.State == review.BasisChanged:
+		return "  re-review required; full comparison"
 	default:
 		return ""
 	}

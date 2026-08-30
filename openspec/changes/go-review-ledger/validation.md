@@ -49,12 +49,12 @@ fixture:
   independent status prefixes, icons, right badges, rollups, scrollbar geometry, folding, and `X`
   expansion remained aligned.
 - Marking a new text file changed `[ ]` to `[x]`; editing it externally and refreshing changed it to
-  `[+]` and opened `since reviewed`; `R` showed the full comparison; reader-focused `x` marked only
+  `[~]` and opened `since reviewed`; `R` showed the full comparison; reader-focused `x` marked only
   the incremental edge and restored `[x]`.
 - Quitting and restarting with the same isolated state root recovered `[x]`.
 - An exact binary addition displayed the binary notice and was explicitly markable.
 - An oversized text addition displayed the bounded notice and was explicitly markable. Changing it
-  after review refreshed to `[!]` with `review basis changed; full comparison`, without inventing an
+  after review refreshed to `[!]` with `re-review required; full comparison`, without inventing an
   interdiff.
 - Collapsing a nested directory and invoking `X` expanded the required ancestor and selected the
   hidden gap.

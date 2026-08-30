@@ -6,14 +6,21 @@ comment lifecycle. Opening or observing content never changes coverage.
 
 ## States and actions
 
-Only changed files with an exact comparison have a badge:
+Only changed files with an exact comparison have a badge. Five internal proof states collapse into
+four visible review states:
 
 - `[ ]` Unreviewed: no receipt covers the active comparison from its left endpoint.
 - `[x]` Reviewed: exact reviewed edges reach the current endpoint.
-- `[+]` Updated: a safe retained reviewed frontier can be compared incrementally to current.
-- `[~]` Partial: related coverage exists, but an older or noncontiguous gap remains.
-- `[!]` Basis changed: related coverage exists, but a rebase, ambiguous identity, unavailable
-  checkpoint, binary/oversized edit, or another proof break makes an incremental view unsafe.
+- `[~]` Updated since review: a safe retained reviewed frontier can be compared incrementally to
+  current.
+- `[!]` Re-review required: existing review evidence cannot provide a complete, trustworthy
+  incremental view.
+
+Re-review required retains two distinct internal states. Partial means related coverage exists but
+an older or noncontiguous gap remains. Basis changed means a rebase, ambiguous identity, unavailable
+checkpoint, binary/oversized edit, or another proof break makes an incremental view unsafe. Keeping
+that distinction inside the proof model preserves diagnostics without making reviewers interpret
+two versions of the same required action.
 
 The badge is independent of the Bontree filetype icon and the Git status marker. Directories show
 derived `reviewed/changed` progress and never own receipts. Unchanged rows in the All projection have
@@ -22,24 +29,24 @@ no badge or review mouse target.
 - `x` toggles the selected concrete changed file when the navigator is focused, or the exact bounds
   currently shown by the Files reader when the reader is focused.
 - Clicking any of the four cells in the separator-plus-badge field performs the same semantic action.
-- `R` switches an Updated reader between `since reviewed` and full active bounds without changing
-  coverage or other place state.
+- `R` switches an Updated since review reader between `since reviewed` and full active bounds
+  without changing coverage or other place state.
 - `X` selects the next gap by Basis changed, Updated, Partial, Unreviewed priority and then full tree
   order, expanding only the required ancestors.
 
 The `since reviewed` comparison is the authoritative view of only the new work. In the full
-comparison and current-file readers, Updated files also reserve a narrow cyan rail beside the
-red/green change rail. It marks current lines introduced since the exact reviewed frontier and
-anchors newly removed lines at the nearest surviving boundary. Reversions remain visible even when
-they are ordinary context relative to the original Git base. The rail is derived, never stored, and
-is omitted for Unreviewed, Reviewed, Partial, and Basis changed files where that claim would be
-redundant or unsafe.
+comparison and current-file readers, Updated since review files also reserve a narrow cyan rail
+beside the red/green change rail. It marks current lines introduced since the exact reviewed
+frontier and anchors newly removed lines at the nearest surviving boundary. Reversions remain
+visible even when they are ordinary context relative to the original Git base. The rail is derived,
+never stored, and is omitted for Unreviewed, Reviewed, and `[!]` files where that claim
+would be redundant or unsafe.
 
 Every mark is re-read and checked against the displayed comparison's exact right endpoint before a
 receipt is accepted. Rename, copy, deletion, kind, mode, executable-bit, symlink-target, and
 submodule transitions remain explicit work. Exact byte/kind/mode reversion can reuse an existing
 exact proof. Binary and oversized endpoints retain identities, not bodies; a later edit therefore
-becomes Basis changed instead of receiving an invented interdiff.
+becomes Re-review required instead of receiving an invented interdiff.
 
 ## Private state and recovery
 

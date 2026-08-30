@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add `internal/review` endpoint, source, comparison-identity, action, receipt, assessment,
   state, and badge types with exact equality and unavailable/absent identity semantics; cover the
-  five fixed-width ASCII badge values and gap priorities.
+  five internal proof states, four fixed-width ASCII badge values, and gap priorities.
 - [x] 1.2 Implement explicit mark, applicable clear, exact-endpoint reachability, adjacent receipt
   composition, reviewed-frontier selection, duplicate-edge replacement, and read-only assessment;
   test cumulative edges, direct full receipts, disjoint paths, and narrow versus broad scopes.
@@ -71,7 +71,8 @@
 - [x] 5.2 Add one navigator-row layout calculation used by both rendering and hit testing, reserving
   the rightmost separator-plus-badge cell ahead of label clipping and scrollbars; route every cell in
   that four-column rectangle to the semantic review action.
-- [x] 5.3 Add render and geometry tests for all five aligned ASCII badges, independent tones, complete
+- [x] 5.3 Add render and geometry tests for all five internal states mapped to four aligned ASCII
+  badges, independent tones, complete
   badge mouse targets, directory roll-ups, unchanged rows, tree prefixes, scrollbars, narrow widths,
   focused/unfocused selection, and no accidental row activation or folding.
 - [x] 5.4 Add end-to-end app tests for `x`, `R`, `X`, mouse badges, updated/full titles, persistence

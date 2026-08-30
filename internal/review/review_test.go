@@ -44,9 +44,9 @@ func TestStateBadgesLabelsAndGapPriority(t *testing.T) {
 	}{
 		{Unreviewed, "[ ]", "unreviewed", 3, true},
 		{Reviewed, "[x]", "reviewed", 0, false},
-		{Updated, "[+]", "updated", 1, true},
-		{Partial, "[~]", "partial review", 2, true},
-		{BasisChanged, "[!]", "review basis changed", 0, true},
+		{Updated, "[~]", "updated since review", 1, true},
+		{Partial, "[!]", "re-review required", 2, true},
+		{BasisChanged, "[!]", "re-review required", 0, true},
 	}
 	for _, test := range cases {
 		priority, gap := test.state.GapPriority()

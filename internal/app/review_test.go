@@ -220,8 +220,8 @@ func TestPartialAndBasisChangedReadersExplainFullBounds(t *testing.T) {
 		basis string
 		want  string
 	}{
-		{name: "partial", scope: "last-turn", basis: "head", want: "older review gap; full comparison"},
-		{name: "basis changed", scope: "uncommitted", basis: "old-head", want: "review basis changed; full comparison"},
+		{name: "partial", scope: "last-turn", basis: "head", want: "re-review required; full comparison"},
+		{name: "basis changed", scope: "uncommitted", basis: "old-head", want: "re-review required; full comparison"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			current := testComparison("a.go", "head", "current-old", "current-new")

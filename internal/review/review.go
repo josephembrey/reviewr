@@ -135,10 +135,8 @@ func (s State) Badge() string {
 	case Reviewed:
 		return "[x]"
 	case Updated:
-		return "[+]"
-	case Partial:
 		return "[~]"
-	case BasisChanged:
+	case Partial, BasisChanged:
 		return "[!]"
 	default:
 		return "[ ]"
@@ -151,11 +149,9 @@ func (s State) Label() string {
 	case Reviewed:
 		return "reviewed"
 	case Updated:
-		return "updated"
-	case Partial:
-		return "partial review"
-	case BasisChanged:
-		return "review basis changed"
+		return "updated since review"
+	case Partial, BasisChanged:
+		return "re-review required"
 	default:
 		return "unreviewed"
 	}

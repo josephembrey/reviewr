@@ -34,6 +34,17 @@ func TestUnreviewedBadgeAndDirectoryProgressUseReadableSecondaryForeground(t *te
 	}
 }
 
+func TestReviewBadgeColorsMatchTheFourVisibleStates(t *testing.T) {
+	t.Parallel()
+	assertSameColor(t, reviewBadgeStyle(review.Reviewed).GetForeground(), addedColor)
+	assertSameColor(t, reviewBadgeStyle(review.Updated).GetForeground(), accentColor)
+	assertSameColor(t, reviewBadgeStyle(review.Partial).GetForeground(), errorColor)
+	assertSameColor(t, reviewBadgeStyle(review.BasisChanged).GetForeground(), errorColor)
+	if review.Updated.Badge() != "[~]" || review.Partial.Badge() != "[!]" || review.BasisChanged.Badge() != "[!]" {
+		t.Fatalf("collapsed badge vocabulary = %q, %q, %q", review.Updated.Badge(), review.Partial.Badge(), review.BasisChanged.Badge())
+	}
+}
+
 func TestNavigatorRowLayoutReservesProgressAndCompleteBadge(t *testing.T) {
 	changes := LineChanges{Additions: 12, Deletions: 3}
 	layout := LayoutNavigatorRow(NavigatorRow{Reviewable: true, Review: review.Partial, Changes: changes, Progress: "12/30"}, 30)

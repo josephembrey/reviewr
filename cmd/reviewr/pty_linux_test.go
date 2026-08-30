@@ -170,7 +170,7 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	mustWriteFixture(t, repository, "root.go", []byte("package root\nconst Version = 2\n"))
 	first.resetOutput()
 	first.write(t, "r")
-	first.waitFor(t, "[+]")
+	first.waitFor(t, "[~]")
 	first.resetOutput()
 	first.write(t, "2")
 	first.waitFor(t, "since reviewed")

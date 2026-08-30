@@ -40,7 +40,7 @@ openspec/          active product specifications and changes
 The file tree uses Nerd Font file and folder glyphs; terminals should use a Nerd Font for the
 intended one-cell alignment and filetype silhouettes.
 
-Changed files carry independent `[ ]`, `[x]`, `[+]`, `[~]`, or `[!]` review badges. Review coverage
+Changed files carry independent `[ ]`, `[x]`, `[~]`, or `[!]` review badges. Review coverage
 changes only through `x` or a badge click; reading a file never marks it. See
 [docs/review-ledger.md](docs/review-ledger.md) for the exact semantics, private state format, and
 comparison-provider boundary.
