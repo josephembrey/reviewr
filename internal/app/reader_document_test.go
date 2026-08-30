@@ -537,6 +537,43 @@ func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	}
 }
 
+func TestReaderLandmarkNavigationReachesTrailingContextFold(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
+	model.controls.Reader = workspace.DiffReader
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerMode = workspace.DiffReader
+	document := ui.ReaderDocument{Kind: ui.ReaderDiffDocument}
+	for line := 1; line <= 10; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ui.ReaderContext,
+			Text: fmt.Sprintf("context %d", line), OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	document.Rows = append(document.Rows, ui.ReaderRow{
+		Identity: "added", Kind: ui.ReaderInsertion, Text: "changed", NewLine: 11,
+	})
+	for line := 12; line <= 21; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("context:%d", line), Kind: ui.ReaderContext,
+			Text: fmt.Sprintf("context %d", line), OldLine: uint64(line), NewLine: uint64(line),
+		})
+	}
+	model.files.readerPresentation = &document
+
+	presented := model.files.readerDocument()
+	targets := model.settings.hunkNavigationTargets(readerNavigationLandmarks(presented))
+	if len(targets) != 2 || presented.Rows[targets[0]].Kind != ui.ReaderFold || presented.Rows[targets[1]].Kind != ui.ReaderFold {
+		t.Fatalf("landmarks = %v in %+v, want leading and trailing folds", targets, presented.Rows)
+	}
+	model.files.place.ReaderCursor = targets[0]
+	model.apply(Action{Kind: SelectNextLandmark})
+	if model.files.place.ReaderCursor != targets[1] {
+		t.Fatalf("next landmark = %d, want trailing fold %d", model.files.place.ReaderCursor, targets[1])
+	}
+}
+
 func TestReaderClickSelectsLogicalLine(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

@@ -76,11 +76,13 @@ type readerNavigationLandmarkKind uint8
 
 const (
 	readerHunkLandmark readerNavigationLandmarkKind = iota
+	readerFoldLandmark
 	readerCommentLandmark
 )
 
 // readerNavigationLandmark is the policy boundary between reader features and
-// [/]. Hunk starts and stable inline-comment headers share this ordered stream.
+// [/]. Hunks, context folds, and stable inline-comment headers share this
+// ordered stream.
 type readerNavigationLandmark struct {
 	row      int
 	kind     readerNavigationLandmarkKind
@@ -98,6 +100,9 @@ func readerNavigationLandmarks(document ui.ReaderDocument) []readerNavigationLan
 		landmarks = append(landmarks, readerNavigationLandmark{row: row, kind: readerHunkLandmark})
 	}
 	for row, candidate := range document.Rows {
+		if candidate.Kind == ui.ReaderFold {
+			landmarks = append(landmarks, readerNavigationLandmark{row: row, kind: readerFoldLandmark})
+		}
 		if identity, ok := candidate.CommentHeaderIdentity(); ok && candidate.Selectable() {
 			landmarks = append(landmarks, readerNavigationLandmark{
 				row:      row,
@@ -119,7 +124,7 @@ func (state settingsState) hunkNavigationTargets(landmarks []readerNavigationLan
 			continue
 		}
 		switch landmark.kind {
-		case readerHunkLandmark:
+		case readerHunkLandmark, readerFoldLandmark:
 			targets = append(targets, landmark.row)
 		case readerCommentLandmark:
 			if state.includeCommentsInHunkNavigation {
