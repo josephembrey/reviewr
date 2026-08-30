@@ -112,18 +112,15 @@ func (l Ledger) receiptIndicesByPath() map[string][]int {
 
 func (l Ledger) connectedReceipts(byPath map[string][]int, comparison FileComparison) []Receipt {
 	paths := []string{comparison.Old.Path}
+	queuedPaths := map[string]struct{}{comparison.Old.Path: {}}
 	if comparison.New.Path != comparison.Old.Path {
 		paths = append(paths, comparison.New.Path)
+		queuedPaths[comparison.New.Path] = struct{}{}
 	}
-	seenPaths := make(map[string]struct{}, len(paths))
 	seenReceipts := make(map[int]struct{})
 	receipts := make([]Receipt, 0)
 	for nextPath := 0; nextPath < len(paths); nextPath++ {
 		path := paths[nextPath]
-		if _, seen := seenPaths[path]; seen {
-			continue
-		}
-		seenPaths[path] = struct{}{}
 		for _, index := range byPath[path] {
 			if _, seen := seenReceipts[index]; seen {
 				continue
@@ -131,10 +128,19 @@ func (l Ledger) connectedReceipts(byPath map[string][]int, comparison FileCompar
 			seenReceipts[index] = struct{}{}
 			receipt := l.ReceiptData[index]
 			receipts = append(receipts, receipt)
-			paths = append(paths, receipt.Old.Path, receipt.New.Path)
+			paths = enqueuePath(paths, queuedPaths, receipt.Old.Path)
+			paths = enqueuePath(paths, queuedPaths, receipt.New.Path)
 		}
 	}
 	return receipts
+}
+
+func enqueuePath(paths []string, queued map[string]struct{}, path string) []string {
+	if _, exists := queued[path]; exists {
+		return paths
+	}
+	queued[path] = struct{}{}
+	return append(paths, path)
 }
 
 func (l Ledger) reachableFrom(start Endpoint, comparison FileComparison) map[Endpoint]struct{} {
