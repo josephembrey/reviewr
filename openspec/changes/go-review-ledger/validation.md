@@ -59,5 +59,12 @@ fixture:
 - Collapsing a nested directory and invoking `X` expanded the required ancestor and selected the
   hidden gap.
 
-The final repository-wide checks are recorded by task completion after the implementation diff is
-frozen.
+## Final repository gates
+
+- `nix develop -c just build`: pass.
+- `git diff --check`: pass.
+- `openspec validate go-review-ledger --strict`: pass.
+- `nix develop -c just check`: pass, including all hooks, ordinary and `dev` tests, and the full
+  repository race suite.
+- Source/tests and specification/documentation were committed as focused local commits. No push or
+  merge was performed.

@@ -89,5 +89,5 @@
 - [x] 6.3 Run `nix develop -c just build`, `git diff --check`, and strict OpenSpec validation, resolve
   every failure, and review the final diff for accidental status enumeration, Git writes, comment
   persistence, agent-turn coupling, placeholder packages, or duplicated trees.
-- [ ] 6.4 Mark only fully completed tasks, run `nix develop -c just check` as the final verification,
+- [x] 6.4 Mark only fully completed tasks, run `nix develop -c just check` as the final verification,
   and commit the focused logical changes without pushing or merging.
