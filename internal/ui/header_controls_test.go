@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -61,6 +62,7 @@ func TestFileScopeAndReaderModeLiveOnTheirPaneHeaders(t *testing.T) {
 		Geometry: geometry, Workspace: workspace.Files, Controls: controls,
 		NavigatorTitle: "12 files", ReaderTitle: "src/main.go  [diff]",
 		Changes: ChangeSummary{Files: 12, Additions: 345, Deletions: 67, Ready: true},
+		Focus:   navigation.FocusReader,
 	}
 	rendered := Render(model)
 	frame := ansi.Strip(rendered)
@@ -71,7 +73,7 @@ func TestFileScopeAndReaderModeLiveOnTheirPaneHeaders(t *testing.T) {
 	if !strings.HasPrefix(navigator, "12 changes +345 -67") || !strings.HasSuffix(navigator, "1 [changed]") {
 		t.Fatalf("navigator title = %q", navigator)
 	}
-	if !strings.Contains(rendered, mutedStyle.Render("12 changes")) || !strings.Contains(rendered, addedStyle.Render("+345")) || !strings.Contains(rendered, errorStyle.Render("-67")) {
+	if !strings.Contains(rendered, chromeStyle.Render("12 changes")) || !strings.Contains(rendered, addedStyle.Render("+345")) || !strings.Contains(rendered, errorStyle.Render("-67")) {
 		t.Fatalf("navigator change summary lacks semantic colors: %q", rendered)
 	}
 	if !strings.HasPrefix(reader, "src/main.go  [diff]") || !strings.HasSuffix(reader, "2 [diff]") {

@@ -81,8 +81,8 @@ func renderNavigator(model Model) string {
 	)
 }
 
-func renderNavigatorChangeSummary(summary ChangeSummary) string {
-	result := mutedStyle.Render(fmt.Sprintf("%d changes", summary.Files))
+func renderNavigatorChangeSummary(summary ChangeSummary, focused bool) string {
+	result := renderTitle(fmt.Sprintf("%d changes", summary.Files), focused)
 	additions, deletions := FormatLineChanges(LineChanges{
 		Additions: summary.Additions,
 		Deletions: summary.Deletions,

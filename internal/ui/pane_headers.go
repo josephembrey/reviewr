@@ -19,9 +19,10 @@ type readerPaneTitleLayout struct {
 
 func renderNavigatorTitle(model Model, title string) string {
 	control := layoutPaneHeaderControls(model.Geometry, model.Workspace, model.Controls).navigator
-	content := renderTitle(title, model.Focus == navigation.FocusNavigator)
+	focused := model.Focus == navigation.FocusNavigator
+	content := renderTitle(title, focused)
 	if model.Workspace == workspace.Files && model.Controls.Files == workspace.ChangedFiles && model.Changes.Ready {
-		content = renderNavigatorChangeSummary(model.Changes)
+		content = renderNavigatorChangeSummary(model.Changes, focused)
 	}
 	return renderPaneTitleContent(model.Geometry.NavigatorTitle, content, control)
 }
