@@ -27,7 +27,7 @@ const (
 	FileTooLarge
 )
 
-// File is the bounded result for one raw Git path identity.
+// File is the bounded result for one typed repository entry.
 type File struct {
 	Path    string
 	Kind    FileKind
@@ -65,6 +65,24 @@ const (
 type CommitRef struct {
 	Kind CommitRefKind
 	Name string
+}
+
+// DiffKind classifies one bounded worktree patch load.
+type DiffKind uint8
+
+const (
+	DiffReady DiffKind = iota + 1
+	DiffUnavailable
+	DiffTooLarge
+)
+
+// Diff is the bounded patch result for one typed repository entry.
+type Diff struct {
+	Entry   Entry
+	Kind    DiffKind
+	Content string
+	Size    int64
+	Err     error
 }
 
 // Commit is one structured Git Log row.
@@ -119,9 +137,40 @@ func (r *Repository) Root() string {
 	return r.root
 }
 
-// ListFiles returns tracked and untracked, nonignored raw path identities.
-func (r *Repository) ListFiles() ([]string, error) {
-	return r.git.ListFiles(r.root)
+// Snapshot returns one typed source for the All and Changed file scopes.
+func (r *Repository) Snapshot() (Snapshot, error) {
+	entries, err := r.git.Snapshot(r.root)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	result := make([]Entry, len(entries))
+	for index, entry := range entries {
+		result[index] = Entry{
+			Path:         entry.Path,
+			PreviousPath: entry.PreviousPath,
+			State:        repositoryFileState(entry.State),
+		}
+	}
+	return NewSnapshot(result), nil
+}
+
+func repositoryFileState(state gitadapter.FileState) FileState {
+	switch state {
+	case gitadapter.FileModified:
+		return FileModified
+	case gitadapter.FileAdded:
+		return FileAdded
+	case gitadapter.FileDeleted:
+		return FileDeleted
+	case gitadapter.FileRenamed:
+		return FileRenamed
+	case gitadapter.FileUntracked:
+		return FileUntracked
+	case gitadapter.FileIgnored:
+		return FileIgnored
+	default:
+		return FileUnchanged
+	}
 }
 
 // WorktreeSummary returns aggregate tracked and untracked change counts.
@@ -187,10 +236,10 @@ func (r *Repository) ReadCommit(oid string) (CommitSummary, error) {
 	}, nil
 }
 
-// ReadFile reads a single root-relative path without following a final symlink.
-func (r *Repository) ReadFile(path string) File {
-	result := File{Path: path}
-	fullPath, err := r.resolvePath(path)
+// ReadFile reads one typed root-relative entry without following a final symlink.
+func (r *Repository) ReadFile(entry Entry) File {
+	result := File{Path: entry.Path}
+	fullPath, err := r.resolvePath(entry.Path)
 	if err != nil {
 		return classifyReadError(result, err)
 	}
@@ -247,11 +296,52 @@ func (r *Repository) ReadFile(path string) File {
 	return result
 }
 
-func (r *Repository) resolvePath(path string) (string, error) {
-	relative := filepath.FromSlash(path)
-	if !filepath.IsLocal(relative) || relative == "." {
-		return "", fmt.Errorf("path is not worktree-relative")
+// ReadDiff renders one bounded patch without allowing Git pathspec magic.
+func (r *Repository) ReadDiff(entry Entry) Diff {
+	result := Diff{Entry: entry}
+	if err := validatePath(entry.Path); err != nil {
+		result.Kind = DiffUnavailable
+		result.Err = err
+		return result
 	}
+	if entry.PreviousPath != "" {
+		if err := validatePath(entry.PreviousPath); err != nil {
+			result.Kind = DiffUnavailable
+			result.Err = err
+			return result
+		}
+	}
+	if entry.State == FileUnchanged || entry.State == FileIgnored {
+		result.Kind = DiffReady
+		return result
+	}
+	data, err := r.git.ReadDiff(
+		r.root,
+		entry.Path,
+		entry.PreviousPath,
+		entry.State == FileUntracked,
+		r.maxBytes,
+	)
+	result.Size = int64(len(data))
+	if err != nil {
+		if errors.Is(err, gitadapter.ErrOutputTooLarge) {
+			result.Kind = DiffTooLarge
+		} else {
+			result.Kind = DiffUnavailable
+		}
+		result.Err = err
+		return result
+	}
+	result.Kind = DiffReady
+	result.Content = string(data)
+	return result
+}
+
+func (r *Repository) resolvePath(path string) (string, error) {
+	if err := validatePath(path); err != nil {
+		return "", err
+	}
+	relative := filepath.FromSlash(path)
 	root, err := filepath.EvalSymlinks(r.root)
 	if err != nil {
 		return "", err
@@ -265,6 +355,14 @@ func (r *Repository) resolvePath(path string) (string, error) {
 		return "", fmt.Errorf("path escapes the worktree through a symlink")
 	}
 	return filepath.Join(parent, filepath.Base(relative)), nil
+}
+
+func validatePath(path string) error {
+	relative := filepath.FromSlash(path)
+	if !filepath.IsLocal(relative) || relative == "." {
+		return fmt.Errorf("path is not worktree-relative")
+	}
+	return nil
 }
 
 func classifyReadError(result File, err error) File {
