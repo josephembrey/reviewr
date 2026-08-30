@@ -5,6 +5,39 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
+func (m *Model) showDestination(next workspace.Kind) effect {
+	if m.active != workspace.Notes || next == workspace.Notes {
+		return m.activate(next)
+	}
+	if next == workspace.Git {
+		return m.requestNotesExit(notesExitGit)
+	}
+	return m.requestNotesExit(notesExitFiles)
+}
+
+func (m *Model) cycleDestination(previous bool) effect {
+	next := workspace.Files
+	switch m.active {
+	case workspace.Files:
+		if previous {
+			next = workspace.Notes
+		} else {
+			next = workspace.Git
+		}
+	case workspace.Git:
+		if previous {
+			next = workspace.Files
+		} else {
+			next = workspace.Notes
+		}
+	case workspace.Notes:
+		if previous {
+			next = workspace.Git
+		}
+	}
+	return m.showDestination(next)
+}
+
 func (m *Model) activate(next workspace.Kind) effect {
 	if next == m.active {
 		return effect{}
@@ -32,10 +65,7 @@ func (m *Model) activate(next workspace.Kind) effect {
 		return effect{}
 	}
 	if !m.files.loaded && !m.files.listLoading {
-		pending := m.files.reload()
-		pending.scope = m.controls.Comparison.Label()
-		pending.reviewGeneration = m.files.reviewGeneration
-		return pending
+		return m.files.reload(m.controls.Comparison.Label())
 	}
 	return effect{}
 }

@@ -94,7 +94,7 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 	return state, state.requestSelectedFiles()
 }
 
-func (state stashState) landFiles(msg stashFilesLoadedMsg, _ int) (stashState, effect) {
+func (state stashState) landFiles(msg stashFilesLoadedMsg) (stashState, effect) {
 	selectedOID, selected := state.place.SelectedIdentity()
 	if msg.generation != state.filesGeneration || !selected || msg.oid != selectedOID || msg.oid != state.filesOID {
 		return state, effect{}

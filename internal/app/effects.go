@@ -68,7 +68,19 @@ type effect struct {
 	candidates       []review.Candidate
 }
 
+// repositoryPollResult tags asynchronous repository work without making
+// every result type reimplement the same background-completion contract.
+type repositoryPollResult struct {
+	background bool
+	activity   uint64
+}
+
+func (result repositoryPollResult) repositoryPollContext() (bool, uint64) {
+	return result.background, result.activity
+}
+
 type snapshotLoadedMsg struct {
+	repositoryPollResult
 	generation       uint64
 	snapshot         repository.Snapshot
 	err              error
@@ -76,8 +88,6 @@ type snapshotLoadedMsg struct {
 	reviewSnapshot   review.Snapshot
 	reviewErr        error
 	reviewCapable    bool
-	background       bool
-	activity         uint64
 }
 
 type reviewSnapshotLoadedMsg struct {
@@ -96,25 +106,23 @@ type reviewStateLoadedMsg struct {
 }
 
 type reviewDocumentLoadedMsg struct {
+	repositoryPollResult
 	generation   uint64
 	entry        repository.Entry
 	comparison   review.FileComparison
 	bounds       review.Bounds
 	document     review.Document
 	presentation ui.ReaderDocument
-	background   bool
-	activity     uint64
 }
 
 type reviewFileLoadedMsg struct {
+	repositoryPollResult
 	generation   uint64
 	entry        repository.Entry
 	comparison   review.FileComparison
 	content      review.Content
 	document     review.Document
 	presentation ui.ReaderDocument
-	background   bool
-	activity     uint64
 }
 
 type reviewVerifiedMsg struct {
@@ -132,39 +140,35 @@ type reviewPersistedMsg struct {
 }
 
 type fileLoadedMsg struct {
+	repositoryPollResult
 	generation   uint64
 	entry        repository.Entry
 	file         repository.File
 	presentation ui.ReaderDocument
-	background   bool
-	activity     uint64
 }
 
 type diffLoadedMsg struct {
+	repositoryPollResult
 	generation   uint64
 	entry        repository.Entry
 	diff         repository.Diff
 	presentation ui.ReaderDocument
-	background   bool
-	activity     uint64
 }
 
 type commitsLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	commits    []repository.Commit
 	err        error
 	query      repository.CommitQuery
-	background bool
-	activity   uint64
 }
 
 type commitLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	oid        string
 	summary    repository.CommitSummary
 	err        error
-	background bool
-	activity   uint64
 }
 
 type notesLoadedMsg struct {
@@ -196,99 +200,46 @@ type sessionSavedMsg struct {
 }
 
 type refSourcesLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	sources    []repository.RefSource
 	err        error
-	background bool
-	activity   uint64
 }
 
 type refCommitsLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	sourceID   repository.RefSourceID
 	commits    []repository.RefCommit
 	err        error
-	background bool
-	activity   uint64
 }
 
 type stashesLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	stashes    []repository.Stash
 	err        error
-	background bool
-	activity   uint64
 }
 
 type stashFilesLoadedMsg struct {
+	repositoryPollResult
 	generation uint64
 	oid        string
 	files      []repository.ChangedFile
 	err        error
-	background bool
-	activity   uint64
 }
 
 type stashFileLoadedMsg struct {
+	repositoryPollResult
 	generation   uint64
 	oid          string
 	fileIdentity string
 	document     repository.ChangeDocument
 	presentation ui.ReaderDocument
-	background   bool
-	activity     uint64
 }
 
 type backgroundRepositoryResult interface {
 	repositoryPollContext() (bool, uint64)
-}
-
-func (msg snapshotLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg reviewDocumentLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg reviewFileLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg fileLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg diffLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg commitsLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg commitLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg refSourcesLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg refCommitsLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg stashesLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg stashFilesLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
-}
-
-func (msg stashFileLoadedMsg) repositoryPollContext() (bool, uint64) {
-	return msg.background, msg.activity
 }
 
 // command is the sole asynchronous effect router. Each domain command helper
@@ -333,8 +284,8 @@ func (m Model) repositoryCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			snapshot, err := source.Snapshot()
 			message := snapshotLoadedMsg{
-				generation: generation, snapshot: snapshot, err: err,
-				reviewGeneration: reviewGeneration, background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, snapshot: snapshot, err: err, reviewGeneration: reviewGeneration,
 			}
 			provider, ok := source.(review.Provider)
 			if err == nil && ok {
@@ -351,8 +302,8 @@ func (m Model) repositoryCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			file := source.ReadFile(entry)
 			return fileLoadedMsg{
-				generation: generation, entry: entry, file: file, presentation: fileReaderDocument(file, entry),
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, entry: entry, file: file, presentation: fileReaderDocument(file, entry),
 			}
 		}
 	case effectLoadDiff:
@@ -363,8 +314,8 @@ func (m Model) repositoryCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			diff := source.ReadDiff(entry)
 			return diffLoadedMsg{
-				generation: generation, entry: entry, diff: diff, presentation: diffReaderDocument(diff),
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, entry: entry, diff: diff, presentation: diffReaderDocument(diff),
 			}
 		}
 	default:
@@ -392,7 +343,7 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 		listGeneration := pending.generation
 		reviewGeneration := pending.reviewGeneration
 		scope := pending.scope
-		candidates := append([]review.Candidate(nil), pending.candidates...)
+		candidates := pending.candidates
 		return func() tea.Msg {
 			snapshot, err := provider.ReviewComparisons(scope, candidates)
 			return reviewSnapshotLoadedMsg{listGeneration: listGeneration, reviewGeneration: reviewGeneration, scope: scope, snapshot: snapshot, err: err}
@@ -421,8 +372,9 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 			newContent := provider.ReadReviewContent(comparison.NewSource, bounds.New)
 			document := review.BuildDocument(bounds, oldContent, newContent)
 			return reviewDocumentLoadedMsg{
-				generation: generation, entry: entry, comparison: comparison, bounds: bounds,
-				document: document, presentation: reviewReaderDocument(entry.Path, document), background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, entry: entry, comparison: comparison, bounds: bounds,
+				document: document, presentation: reviewReaderDocument(entry.Path, document),
 			}
 		}
 	case effectLoadReviewFile:
@@ -434,8 +386,9 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
 			document := review.BuildDocument(bounds, oldContent, content)
 			return reviewFileLoadedMsg{
-				generation: generation, entry: entry, comparison: comparison, content: content, document: document,
-				presentation: annotatedReviewFileReaderDocument(content, entry, comparison, document), background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, entry: entry, comparison: comparison, content: content, document: document,
+				presentation: annotatedReviewFileReaderDocument(content, entry, comparison, document),
 			}
 		}
 	case effectVerifyReview:
@@ -459,8 +412,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			commits, err := source.ListCommits(query)
 			return commitsLoadedMsg{
-				generation: generation, commits: commits, err: err, query: query,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, commits: commits, err: err, query: query,
 			}
 		}
 	case effectLoadCommit:
@@ -468,8 +421,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			summary, err := source.ReadCommit(oid)
 			return commitLoadedMsg{
-				generation: generation, oid: oid, summary: summary, err: err,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, oid: oid, summary: summary, err: err,
 			}
 		}
 	case effectLoadRefSources:
@@ -477,8 +430,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			sources, err := source.ListRefSources()
 			return refSourcesLoadedMsg{
-				generation: generation, sources: sources, err: err,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, sources: sources, err: err,
 			}
 		}
 	case effectLoadRefCommits:
@@ -486,8 +439,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			commits, err := source.ListRefCommits(refSource)
 			return refCommitsLoadedMsg{
-				generation: generation, sourceID: refSource.ID, commits: commits, err: err,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, sourceID: refSource.ID, commits: commits, err: err,
 			}
 		}
 	case effectLoadStashes:
@@ -495,8 +448,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			stashes, err := source.ListStashes()
 			return stashesLoadedMsg{
-				generation: generation, stashes: stashes, err: err,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, stashes: stashes, err: err,
 			}
 		}
 	case effectLoadStashFiles:
@@ -504,8 +457,8 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			files, err := source.ListStashFiles(stashSource)
 			return stashFilesLoadedMsg{
-				generation: generation, oid: oid, files: files, err: err,
-				background: background, activity: activity,
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, oid: oid, files: files, err: err,
 			}
 		}
 	case effectLoadStashFile:
@@ -514,9 +467,9 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 		return func() tea.Msg {
 			document := source.ReadStashFile(stashSource, file)
 			return stashFileLoadedMsg{
-				generation: generation, oid: oid, fileIdentity: file.Identity(),
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, oid: oid, fileIdentity: file.Identity(),
 				document: document, presentation: changeDiffDocument(document),
-				background: background, activity: activity,
 			}
 		}
 	default:

@@ -3,7 +3,6 @@ package app
 import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
-	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -97,7 +96,8 @@ type Action struct {
 
 type notesRouteContext struct {
 	geometry          ui.Geometry
-	presentation      notes.Presentation
+	totalRows         int
+	top               int
 	selectionDragging bool
 	scrollbarDragging bool
 	hasWorktree       bool
@@ -213,8 +213,8 @@ func routeNotesClick(msg tea.MouseClickMsg, context notesRouteContext) (Action, 
 	hit := context.geometry.NotesHitTestWithScopes(
 		mouse.X,
 		mouse.Y,
-		len(context.presentation.Document.Rows),
-		context.presentation.Top,
+		context.totalRows,
+		context.top,
 		context.hasWorktree,
 	)
 	switch hit.Kind {
@@ -242,8 +242,8 @@ func routeNotesWheel(msg tea.MouseWheelMsg, context notesRouteContext) (Action, 
 	hit := context.geometry.NotesHitTestWithScopes(
 		mouse.X,
 		mouse.Y,
-		len(context.presentation.Document.Rows),
-		context.presentation.Top,
+		context.totalRows,
+		context.top,
 		context.hasWorktree,
 	)
 	if hit.Kind != ui.HitNotesText && hit.Kind != ui.HitNotesScrollbar {
@@ -268,18 +268,6 @@ func routeNotesMotion(msg tea.MouseMotionMsg, context notesRouteContext) (Action
 		return Action{Kind: NotesDragSelection, X: mouse.X - context.geometry.NotesText.X, Y: mouse.Y - context.geometry.NotesText.Y}, true
 	}
 	return Action{}, false
-}
-
-func routeReaderFoldMessage(msg tea.Msg, layout ui.ReaderLayout, readerOffset int) (Action, bool) {
-	click, ok := msg.(tea.MouseClickMsg)
-	if !ok || click.Mouse().Button != tea.MouseLeft {
-		return Action{}, false
-	}
-	mouse := click.Mouse()
-	if !layout.HitFold(mouse.X, mouse.Y, readerOffset) {
-		return Action{}, false
-	}
-	return Action{Kind: ToggleReaderContext}, true
 }
 
 type browserRouteContext struct {
@@ -530,9 +518,11 @@ func ignoresBrowserWheel(kind ui.HitKind) bool {
 func (m *Model) route(msg tea.Msg) (Action, bool) {
 	if m.active == workspace.Notes {
 		note := m.note.current()
+		presentation := note.presentation()
 		return routeNotesInput(msg, notesRouteContext{
 			geometry:          m.geometry,
-			presentation:      note.presentation(),
+			totalRows:         len(presentation.Document.Rows),
+			top:               presentation.Top,
 			selectionDragging: note.editor.Dragging(),
 			scrollbarDragging: note.scrollbarDragging,
 			hasWorktree:       m.note.hasWorktree(),
@@ -541,21 +531,31 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	place := m.activePlace()
 	readerOffset := place.ReaderOffset
 	readerLineCount := 0
-	switch msg.(type) {
-	case tea.MouseClickMsg, tea.MouseWheelMsg:
-		readerOffset = m.activeReaderVisualOffset()
-		readerLineCount = m.activeReaderLineCount()
-		if _, click := msg.(tea.MouseClickMsg); click {
-			if layout, ok := m.activeReaderLayout(); ok {
-				if action, handled := routeReaderFoldMessage(msg, layout, readerOffset); handled {
-					return action, true
+	switch msg := msg.(type) {
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		if m.geometry.ReaderRows.Contains(mouse.X, mouse.Y) {
+			readerOffset = m.activeReaderVisualOffset()
+			readerLineCount = m.activeReaderLineCount()
+			if mouse.Button == tea.MouseLeft {
+				if layout, ok := m.activeReaderLayout(); ok && layout.HitFold(mouse.X, mouse.Y, readerOffset) {
+					return Action{Kind: ToggleReaderContext}, true
 				}
 			}
 		}
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		if m.geometry.ReaderRows.Contains(mouse.X, mouse.Y) {
+			readerOffset = m.activeReaderVisualOffset()
+			readerLineCount = m.activeReaderLineCount()
+		}
 	}
 	var navigatorRows []ui.NavigatorRow
-	if _, click := msg.(tea.MouseClickMsg); click && m.active == workspace.Files {
-		navigatorRows = m.activeNavigatorRows()
+	if click, ok := msg.(tea.MouseClickMsg); ok && m.active == workspace.Files {
+		mouse := click.Mouse()
+		if m.geometry.NavigatorRows.Contains(mouse.X, mouse.Y) {
+			navigatorRows = m.files.navigatorRows()
+		}
 	}
 	return routeBrowserMessage(msg, browserRouteContext{
 		focus:             place.Focus,
@@ -570,11 +570,4 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		readerLineCount:   readerLineCount,
 		navigatorRows:     navigatorRows,
 	})
-}
-
-func (m Model) activeNavigatorRows() []ui.NavigatorRow {
-	if m.active != workspace.Files {
-		return nil
-	}
-	return m.files.navigatorRows()
 }

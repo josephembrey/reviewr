@@ -115,14 +115,14 @@ func TestStashStatePreservesOIDFileAndReaderPlaceAcrossRenumbering(t *testing.T)
 	}
 	var pending effect
 	state, pending = state.landStashes(stashesLoadedMsg{generation: 1, stashes: stashes}, 4)
-	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")}, 8)
-	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30), 8)
+	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")})
+	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30))
 
 	pending = state.selectStashIndex(1, 4)
-	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")}, 8)
-	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30), 8)
+	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")})
+	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30))
 	pending = state.selectFileDelta(1, 8)
-	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30), 8)
+	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30))
 	state.place.ReaderOffset = 5
 	state.saveReaderPlace()
 
@@ -138,11 +138,11 @@ func TestStashStatePreservesOIDFileAndReaderPlaceAcrossRenumbering(t *testing.T)
 	if selected != "b" || state.place.Selected != 2 || state.place.ReaderOffset != 5 {
 		t.Fatalf("renumbered selection/place = %q %+v", selected, state.place)
 	}
-	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")}, 8)
+	state, pending = landStashFilesForTest(state, pending, []repository.ChangedFile{changeFixture("a.go"), changeFixture("b.go")})
 	if state.fileSelected != 1 || state.place.ReaderOffset != 5 {
 		t.Fatalf("renumbered file place = file %d offset %d", state.fileSelected, state.place.ReaderOffset)
 	}
-	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30), 8)
+	state = landStashReaderForTest(state, pending, strings.Repeat("line\n", 30))
 	if state.place.ReaderOffset != 5 {
 		t.Fatalf("reader reload reset surviving OID offset to %d", state.place.ReaderOffset)
 	}
@@ -170,8 +170,8 @@ func TestStashStateFileTraversalAndCalmEmptyErrorStates(t *testing.T) {
 		stashes:    []repository.Stash{stashFixture("stash", "stash@{0}")},
 	}, 5)
 	files := []repository.ChangedFile{changeFixture("one.go"), changeFixture("two.go")}
-	state, pending = landStashFilesForTest(state, pending, files, 6)
-	state = landStashReaderForTest(state, pending, "-old\n+new\n", 6)
+	state, pending = landStashFilesForTest(state, pending, files)
+	state = landStashReaderForTest(state, pending, "-old\n+new\n")
 	if state.fileSelected != 0 || state.reader.Change.Path != "one.go" {
 		t.Fatalf("initial reader = file %d %+v", state.fileSelected, state.reader)
 	}
@@ -179,7 +179,7 @@ func TestStashStateFileTraversalAndCalmEmptyErrorStates(t *testing.T) {
 	if pending.kind != effectLoadStashFile || pending.changedFile.Path != "two.go" || state.place.ReaderOffset != 0 {
 		t.Fatalf("next file = effect %+v state %+v", pending, state)
 	}
-	state = landStashReaderForTest(state, pending, "-before\n+after\n", 6)
+	state = landStashReaderForTest(state, pending, "-before\n+after\n")
 	if effect := state.selectFileDelta(1, 6); effect.kind != effectNone || state.fileSelected != 1 {
 		t.Fatalf("file traversal did not clamp: effect %+v selected %d", effect, state.fileSelected)
 	}
@@ -207,7 +207,7 @@ func TestStashStateFileTraversalAndCalmEmptyErrorStates(t *testing.T) {
 	state.filesLoading = true
 	state, _ = state.landFiles(stashFilesLoadedMsg{
 		generation: state.filesGeneration, oid: "stash", err: errors.New("object disappeared"),
-	}, 6)
+	})
 	model = state.viewModel(ui.Calculate(60, 12), time.Unix(2_000_000_000, 0))
 	if !strings.Contains(model.ReaderEmpty.Text, "no longer available") || model.ReaderEmpty.Tone != ui.ToneError {
 		t.Fatalf("stale stash presentation = %+v", model.ReaderEmpty)
@@ -341,13 +341,13 @@ func TestStashViewUsesSharedNavigatorAndReaderScrollbars(t *testing.T) {
 	}
 }
 
-func landStashFilesForTest(state stashState, pending effect, files []repository.ChangedFile, readerRows int) (stashState, effect) {
+func landStashFilesForTest(state stashState, pending effect, files []repository.ChangedFile) (stashState, effect) {
 	return state.landFiles(stashFilesLoadedMsg{
 		generation: pending.generation, oid: pending.identity, files: files,
-	}, readerRows)
+	})
 }
 
-func landStashReaderForTest(state stashState, pending effect, patch string, readerRows int) stashState {
+func landStashReaderForTest(state stashState, pending effect, patch string) stashState {
 	return state.landReader(stashFileLoadedMsg{
 		generation: pending.generation, oid: pending.identity,
 		fileIdentity: pending.changedFile.Identity(),
@@ -355,7 +355,7 @@ func landStashReaderForTest(state stashState, pending effect, patch string, read
 			Change: pending.changedFile,
 			Patch:  repository.File{Path: pending.changedFile.Path, Kind: repository.FileReady, Content: patch},
 		},
-	}, readerRows)
+	})
 }
 
 func stashFixture(oid, selector string) repository.Stash {

@@ -75,18 +75,18 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 		return true, pending
 	case reviewSnapshotLoadedMsg:
 		var pending effect
-		m.files, pending = m.files.landReviewSnapshot(msg, m.controls.Reader, m.geometry.NavigatorRows.Height)
+		m.files, pending = m.files.landReviewSnapshot(msg, m.controls.Reader)
 		return true, pending
 	case reviewStateLoadedMsg:
 		var pending effect
 		m.files, pending = m.files.landReviewState(msg, m.controls.Reader)
 		return true, pending
 	case reviewDocumentLoadedMsg:
-		m.files = m.files.landReviewDocument(msg, m.geometry.ReaderRows.Height)
+		m.files = m.files.landReviewDocument(msg)
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return true, effect{}
 	case reviewFileLoadedMsg:
-		m.files = m.files.landReviewFile(msg, m.geometry.ReaderRows.Height)
+		m.files = m.files.landReviewFile(msg)
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return true, effect{}
 	case reviewVerifiedMsg:
@@ -98,11 +98,11 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 		m.files, pending = m.files.landReviewPersisted(msg)
 		return true, pending
 	case fileLoadedMsg:
-		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
+		m.files = m.files.landFile(msg)
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return true, effect{}
 	case diffLoadedMsg:
-		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
+		m.files = m.files.landDiff(msg)
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return true, effect{}
 	default:
@@ -141,13 +141,13 @@ func (m *Model) landGitResult(msg tea.Msg) (bool, effect) {
 		return true, pending
 	case stashFilesLoadedMsg:
 		var pending effect
-		m.stashes, pending = m.stashes.landFiles(msg, m.geometry.ReaderRows.Height)
+		m.stashes, pending = m.stashes.landFiles(msg)
 		if msg.background {
 			pending = tagRepositoryPoll(pending, msg.activity)
 		}
 		return true, pending
 	case stashFileLoadedMsg:
-		m.stashes = m.stashes.landReader(msg, m.geometry.ReaderRows.Height)
+		m.stashes = m.stashes.landReader(msg)
 		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
 		return true, effect{}
 	default:

@@ -154,7 +154,7 @@ func TestFileRefreshPreservesHiddenOpenFileAndCollapsedDirectory(t *testing.T) {
 	state.place.Reconcile(state.tree.Identities())
 	state.place.EnsureSelectionVisible(10)
 
-	refresh := state.reload()
+	refresh := state.reload("uncommitted")
 	state, pending := state.landSnapshot(snapshotLoadedMsg{
 		generation: refresh.generation,
 		snapshot: snapshotOf(
@@ -245,7 +245,7 @@ func TestRefreshReconcilesRenameAndDeletedReaderModes(t *testing.T) {
 	state := loadedFilesState(t, repository.Entry{Path: "old.go", State: repository.FileModified})
 	state.reader = repository.File{Path: "old.go", Kind: repository.FileReady, Content: "old"}
 	state.readerLoading = false
-	refresh := state.reload()
+	refresh := state.reload("uncommitted")
 	state, pending := state.landSnapshot(snapshotLoadedMsg{
 		generation: refresh.generation,
 		snapshot:   snapshotOf(repository.Entry{Path: "new.go", PreviousPath: "old.go", State: repository.FileRenamed}),
@@ -281,7 +281,7 @@ func TestFileAndDiffLoadsAreLatestWinsAcrossModeChanges(t *testing.T) {
 		generation: fileEffect.generation,
 		entry:      fileEffect.entry,
 		file:       repository.File{Path: "changed.go", Kind: repository.FileReady, Content: "stale"},
-	}, 10)
+	})
 	if stale.reader.Kind != 0 || !stale.readerLoading || stale.readerMode != workspace.DiffReader {
 		t.Fatalf("stale file load landed after mode change: %+v", stale)
 	}
@@ -289,7 +289,7 @@ func TestFileAndDiffLoadsAreLatestWinsAcrossModeChanges(t *testing.T) {
 		generation: diffEffect.generation,
 		entry:      diffEffect.entry,
 		diff:       repository.Diff{Entry: diffEffect.entry, Kind: repository.DiffReady, Content: "current"},
-	}, 10)
+	})
 	if state.diff.Content != "current" || state.readerLoading {
 		t.Fatalf("current diff did not land: %+v", state)
 	}

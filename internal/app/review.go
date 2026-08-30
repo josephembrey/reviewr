@@ -56,7 +56,7 @@ func (state *filesState) requestComparison(scope string) effect {
 	}
 }
 
-func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode workspace.ReaderMode, _ int) (filesState, effect) {
+func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode workspace.ReaderMode) (filesState, effect) {
 	if msg.listGeneration != state.listGeneration || msg.reviewGeneration != state.reviewGeneration || msg.scope != state.reviewScope {
 		return state, effect{}
 	}
@@ -96,7 +96,7 @@ func (state filesState) landReviewState(msg reviewStateLoadedMsg, mode workspace
 	return state, pending
 }
 
-func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, _ int) filesState {
+func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesState {
 	if !state.acceptsReviewDocument(msg) {
 		return state
 	}
@@ -143,7 +143,7 @@ func (state filesState) acceptsReviewDocument(msg reviewDocumentLoadedMsg) bool 
 	return ok && current == msg.comparison && msg.document.Bounds == msg.bounds
 }
 
-func (state filesState) landReviewFile(msg reviewFileLoadedMsg, _ int) filesState {
+func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	if !state.acceptsReviewFile(msg) {
 		return state
 	}

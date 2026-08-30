@@ -7,7 +7,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
+func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
@@ -32,7 +32,7 @@ func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
 	return state
 }
 
-func (state filesState) landDiff(msg diffLoadedMsg, _ int) filesState {
+func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}

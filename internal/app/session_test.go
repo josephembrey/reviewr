@@ -212,7 +212,7 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 	var readerEffect effect
 	model.stashes, readerEffect = model.stashes.landFiles(stashFilesLoadedMsg{
 		generation: filesEffect.generation, oid: oid, files: []repository.ChangedFile{file},
-	}, 10)
+	})
 	if readerEffect.kind != effectLoadStashFile || model.stashes.selectedFileIdentity() != file.Identity() ||
 		model.stashes.place.ReaderOffset != 4 || !model.stashes.readerContextExpanded ||
 		model.stashes.readerContextProgress != readerContextAnimationSteps {

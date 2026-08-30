@@ -63,9 +63,8 @@ func TestRepositoryPollResultsYieldToNewerUserActivity(t *testing.T) {
 	model.poll.activity++
 	before := model.files.snapshot
 	next, command := model.Update(snapshotLoadedMsg{
-		generation: model.files.listGeneration,
-		background: true,
-		activity:   model.poll.activity - 1,
+		repositoryPollResult: repositoryPollResult{background: true, activity: model.poll.activity - 1},
+		generation:           model.files.listGeneration,
 		snapshot: snapshotOf(
 			repository.Entry{Path: "new.go", State: repository.FileUntracked},
 		),
@@ -80,18 +79,18 @@ func TestEveryBackgroundRepositoryResultUsesTheSharedActivityGate(t *testing.T) 
 	model := newTestModel(&fakeSource{})
 	model.poll.activity = 2
 	results := []tea.Msg{
-		snapshotLoadedMsg{background: true, activity: 1},
-		reviewDocumentLoadedMsg{background: true, activity: 1},
-		reviewFileLoadedMsg{background: true, activity: 1},
-		fileLoadedMsg{background: true, activity: 1},
-		diffLoadedMsg{background: true, activity: 1},
-		commitsLoadedMsg{background: true, activity: 1},
-		commitLoadedMsg{background: true, activity: 1},
-		refSourcesLoadedMsg{background: true, activity: 1},
-		refCommitsLoadedMsg{background: true, activity: 1},
-		stashesLoadedMsg{background: true, activity: 1},
-		stashFilesLoadedMsg{background: true, activity: 1},
-		stashFileLoadedMsg{background: true, activity: 1},
+		snapshotLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		reviewDocumentLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		reviewFileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		fileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		diffLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		commitsLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		commitLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		refSourcesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		refCommitsLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		stashesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		stashFilesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		stashFileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 	}
 	for _, result := range results {
 		if model.acceptsBackgroundResult(result) {
@@ -199,7 +198,8 @@ func TestBackgroundSnapshotPreservesPlaceAndReconcilesReaderByLineIdentity(t *te
 		t.Fatalf("starting background poll moved place or exposed loading: before=%+v after=%+v", beforePlace, state.place)
 	}
 	state, reader := state.landSnapshot(snapshotLoadedMsg{
-		generation: poll.generation, reviewGeneration: poll.reviewGeneration, background: true,
+		repositoryPollResult: repositoryPollResult{background: true},
+		generation:           poll.generation, reviewGeneration: poll.reviewGeneration,
 		snapshot: snapshotOf(
 			repository.Entry{Path: "src/a.go", State: repository.FileModified},
 			repository.Entry{Path: "src/b.go", State: repository.FileModified},
@@ -223,7 +223,7 @@ func TestBackgroundSnapshotPreservesPlaceAndReconcilesReaderByLineIdentity(t *te
 		entry:        reader.entry,
 		file:         updated,
 		presentation: fileReaderDocument(updated, reader.entry),
-	}, 2)
+	})
 	if state.place.ReaderOffset != 2 || state.readerRows()[state.place.ReaderOffset].Text != "anchor" || state.place.Focus != navigation.FocusReader {
 		t.Fatalf("reader anchor was not reconciled: offset=%d line=%q focus=%v", state.place.ReaderOffset, state.readerRows()[state.place.ReaderOffset].Text, state.place.Focus)
 	}

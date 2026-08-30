@@ -6,7 +6,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-func (state stashState) landReader(msg stashFileLoadedMsg, _ int) stashState {
+func (state stashState) landReader(msg stashFileLoadedMsg) stashState {
 	selectedOID, selected := state.place.SelectedIdentity()
 	if msg.generation != state.readerGeneration || !selected || msg.oid != selectedOID ||
 		msg.oid != state.readerOID || msg.fileIdentity != state.readerFileID {

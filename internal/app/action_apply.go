@@ -58,42 +58,17 @@ func (m *Model) apply(action Action) effect {
 func (m *Model) applyDestinationAction(action Action) effect {
 	switch action.Kind {
 	case Quit:
-		pending := m.note.requestExit(notesExitQuit)
-		if pending.kind != effectNone || m.note.current().saving {
-			return pending
-		}
-		m.note.finishExit()
-		return effect{kind: effectQuit}
+		return m.requestNotesExit(notesExitQuit)
 	case ShowFiles:
-		if m.active == workspace.Notes {
-			return m.requestNotesExit(notesExitFiles)
-		}
-		return m.activate(workspace.Files)
+		return m.showDestination(workspace.Files)
 	case ShowGit:
-		if m.active == workspace.Notes {
-			return m.requestNotesExit(notesExitGit)
-		}
-		return m.activate(workspace.Git)
+		return m.showDestination(workspace.Git)
 	case ShowNotes:
-		return m.activate(workspace.Notes)
+		return m.showDestination(workspace.Notes)
 	case CycleDestination:
-		switch m.active {
-		case workspace.Files:
-			return m.activate(workspace.Git)
-		case workspace.Git:
-			return m.activate(workspace.Notes)
-		default:
-			return m.requestNotesExit(notesExitFiles)
-		}
+		return m.cycleDestination(false)
 	case CyclePreviousDestination:
-		switch m.active {
-		case workspace.Files:
-			return m.activate(workspace.Notes)
-		case workspace.Git:
-			return m.activate(workspace.Files)
-		default:
-			return m.requestNotesExit(notesExitGit)
-		}
+		return m.cycleDestination(true)
 	case ToggleNotesScope:
 		return m.note.toggleScope()
 	case SelectProjectNotes:
@@ -187,10 +162,7 @@ func (m *Model) reloadActiveWorkspace() effect {
 	if m.active == workspace.Git {
 		return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
 	}
-	pending := m.files.reload()
-	pending.scope = m.controls.Comparison.Label()
-	pending.reviewGeneration = m.files.reviewGeneration
-	return pending
+	return m.files.reload(m.controls.Comparison.Label())
 }
 
 func (m *Model) applyNavigationAction(action Action) effect {

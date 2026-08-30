@@ -18,7 +18,8 @@ func routeNotesMessage(
 	hasWorktree := len(scoped) > 0 && scoped[0]
 	return routeNotesInput(msg, notesRouteContext{
 		geometry:          geometry,
-		presentation:      presentation,
+		totalRows:         len(presentation.Document.Rows),
+		top:               presentation.Top,
 		selectionDragging: selectionDragging,
 		scrollbarDragging: scrollbarDragging,
 		hasWorktree:       hasWorktree,

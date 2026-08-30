@@ -489,7 +489,7 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	state.requestedComparison = &comparison
 	state.requestedBounds = &bounds
 	first := reviewdomain.BuildDocument(bounds, content(comparison.Old, "keep\nold\n"), content(comparison.New, "keep\nnew\n"))
-	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 2, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: first}, 1)
+	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 2, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: first})
 	keepIdentity := first.Lines[0].Identity
 	state.place.ReaderOffset = 0
 	state.reviewCursor = 0
@@ -501,7 +501,7 @@ func TestReviewDocumentLandingReconcilesLogicalPlaceAndPreservesOtherPlace(t *te
 	}
 	state.contentGeneration = 3
 	second := reviewdomain.BuildDocument(bounds, content(comparison.Old, "prefix\nkeep\nold\n"), content(comparison.New, "prefix\nkeep\nnew\n"))
-	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 3, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: second}, 1)
+	state = state.landReviewDocument(reviewDocumentLoadedMsg{generation: 3, entry: state.readerEntry, comparison: comparison, bounds: bounds, document: second})
 	if second.Lines[state.reviewCursor].Identity != keepIdentity || second.Lines[state.reviewSelectionAnchor].Identity != keepIdentity || second.Lines[state.place.ReaderOffset].Identity != keepIdentity {
 		t.Fatalf("logical place did not follow identity: offset=%d cursor=%d anchor=%d", state.place.ReaderOffset, state.reviewCursor, state.reviewSelectionAnchor)
 	}
@@ -557,7 +557,7 @@ func TestReviewSnapshotsAreGenerationScopedAndRefreshNeverMutatesLedger(t *testi
 	state, _ = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
 		listGeneration: branch.generation, reviewGeneration: branch.reviewGeneration, scope: "branch",
 		snapshot: reviewdomain.Snapshot{Scope: "branch", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
-	}, workspace.FileReader, 10)
+	}, workspace.FileReader)
 	if state.reviewScope != "last-turn" || len(state.reviewSnapshot.Comparisons) != 0 {
 		t.Fatal("stale comparison scope landed")
 	}
@@ -565,7 +565,7 @@ func TestReviewSnapshotsAreGenerationScopedAndRefreshNeverMutatesLedger(t *testi
 	state, pending = state.landReviewSnapshot(reviewSnapshotLoadedMsg{
 		listGeneration: lastTurn.generation, reviewGeneration: lastTurn.reviewGeneration, scope: "last-turn",
 		snapshot: reviewdomain.Snapshot{Scope: "last-turn", Comparisons: map[string]reviewdomain.FileComparison{"changed.go": two}},
-	}, workspace.FileReader, 10)
+	}, workspace.FileReader)
 	if state.reviewSnapshot.Comparisons["changed.go"] != two || !reflect.DeepEqual(state.ledger, before) {
 		t.Fatal("current scope failed to land or mutated receipts")
 	}
@@ -573,7 +573,7 @@ func TestReviewSnapshotsAreGenerationScopedAndRefreshNeverMutatesLedger(t *testi
 		t.Fatalf("File view did not refresh annotations for the new comparison: %+v", pending)
 	}
 
-	refresh := state.reload()
+	refresh := state.reload("uncommitted")
 	state, _ = state.landSnapshot(snapshotLoadedMsg{
 		generation:       refresh.generation,
 		reviewGeneration: refresh.reviewGeneration,
@@ -599,7 +599,7 @@ func TestStaleReaderAndVerificationCannotPaintOrMarkCurrent(t *testing.T) {
 	state.requestedBounds = &bounds
 	state.reviewSnapshot.Comparisons["a.go"] = two
 	document := reviewdomain.BuildDocument(bounds, content(one.Old, "old"), content(one.New, "one"))
-	landed := state.landReviewDocument(reviewDocumentLoadedMsg{generation: 5, entry: state.readerEntry, comparison: one, bounds: bounds, document: document}, 10)
+	landed := state.landReviewDocument(reviewDocumentLoadedMsg{generation: 5, entry: state.readerEntry, comparison: one, bounds: bounds, document: document})
 	if landed.displayedComparison != nil || len(landed.reviewDocument.Lines) != 0 {
 		t.Fatal("stale comparison document painted as current")
 	}
@@ -619,7 +619,7 @@ func TestStaleReaderAndVerificationCannotPaintOrMarkCurrent(t *testing.T) {
 	fileState.contentGeneration = 7
 	fileState.requestedComparison = &one
 	fileState.requestedBounds = &bounds
-	fileState = fileState.landReviewFile(reviewFileLoadedMsg{generation: 7, entry: fileState.readerEntry, comparison: one, content: content(two.New, "two")}, 10)
+	fileState = fileState.landReviewFile(reviewFileLoadedMsg{generation: 7, entry: fileState.readerEntry, comparison: one, content: content(two.New, "two")})
 	fileState.place.Focus = navigation.FocusReader
 	if pending := fileState.requestReviewToggle(navigation.FocusReader, -1); pending.kind != effectNone || !strings.Contains(fileState.readerRows()[0].Text, "changed") {
 		t.Fatalf("stale File reader was reviewable or painted current: pending=%+v rows=%#v", pending, fileState.readerRows())
@@ -627,7 +627,7 @@ func TestStaleReaderAndVerificationCannotPaintOrMarkCurrent(t *testing.T) {
 	fileState.contentGeneration = 8
 	fileState.requestedComparison = &one
 	fileState.requestedBounds = &bounds
-	fileState = fileState.landReviewFile(reviewFileLoadedMsg{generation: 8, entry: fileState.readerEntry, comparison: one, content: content(one.New, "one")}, 10)
+	fileState = fileState.landReviewFile(reviewFileLoadedMsg{generation: 8, entry: fileState.readerEntry, comparison: one, content: content(one.New, "one")})
 	if pending := fileState.requestReviewToggle(navigation.FocusReader, -1); pending.kind != effectVerifyReview {
 		t.Fatalf("exact File reader did not verify review: %+v", pending)
 	}

@@ -71,14 +71,17 @@ func newFilesState() filesState {
 	}
 }
 
-func (state *filesState) reload() effect {
+func (state *filesState) reload(scope string) effect {
 	state.listGeneration++
 	state.reviewGeneration++
 	state.listLoading = true
 	state.listError = nil
 	state.reviewSnapshot = review.Snapshot{Scope: state.reviewScope, Comparisons: make(map[string]review.FileComparison)}
 	state.rederiveReviews()
-	return effect{kind: effectLoadSnapshot, generation: state.listGeneration, reviewGeneration: state.reviewGeneration}
+	return effect{
+		kind: effectLoadSnapshot, generation: state.listGeneration,
+		reviewGeneration: state.reviewGeneration, scope: scope,
+	}
 }
 
 func (state *filesState) poll(scope string) effect {

@@ -293,7 +293,7 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 		generation:   9,
 		entry:        model.files.readerEntry,
 		presentation: document,
-	}, model.geometry.ReaderRows.Height)
+	})
 	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows)+2 {
 		t.Fatalf("same-identity refresh reset authored fold state: expanded=%v rows=%d", model.files.readerContextExpanded, len(model.files.readerRows()))
 	}
