@@ -4,7 +4,7 @@ A fast terminal application for reviewing repository changes beside coding agent
 
 reviewr is being built from the ground up in Go with Bubble Tea. The current slice provides a
 read-only repository navigator and file reader with keyboard and mouse navigation, stable selection
-across reloads, and shared render/hit-test geometry.
+across reloads, shared render/hit-test geometry, and an explicit content-addressed review ledger.
 
 When launched inside Herdr, reviewr automatically uses the injected host context and labels an
 otherwise-unlabeled current pane `reviewr`. Standalone launches require no Herdr installation.
@@ -39,3 +39,8 @@ The Rust oracle remains runnable with `just legacy build`, `just legacy dev`, an
 
 The file tree uses Nerd Font file and folder glyphs; terminals should use a Nerd Font for the
 intended one-cell alignment and filetype silhouettes.
+
+Changed files carry independent `[ ]`, `[x]`, `[+]`, `[~]`, or `[!]` review badges. Review coverage
+changes only through `x` or a badge click; reading a file never marks it. See
+[docs/review-ledger.md](docs/review-ledger.md) for the exact semantics, private state format, and
+comparison-provider boundary.
