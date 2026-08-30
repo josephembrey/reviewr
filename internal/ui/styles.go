@@ -6,9 +6,10 @@ var (
 	// Structural and semantic roles use the terminal's basic palette:
 	// cyan is focus/action/info, white is readable chrome, BrightBlack is
 	// secondary content, red/green are negative/positive, magenta is a special
-	// identity, and yellow is warning/attention. File-type icons are the sole
-	// production truecolor exception; their complete catalog lives together in
-	// file_tree_icons.go.
+	// identity, and yellow is warning/attention. The shared vivid palette is
+	// the narrow truecolor exception for file-type icons and Git graph lanes:
+	// small identity glyphs that must remain distinguishable when ANSI slots
+	// collapse under a terminal theme.
 	accentColor    = lipgloss.Cyan
 	secondaryColor = lipgloss.White
 	mutedColor     = lipgloss.BrightBlack
@@ -16,6 +17,14 @@ var (
 	addedColor     = lipgloss.Green
 	specialColor   = lipgloss.Magenta
 	warningColor   = lipgloss.Yellow
+
+	vividRedColor    = lipgloss.Color("#E06C75")
+	vividGreenColor  = lipgloss.Color("#98C379")
+	vividYellowColor = lipgloss.Color("#E5C07B")
+	vividOrangeColor = lipgloss.Color("#D19A66")
+	vividPurpleColor = lipgloss.Color("#C678DD")
+	vividBlueColor   = lipgloss.Color("#61AFEF")
+	vividCyanColor   = lipgloss.Color("#56B6C2")
 
 	headerStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	focusedTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(accentColor)

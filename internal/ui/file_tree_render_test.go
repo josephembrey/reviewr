@@ -148,7 +148,7 @@ func TestBontreeStatusSeamKeepsMarkerAndFiletypeIndependent(t *testing.T) {
 	if !strings.Contains(plain, want) {
 		t.Fatalf("decorated row = %q, want independent marker and icon %q", plain, want)
 	}
-	if !strings.Contains(got, lipgloss.NewStyle().Foreground(fileIconOrangeColor).Render(treeFileIcon(row.Label).glyph)) {
+	if !strings.Contains(got, lipgloss.NewStyle().Foreground(vividOrangeColor).Render(treeFileIcon(row.Label).glyph)) {
 		t.Fatalf("status-decorated Rust row lost its filetype icon color: %q", got)
 	}
 }

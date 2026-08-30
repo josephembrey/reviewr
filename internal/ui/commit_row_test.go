@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func commitFixtureRows() []commitrow.Row {
 	}
 }
 
-func TestCommitRowUsesGraphAndSemanticANSIPalette(t *testing.T) {
+func TestCommitRowUsesTruecolorGraphAndSemanticANSIPalette(t *testing.T) {
 	t.Parallel()
 	rows := commitFixtureRows()
 	width := 100
@@ -62,31 +63,35 @@ func TestCommitRowUsesGraphAndSemanticANSIPalette(t *testing.T) {
 			t.Fatalf("ANSI palette sequence %q missing from %q", sgr, rendered)
 		}
 	}
+	if !strings.Contains(rendered, "38;2;") {
+		t.Fatalf("commit graph lacks truecolor lane: %q", rendered)
+	}
 }
 
-func TestCommitGraphPaletteUsesSixDistinctANSIColors(t *testing.T) {
+func TestCommitGraphPaletteReusesSixDistinctVividColors(t *testing.T) {
 	t.Parallel()
-	want := [...]ansi.BasicColor{
-		lipgloss.Cyan,
-		lipgloss.Magenta,
-		lipgloss.Green,
-		lipgloss.Yellow,
-		lipgloss.Blue,
-		lipgloss.Red,
+	want := [...]color.Color{
+		vividCyanColor,
+		vividPurpleColor,
+		vividGreenColor,
+		vividYellowColor,
+		vividBlueColor,
+		vividRedColor,
 	}
-	seen := make(map[ansi.BasicColor]struct{}, len(want))
-	for index, color := range graphPalette {
-		basic, ok := color.(ansi.BasicColor)
-		if !ok {
-			t.Fatalf("graph color %d is %T, want terminal ANSI", index, color)
+	seen := make(map[color.RGBA]struct{}, len(want))
+	for index, graphColor := range graphPalette {
+		if _, isANSI := graphColor.(ansi.BasicColor); isANSI {
+			t.Fatalf("graph color %d unexpectedly uses ANSI slot %v", index, graphColor)
 		}
-		if basic != want[index] {
-			t.Errorf("graph color %d = %v, want %v", index, basic, want[index])
+		got := color.RGBAModel.Convert(graphColor).(color.RGBA)
+		expected := color.RGBAModel.Convert(want[index]).(color.RGBA)
+		if got != expected {
+			t.Errorf("graph color %d = %v, want shared vivid color %v", index, got, expected)
 		}
-		if _, duplicate := seen[basic]; duplicate {
-			t.Errorf("graph color %d duplicates ANSI slot %v", index, basic)
+		if _, duplicate := seen[got]; duplicate {
+			t.Errorf("graph color %d duplicates %v", index, got)
 		}
-		seen[basic] = struct{}{}
+		seen[got] = struct{}{}
 	}
 }
 
@@ -121,7 +126,7 @@ func TestCommitRowSelectionCoversEveryCellAndKeepsLaneColor(t *testing.T) {
 		t.Fatalf("selected width = %d, want %d", lipgloss.Width(rendered), width)
 	}
 	assertEveryDisplayRuneReversed(t, rendered)
-	if !strings.Contains(rendered, "34m") && !strings.Contains(rendered, "35m") && !strings.Contains(rendered, "32m") {
+	if !strings.Contains(rendered, "38;2;") {
 		t.Fatalf("selected graph lost lane foreground: %q", rendered)
 	}
 }

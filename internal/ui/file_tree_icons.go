@@ -166,15 +166,8 @@ var fileIconsByExtension = map[string]fileTreeIcon{
 }
 
 var (
-	fileIconRedColor    = lipgloss.Color("#E06C75")
-	fileIconGreenColor  = lipgloss.Color("#98C379")
-	fileIconYellowColor = lipgloss.Color("#E5C07B")
-	fileIconOrangeColor = lipgloss.Color("#D19A66")
-	fileIconPurpleColor = lipgloss.Color("#C678DD")
-	fileIconBlueColor   = lipgloss.Color("#61AFEF")
-	fileIconCyanColor   = lipgloss.Color("#56B6C2")
-	nixIconBlueColor    = lipgloss.Color("#7EBAE4")
-	// File-type icons above intentionally punch through the terminal palette.
+	nixIconBlueColor = lipgloss.Color("#7EBAE4")
+	// File-type icons intentionally punch through the terminal palette.
 	// Directories carry a bright-blue identity accent. Ignored rows use the
 	// terminal's secondary BrightBlack role, while neutral file icons remain
 	// readable ANSI white.
@@ -185,13 +178,13 @@ var (
 
 var fileIconColors = [...]color.Color{
 	fileIconNeutral:   secondaryColor,
-	fileIconRed:       fileIconRedColor,
-	fileIconGreen:     fileIconGreenColor,
-	fileIconYellow:    fileIconYellowColor,
-	fileIconOrange:    fileIconOrangeColor,
-	fileIconPurple:    fileIconPurpleColor,
-	fileIconBlue:      fileIconBlueColor,
-	fileIconCyan:      fileIconCyanColor,
+	fileIconRed:       vividRedColor,
+	fileIconGreen:     vividGreenColor,
+	fileIconYellow:    vividYellowColor,
+	fileIconOrange:    vividOrangeColor,
+	fileIconPurple:    vividPurpleColor,
+	fileIconBlue:      vividBlueColor,
+	fileIconCyan:      vividCyanColor,
 	fileIconNix:       nixIconBlueColor,
 	fileIconDirectory: directoryTreeColor,
 }

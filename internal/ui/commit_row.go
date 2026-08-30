@@ -11,15 +11,15 @@ import (
 	"github.com/josephembrey/reviewr/internal/commitrow"
 )
 
-// Six distinct terminal hues keep adjacent graph lanes identifiable without
-// imposing RGB values on the user's palette.
+// Graph lanes share the vivid file-icon palette: both are small identity
+// glyphs whose distinctions should survive a terminal theme collapsing ANSI.
 var graphPalette = [...]color.Color{
-	accentColor,
-	specialColor,
-	addedColor,
-	warningColor,
-	lipgloss.Blue,
-	errorColor,
+	vividCyanColor,
+	vividPurpleColor,
+	vividGreenColor,
+	vividYellowColor,
+	vividBlueColor,
+	vividRedColor,
 }
 
 func renderCommitRow(row commitrow.Row, columns commitrow.Columns, width int, selected, focused bool, now time.Time) string {
