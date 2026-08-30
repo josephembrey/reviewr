@@ -3,6 +3,8 @@ package review
 import (
 	"fmt"
 	"strings"
+
+	udiff "github.com/aymanbagabas/go-udiff"
 )
 
 // LineKind identifies one comparison-reader row.
@@ -34,8 +36,9 @@ type Document struct {
 	Reason  string
 }
 
-// BuildDocument constructs one linear, complete comparison view. It deliberately
-// prefers conservative remove/add blocks to an unbounded quadratic diff.
+// BuildDocument constructs one complete comparison view from exact endpoints.
+// go-udiff's line differ bounds its Myers/LCS search depth, so sparse edits stay
+// distinct without exposing large files to unbounded quadratic work.
 func BuildDocument(bounds Bounds, oldContent, newContent Content) Document {
 	document := Document{Bounds: bounds}
 	if oldContent.Endpoint != bounds.Old || newContent.Endpoint != bounds.New || !bounds.Old.Exact() || !bounds.New.Exact() {
@@ -58,19 +61,8 @@ func BuildDocument(bounds Bounds, oldContent, newContent Content) Document {
 		document.Lines = []Line{{Identity: "notice:oversized", Text: "File is too large for a text comparison; exact identity is reviewable.", Kind: NoticeLine}}
 		return document
 	}
-	oldText := contentText(oldContent)
-	newText := contentText(newContent)
-	oldLines := splitLines(oldText)
-	newLines := splitLines(newText)
-	prefix := 0
-	for prefix < len(oldLines) && prefix < len(newLines) && oldLines[prefix] == newLines[prefix] {
-		prefix++
-	}
-	suffix := 0
-	for suffix < len(oldLines)-prefix && suffix < len(newLines)-prefix &&
-		oldLines[len(oldLines)-1-suffix] == newLines[len(newLines)-1-suffix] {
-		suffix++
-	}
+	oldText := normalizeLineEndings(contentText(oldContent))
+	newText := normalizeLineEndings(contentText(newContent))
 	oldNo, newNo := 1, 1
 	occurrences := make(map[string]int)
 	appendLine := func(kind LineKind, text string, oldLine, newLine int) {
@@ -79,26 +71,32 @@ func BuildDocument(bounds Bounds, oldContent, newContent Content) Document {
 		identity := fmt.Sprintf("%s:%d", key, occurrences[key])
 		document.Lines = append(document.Lines, Line{Identity: identity, Text: linePrefix(kind) + text, Kind: kind, OldLine: oldLine, NewLine: newLine})
 	}
-	for index := 0; index < prefix; index++ {
-		appendLine(ContextLine, oldLines[index], oldNo, newNo)
-		oldNo++
-		newNo++
+	appendBlock := func(kind LineKind, text string) {
+		for _, line := range splitLines(text) {
+			switch kind {
+			case ContextLine:
+				appendLine(kind, line, oldNo, newNo)
+				oldNo++
+				newNo++
+			case RemovedLine:
+				appendLine(kind, line, oldNo, 0)
+				document.Removed++
+				oldNo++
+			case AddedLine:
+				appendLine(kind, line, 0, newNo)
+				document.Added++
+				newNo++
+			}
+		}
 	}
-	for index := prefix; index < len(oldLines)-suffix; index++ {
-		appendLine(RemovedLine, oldLines[index], oldNo, 0)
-		document.Removed++
-		oldNo++
+	cursor := 0
+	for _, edit := range udiff.Lines(oldText, newText) {
+		appendBlock(ContextLine, oldText[cursor:edit.Start])
+		appendBlock(RemovedLine, oldText[edit.Start:edit.End])
+		appendBlock(AddedLine, edit.New)
+		cursor = edit.End
 	}
-	for index := prefix; index < len(newLines)-suffix; index++ {
-		appendLine(AddedLine, newLines[index], 0, newNo)
-		document.Added++
-		newNo++
-	}
-	for index := len(oldLines) - suffix; index < len(oldLines); index++ {
-		appendLine(ContextLine, oldLines[index], oldNo, newNo)
-		oldNo++
-		newNo++
-	}
+	appendBlock(ContextLine, oldText[cursor:])
 	if bounds.Old.Kind != bounds.New.Kind {
 		document.Lines = append([]Line{{Identity: "notice:kind", Text: fmt.Sprintf("file type %s -> %s", bounds.Old.Kind, bounds.New.Kind), Kind: NoticeLine}}, document.Lines...)
 	} else if bounds.Old.Mode != bounds.New.Mode {
@@ -125,8 +123,12 @@ func contentText(content Content) string {
 	return content.Text
 }
 
+func normalizeLineEndings(content string) string {
+	return strings.ReplaceAll(content, "\r\n", "\n")
+}
+
 func splitLines(content string) []string {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = normalizeLineEndings(content)
 	if content == "" {
 		return nil
 	}
