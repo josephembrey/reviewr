@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	gitadapter "github.com/josephembrey/reviewr/internal/git"
+	"github.com/josephembrey/reviewr/internal/review"
 )
 
 func TestOpenResolvesWorktreeRoot(t *testing.T) {
@@ -223,6 +224,189 @@ func TestDeletedAndRenamedEntriesReadCoherently(t *testing.T) {
 	}
 	if diff := repo.ReadDiff(deleted); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-package gone") {
 		t.Fatalf("deleted diff = %+v", diff)
+	}
+}
+
+func TestReviewComparisonsEnrichTypedSnapshotWithExactEndpoints(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "modified.txt", "old\n")
+	writeFile(t, root, "deleted.txt", "gone\n")
+	writeFile(t, root, "rename-old.txt", "rename\n")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+
+	writeFile(t, root, "modified.txt", "new\n")
+	if err := os.Chmod(filepath.Join(root, "modified.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "deleted.txt")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "mv", "rename-old.txt", "rename-new.txt")
+	writeFile(t, root, "added.bin", "a\x00b")
+	if err := os.Symlink("modified.txt", filepath.Join(root, "added-link")); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repo.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := make([]review.Candidate, 0)
+	for _, entry := range snapshot.Changed() {
+		action := review.Modified
+		switch entry.State {
+		case FileUntracked, FileAdded:
+			action = review.Added
+		case FileDeleted:
+			action = review.Deleted
+		case FileRenamed:
+			action = review.Renamed
+		}
+		candidates = append(candidates, review.Candidate{Path: entry.Path, PreviousPath: entry.PreviousPath, Action: action})
+	}
+	reviews, err := repo.ReviewComparisons("uncommitted", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews.Comparisons) != len(candidates) {
+		t.Fatalf("review comparisons = %#v, want %d", reviews.Comparisons, len(candidates))
+	}
+
+	modified := reviews.Comparisons["modified.txt"]
+	if modified.Action != review.Modified || modified.Old.Mode != 0o100644 || modified.New.Mode != 0o100755 ||
+		!strings.HasPrefix(modified.Old.ContentID, "git:") || !strings.HasPrefix(modified.New.ContentID, "git:") || modified.Old == modified.New {
+		t.Fatalf("modified comparison = %+v", modified)
+	}
+	if content := repo.ReadReviewContent(modified.OldSource, modified.Old); content.Endpoint != modified.Old || content.State != review.ContentText || content.Text != "old\n" {
+		t.Fatalf("old content = %+v", content)
+	}
+	if content := repo.ReadReviewContent(modified.NewSource, modified.New); content.Endpoint != modified.New || content.State != review.ContentText || content.Text != "new\n" {
+		t.Fatalf("new content = %+v", content)
+	}
+
+	deleted := reviews.Comparisons["deleted.txt"]
+	if deleted.Action != review.Deleted || deleted.Old.Kind != review.Regular || deleted.New.Kind != review.Absent {
+		t.Fatalf("deleted comparison = %+v", deleted)
+	}
+	writeFile(t, root, "deleted.txt", "resurrected\n")
+	if content := repo.ReadReviewContent(deleted.NewSource, deleted.New); content.Endpoint == deleted.New || content.Endpoint.Kind != review.Regular {
+		t.Fatalf("resurrected deletion still verified absent: %+v", content)
+	}
+	renamed := reviews.Comparisons["rename-new.txt"]
+	if renamed.Action != review.Renamed || renamed.Old.Path != "rename-old.txt" || renamed.New.Path != "rename-new.txt" || renamed.BasisReason == "" {
+		t.Fatalf("renamed comparison = %+v", renamed)
+	}
+	added := reviews.Comparisons["added.bin"]
+	if added.Action != review.Added || added.Old.Kind != review.Absent {
+		t.Fatalf("added comparison = %+v", added)
+	}
+	if content := repo.ReadReviewContent(added.NewSource, added.New); content.Endpoint != added.New || content.State != review.ContentBinary || content.Text != "" {
+		t.Fatalf("binary content = %+v", content)
+	}
+	link := reviews.Comparisons["added-link"]
+	if link.Old.Kind != review.Absent || link.New.Kind != review.Symlink || link.New.Mode != 0o120000 {
+		t.Fatalf("symlink comparison = %+v", link)
+	}
+	if content := repo.ReadReviewContent(link.NewSource, link.New); content.Endpoint != link.New || content.State != review.ContentText || content.Text != "modified.txt" {
+		t.Fatalf("symlink content = %+v", content)
+	}
+	identity, err := repo.ReviewRepositoryID()
+	if err != nil || identity.Worktree != root || identity.CommonGitDir == "" {
+		t.Fatalf("ReviewRepositoryID() = (%+v, %v)", identity, err)
+	}
+}
+
+func TestReviewContentProvesNestedAbsenceWithoutFollowingParentSymlinks(t *testing.T) {
+	root := initRepository(t)
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absent := review.AbsentEndpoint("missing/child.txt")
+	if content := repo.ReadReviewContent(review.EndpointSource{Kind: review.WorktreeSource}, absent); content.Endpoint != absent || content.State != review.ContentAbsent {
+		t.Fatalf("nested absence = %+v", content)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	escape := review.AbsentEndpoint("escape/child.txt")
+	if content := repo.ReadReviewContent(review.EndpointSource{Kind: review.WorktreeSource}, escape); content.State != review.ContentUnavailable || content.Endpoint.Exact() {
+		t.Fatalf("symlink-parent absence = %+v", content)
+	}
+}
+
+func TestReviewContentKeepsExactIdentityWhenSnapshotIsOversized(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "large.txt", "old")
+	runGit(t, root, "add", "large.txt")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	writeFile(t, root, "large.txt", strings.Repeat("x", 32))
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.maxBytes = 8
+	reviews, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "large.txt", Action: review.Modified}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := reviews.Comparisons["large.txt"]
+	content := repo.ReadReviewContent(comparison.NewSource, comparison.New)
+	if content.State != review.ContentTooLarge || !content.Endpoint.Exact() || content.Endpoint != comparison.New || content.Text != "" {
+		t.Fatalf("oversized content = %+v comparison=%+v", content, comparison)
+	}
+}
+
+func TestReviewComparisonsSupportAddedFilesOnUnbornHead(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "first.go", "package first\n")
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "first.go", Action: review.Added}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := reviews.Comparisons["first.go"]
+	if comparison.Action != review.Added || comparison.Old != review.AbsentEndpoint("first.go") || !comparison.New.Exact() || comparison.Identity.Basis == "" {
+		t.Fatalf("unborn comparison = %+v", comparison)
+	}
+}
+
+func TestReviewComparisonsRejectStatusContentRace(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "tracked.go", "base\n")
+	runGit(t, root, "add", "tracked.go")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resurrected, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.go", Action: review.Deleted}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison := resurrected.Comparisons["tracked.go"]
+	if comparison.Exact() || !strings.Contains(comparison.BasisReason, "changed") {
+		t.Fatalf("stale deleted candidate = %+v", comparison)
+	}
+	if err := os.Remove(filepath.Join(root, "tracked.go")); err != nil {
+		t.Fatal(err)
+	}
+	disappeared, err := repo.ReviewComparisons("uncommitted", []review.Candidate{{Path: "tracked.go", Action: review.Modified}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comparison = disappeared.Comparisons["tracked.go"]
+	if comparison.Exact() || !strings.Contains(comparison.BasisReason, "changed") {
+		t.Fatalf("stale modified candidate = %+v", comparison)
 	}
 }
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -12,6 +13,8 @@ const (
 	ToneDefault Tone = iota
 	ToneQuiet
 	ToneError
+	ToneAdded
+	ToneRemoved
 )
 
 // Line is one logical reader or empty-state line.
@@ -44,6 +47,11 @@ type NavigatorRow struct {
 	Expanded  bool
 	Status    NavigatorStatus
 	Dimmed    bool
+	// Review is an independent right-side file badge. Nil means the row is
+	// observation-only (including unchanged All-scope files).
+	Review *review.State
+	// Progress is derived directory reviewed/changed coverage.
+	Progress string
 }
 
 // ChangeSummary is the aggregate worktree status shown in the header.
@@ -70,8 +78,9 @@ type Model struct {
 	Top            int
 	Focus          navigation.Focus
 
-	ReaderTitle  string
-	ReaderLines  []Line
-	ReaderEmpty  Line
-	ReaderOffset int
+	ReaderTitle   string
+	ReaderLines   []Line
+	ReaderEmpty   Line
+	ReaderOffset  int
+	FooterWarning string
 }

@@ -100,3 +100,21 @@ func TestFirstVisibleFileSkipsDirectories(t *testing.T) {
 		t.Fatalf("collapsed FirstVisibleFile() = %#v, %v", row, ok)
 	}
 }
+
+func TestExpandParentsRevealsOnlyTheRequestedHiddenFile(t *testing.T) {
+	tree := New([]string{"a/deep/one.go", "a/deep/two.go", "b/deep/three.go", "b/deep/four.go", "root.go"})
+	if !tree.Collapse(DirectoryIdentity("a/deep")) || !tree.Collapse(DirectoryIdentity("b/deep")) {
+		t.Fatal("fixture directories did not collapse")
+	}
+	if !tree.ExpandParents("a/deep/two.go") {
+		t.Fatal("ExpandParents reported no change")
+	}
+	a, _ := tree.Row(DirectoryIdentity("a/deep"))
+	b, _ := tree.Row(DirectoryIdentity("b/deep"))
+	if !a.Expanded || b.Expanded {
+		t.Fatalf("folds after expansion: a=%+v b=%+v", a, b)
+	}
+	if tree.ExpandParents("a/deep/two.go") {
+		t.Fatal("already visible path reported a change")
+	}
+}

@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/josephembrey/reviewr/internal/navigation"
+	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -48,12 +49,17 @@ func Render(model Model) string {
 	if g.Footer.Height > 0 {
 		footer := "j/k or ↑/↓ navigate  •  tab focus  •  r refresh  •  q quit"
 		if model.Workspace == workspace.Files {
-			footer = "j/k move • h/l fold • tab focus • r refresh • q quit"
+			footer = "j/k move • h/l fold • x review • R bounds • X next gap • r refresh • q quit"
 		}
 		if model.Workspace == workspace.Scratch {
 			footer = "esc close scratch  •  1 files/git  •  q quit"
 		}
-		blocks = append(blocks, fit(dimStyle.Render(footer), g.Footer.Width))
+		style := dimStyle
+		if model.FooterWarning != "" {
+			footer = model.FooterWarning
+			style = errorStyle
+		}
+		blocks = append(blocks, fit(style.Render(footer), g.Footer.Width))
 	}
 	if len(blocks) == 0 {
 		return ""
@@ -254,6 +260,7 @@ func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focu
 }
 
 func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLayers) string {
+	layout := LayoutNavigatorRow(item, width)
 	depth := max(0, item.Depth)
 	marker := " "
 	icon := treeFileIcon(item.Label)
@@ -274,8 +281,32 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 		styles.marker.Inherit(selection).Render(marker) + selection.Render(" ") +
 		styles.icon.Inherit(selection).Render(icon.glyph) + selection.Render(" ") +
 		styles.filename.Inherit(selection).Render(label)
-	row = lipgloss.NewStyle().MaxWidth(width).Render(row)
-	return row + selection.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row))))
+	row = lipgloss.NewStyle().MaxWidth(layout.Label.Width).Render(row)
+	row += selection.Render(strings.Repeat(" ", max(0, layout.Label.Width-lipgloss.Width(row))))
+	if layout.Progress.Width > 0 {
+		progress := " " + item.Progress
+		row += dimStyle.Inherit(selection).Render(fit(progress, layout.Progress.Width))
+	}
+	if layout.Review.Width > 0 {
+		badge := " " + item.Review.Badge()
+		row += reviewBadgeStyle(*item.Review).Inherit(selection).Render(badge)
+	}
+	return row
+}
+
+func reviewBadgeStyle(state review.State) lipgloss.Style {
+	switch state {
+	case review.Reviewed:
+		return addedStyle
+	case review.Updated:
+		return headerStyle
+	case review.Partial:
+		return yellowStyle
+	case review.BasisChanged:
+		return errorStyle
+	default:
+		return dimStyle
+	}
 }
 
 func treeNavigatorStatus(status NavigatorStatus) (string, treeStatusAccent) {
@@ -341,6 +372,10 @@ func renderLine(line Line) string {
 	case ToneQuiet:
 		return dimStyle.Render(text)
 	case ToneError:
+		return errorStyle.Render(text)
+	case ToneAdded:
+		return addedStyle.Render(text)
+	case ToneRemoved:
 		return errorStyle.Render(text)
 	default:
 		return text

@@ -20,6 +20,10 @@ const (
 	ToggleSecondary
 	ToggleTertiary
 	ToggleComparison
+	ToggleReview
+	ToggleReviewBounds
+	NextReviewGap
+	ActivateReviewBadge
 	SelectNext
 	SelectPrevious
 	SelectIndex
@@ -55,6 +59,10 @@ type Action struct {
 }
 
 func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, active workspace.Kind, controls workspace.Controls, dividerDragging, scrollbarDragging bool, top, fileCount, readerOffset, readerLineCount int) (Action, bool) {
+	return routeMessageWithRows(msg, focus, geometry, active, controls, dividerDragging, scrollbarDragging, top, fileCount, readerOffset, readerLineCount, nil)
+}
+
+func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, active workspace.Kind, controls workspace.Controls, dividerDragging, scrollbarDragging bool, top, fileCount, readerOffset, readerLineCount int, rows []ui.NavigatorRow) (Action, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -70,6 +78,18 @@ func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, act
 			return Action{Kind: ToggleTertiary}, true
 		case "4":
 			return Action{Kind: ToggleComparison}, true
+		case "x":
+			if active == workspace.Files {
+				return Action{Kind: ToggleReview, Index: -1}, true
+			}
+		case "R":
+			if active == workspace.Files {
+				return Action{Kind: ToggleReviewBounds}, true
+			}
+		case "X":
+			if active == workspace.Files {
+				return Action{Kind: NextReviewGap}, true
+			}
 		case "tab":
 			return Action{Kind: ToggleFocus}, true
 		case "r":
@@ -99,6 +119,11 @@ func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, act
 		mouse := msg.Mouse()
 		if mouse.Button != tea.MouseLeft {
 			return Action{}, false
+		}
+		if active == workspace.Files {
+			if index, ok := geometry.HitNavigatorReview(mouse.X, mouse.Y, top, rows); ok {
+				return Action{Kind: ActivateReviewBadge, Index: index}, true
+			}
 		}
 		switch hit := geometry.HitTest(mouse.X, mouse.Y, active, controls, top, fileCount, readerOffset, readerLineCount); hit.Kind {
 		case ui.HitFilesWorkspace:

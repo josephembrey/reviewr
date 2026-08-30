@@ -137,6 +137,22 @@ func (t *Tree) Toggle(identity string) bool {
 	return t.Expand(identity)
 }
 
+// ExpandParents reveals path without creating a second tree or changing any
+// unrelated fold. It is used by review-gap navigation for hidden descendants.
+func (t *Tree) ExpandParents(path string) bool {
+	changed := false
+	for directory := range t.collapsed {
+		if strings.HasPrefix(path, directory+"/") {
+			delete(t.collapsed, directory)
+			changed = true
+		}
+	}
+	if changed {
+		t.derive()
+	}
+	return changed
+}
+
 func build(paths []string) *directory {
 	root := newDirectory()
 	seen := make(map[string]struct{}, len(paths))

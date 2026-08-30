@@ -6,6 +6,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -23,18 +24,19 @@ type Source interface {
 // Model is the Bubble Tea root. Input routing and effects are delegated to
 // semantic actions and workspace-scoped transitions.
 type Model struct {
-	source    Source
-	host      herdr.Context
-	active    workspace.Kind
-	scratch   bool
-	controls  workspace.Controls
-	lab       labState
-	layout    layoutState
-	scrollbar scrollbarDragState
-	geometry  ui.Geometry
-	files     filesState
-	history   historyState
-	summary   summaryState
+	source          Source
+	host            herdr.Context
+	active          workspace.Kind
+	scratch         bool
+	controls        workspace.Controls
+	lab             labState
+	layout          layoutState
+	scrollbar       scrollbarDragState
+	geometry        ui.Geometry
+	files           filesState
+	history         historyState
+	summary         summaryState
+	reviewStateRoot string
 }
 
 type effectKind uint8
@@ -47,20 +49,82 @@ const (
 	effectLoadSummary
 	effectLoadCommits
 	effectLoadCommit
+	effectLoadReviewSnapshot
+	effectLoadReviewState
+	effectLoadReviewDocument
+	effectLoadReviewFile
+	effectVerifyReview
+	effectPersistReview
 	effectQuit
 )
 
 type effect struct {
-	kind       effectKind
-	generation uint64
-	identity   string
-	entry      repository.Entry
+	kind             effectKind
+	generation       uint64
+	identity         string
+	entry            repository.Entry
+	scope            string
+	reviewGeneration uint64
+	comparison       review.FileComparison
+	bounds           review.Bounds
+	retained         *string
+	delta            review.Delta
+	store            *review.Store
+	candidates       []review.Candidate
 }
 
 type snapshotLoadedMsg struct {
+	generation       uint64
+	snapshot         repository.Snapshot
+	err              error
+	reviewGeneration uint64
+	reviewSnapshot   review.Snapshot
+	reviewErr        error
+	reviewCapable    bool
+}
+
+type reviewSnapshotLoadedMsg struct {
+	listGeneration   uint64
+	reviewGeneration uint64
+	scope            string
+	snapshot         review.Snapshot
+	err              error
+}
+
+type reviewStateLoadedMsg struct {
+	ledger  review.Ledger
+	store   *review.Store
+	warning string
+	err     error
+}
+
+type reviewDocumentLoadedMsg struct {
 	generation uint64
-	snapshot   repository.Snapshot
-	err        error
+	entry      repository.Entry
+	comparison review.FileComparison
+	bounds     review.Bounds
+	document   review.Document
+}
+
+type reviewFileLoadedMsg struct {
+	generation uint64
+	entry      repository.Entry
+	comparison review.FileComparison
+	content    review.Content
+}
+
+type reviewVerifiedMsg struct {
+	generation uint64
+	entry      repository.Entry
+	comparison review.FileComparison
+	delta      review.Delta
+	content    review.Content
+}
+
+type reviewPersistedMsg struct {
+	delta  review.Delta
+	ledger review.Ledger
+	err    error
 }
 
 type fileLoadedMsg struct {
@@ -108,14 +172,26 @@ func New(source Source, host herdr.Context) Model {
 	}
 }
 
+// NewWithReviewStateRoot injects an application-private state root for tests
+// and embeddings. An empty root selects the platform default.
+func NewWithReviewStateRoot(source Source, host herdr.Context, root string) Model {
+	model := New(source, host)
+	model.reviewStateRoot = root
+	return model
+}
+
 // Init starts both workspace loads concurrently so the first switch to Git is
 // a pure place-state change rather than a visible first-visit load.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration}),
+	commands := []tea.Cmd{
+		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration, reviewGeneration: m.files.reviewGeneration, scope: m.controls.Comparison.Label()}),
 		m.command(effect{kind: effectLoadCommits, generation: m.history.listGeneration}),
 		m.command(effect{kind: effectLoadSummary, generation: m.summary.generation}),
-	)
+	}
+	if _, ok := m.source.(review.Provider); ok {
+		commands = append(commands, m.command(effect{kind: effectLoadReviewState}))
+	}
+	return tea.Batch(commands...)
 }
 
 // Update routes external input to one semantic action and lands tagged results.
@@ -124,7 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.WindowSizeMsg:
 			place := m.activePlace()
-			action, ok := routeMessage(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount())
+			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 			if !ok || (action.Kind != Resize && action.Kind != Quit && action.Kind != FinishPaneResize && action.Kind != FinishScrollbarDrag) {
 				return m, nil
 			}
@@ -139,6 +215,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case snapshotLoadedMsg:
 		m.files, pending = m.files.landSnapshot(msg, m.controls.Files, m.controls.Reader, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case reviewSnapshotLoadedMsg:
+		m.files, pending = m.files.landReviewSnapshot(msg, m.controls.Reader, m.geometry.NavigatorRows.Height)
+		return m, m.command(pending)
+	case reviewStateLoadedMsg:
+		m.files, pending = m.files.landReviewState(msg, m.controls.Reader)
+		return m, m.command(pending)
+	case reviewDocumentLoadedMsg:
+		m.files = m.files.landReviewDocument(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case reviewFileLoadedMsg:
+		m.files = m.files.landReviewFile(msg, m.geometry.ReaderRows.Height)
+		return m, nil
+	case reviewVerifiedMsg:
+		m.files, pending = m.files.landReviewVerified(msg)
+		return m, m.command(pending)
+	case reviewPersistedMsg:
+		m.files, pending = m.files.landReviewPersisted(msg)
 		return m, m.command(pending)
 	case fileLoadedMsg:
 		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
@@ -158,7 +252,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	place := m.activePlace()
-	action, ok := routeMessage(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount())
+	action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.controls, m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 	if !ok {
 		return m, nil
 	}
@@ -261,12 +355,32 @@ func (m *Model) apply(action Action) effect {
 	case ToggleComparison:
 		if m.active == workspace.Files {
 			m.controls.Comparison = m.controls.Comparison.Next()
+			return m.files.requestComparison(m.controls.Comparison.Label())
+		}
+	case ToggleReview:
+		if m.active == workspace.Files {
+			return m.files.requestReviewToggle(m.files.place.Focus, action.Index)
+		}
+	case ActivateReviewBadge:
+		if m.active == workspace.Files {
+			return m.files.requestReviewToggle(navigation.FocusNavigator, action.Index)
+		}
+	case ToggleReviewBounds:
+		if m.active == workspace.Files {
+			return m.files.toggleReviewBounds(m.controls.Reader)
+		}
+	case NextReviewGap:
+		if m.active == workspace.Files {
+			return m.files.selectNextReviewGap(m.geometry.NavigatorRows.Height, m.controls.Reader)
 		}
 	case Reload:
 		if m.active == workspace.Git {
 			return m.history.reload()
 		}
-		return m.files.reload()
+		pending := m.files.reload()
+		pending.scope = m.controls.Comparison.Label()
+		pending.reviewGeneration = m.files.reviewGeneration
+		return pending
 	case Resize:
 		m.geometry = m.layout.resize(action.Width, action.Height)
 		if !ui.MeetsMinimumSize(action.Width, action.Height) {
@@ -358,7 +472,10 @@ func (m *Model) activate(next workspace.Kind) effect {
 		return effect{}
 	}
 	if !m.files.loaded && !m.files.listLoading {
-		return m.files.reload()
+		pending := m.files.reload()
+		pending.scope = m.controls.Comparison.Label()
+		pending.reviewGeneration = m.files.reviewGeneration
+		return pending
 	}
 	return effect{}
 }
@@ -393,10 +510,17 @@ func (m Model) activeReaderLineCount() int {
 	return len(m.files.readerLines())
 }
 
+func (m Model) activeNavigatorRows() []ui.NavigatorRow {
+	if m.destination() != workspace.Files {
+		return nil
+	}
+	return m.files.viewModel(m.geometry).NavigatorRows
+}
+
 func (m *Model) resizeWorkspaceState() {
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 {
+	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil {
 		m.files.place.ClampReader(len(m.files.readerLines()), m.geometry.ReaderRows.Height)
 	}
 	if m.history.summary.OID != "" {
@@ -409,9 +533,89 @@ func (m Model) command(pending effect) tea.Cmd {
 	case effectLoadSnapshot:
 		source := m.source
 		generation := pending.generation
+		reviewGeneration := pending.reviewGeneration
+		scope := pending.scope
 		return func() tea.Msg {
 			snapshot, err := source.Snapshot()
-			return snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err}
+			message := snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err, reviewGeneration: reviewGeneration}
+			provider, ok := source.(review.Provider)
+			if err == nil && ok {
+				message.reviewCapable = true
+				message.reviewSnapshot, message.reviewErr = provider.ReviewComparisons(scope, reviewCandidates(snapshot.Changed()))
+			}
+			return message
+		}
+	case effectLoadReviewSnapshot:
+		provider, ok := m.source.(review.Provider)
+		if !ok {
+			return nil
+		}
+		listGeneration := pending.generation
+		reviewGeneration := pending.reviewGeneration
+		scope := pending.scope
+		candidates := append([]review.Candidate(nil), pending.candidates...)
+		return func() tea.Msg {
+			snapshot, err := provider.ReviewComparisons(scope, candidates)
+			return reviewSnapshotLoadedMsg{listGeneration: listGeneration, reviewGeneration: reviewGeneration, scope: scope, snapshot: snapshot, err: err}
+		}
+	case effectLoadReviewState:
+		provider, ok := m.source.(review.Provider)
+		if !ok {
+			return nil
+		}
+		root := m.reviewStateRoot
+		return func() tea.Msg {
+			identity, err := provider.ReviewRepositoryID()
+			if err != nil {
+				return reviewStateLoadedMsg{err: err, warning: "review state unavailable; marks will not survive restart"}
+			}
+			ledger, store, warning := review.OpenStore(identity, root)
+			return reviewStateLoadedMsg{ledger: ledger, store: store, warning: warning}
+		}
+	case effectLoadReviewDocument:
+		provider, ok := m.source.(review.Provider)
+		if !ok {
+			return nil
+		}
+		generation, entry := pending.generation, pending.entry
+		comparison, bounds, retained := pending.comparison, pending.bounds, pending.retained
+		return func() tea.Msg {
+			var oldContent review.Content
+			if retained != nil && bounds.Old != comparison.Old {
+				oldContent = review.Content{Endpoint: bounds.Old, State: review.ContentText, Text: *retained, Size: int64(len(*retained))}
+			} else {
+				oldContent = provider.ReadReviewContent(comparison.OldSource, bounds.Old)
+			}
+			newContent := provider.ReadReviewContent(comparison.NewSource, bounds.New)
+			document := review.BuildDocument(bounds, oldContent, newContent)
+			return reviewDocumentLoadedMsg{generation: generation, entry: entry, comparison: comparison, bounds: bounds, document: document}
+		}
+	case effectLoadReviewFile:
+		provider, ok := m.source.(review.Provider)
+		if !ok {
+			return nil
+		}
+		generation, entry, comparison := pending.generation, pending.entry, pending.comparison
+		return func() tea.Msg {
+			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
+			return reviewFileLoadedMsg{generation: generation, entry: entry, comparison: comparison, content: content}
+		}
+	case effectVerifyReview:
+		provider, ok := m.source.(review.Provider)
+		if !ok {
+			return nil
+		}
+		generation, entry := pending.generation, pending.entry
+		comparison, delta := pending.comparison, pending.delta
+		return func() tea.Msg {
+			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
+			return reviewVerifiedMsg{generation: generation, entry: entry, comparison: comparison, delta: delta, content: content}
+		}
+	case effectPersistReview:
+		store, delta := pending.store, pending.delta
+		return func() tea.Msg {
+			ledger, err := store.Replay(delta)
+			return reviewPersistedMsg{delta: delta, ledger: ledger, err: err}
 		}
 	case effectLoadFile:
 		source := m.source

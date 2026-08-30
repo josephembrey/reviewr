@@ -6,6 +6,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
+	"github.com/josephembrey/reviewr/internal/review"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -16,13 +17,35 @@ type filesState struct {
 	snapshot repository.Snapshot
 	entries  []repository.Entry
 
-	readerEntry repository.Entry
-	readerMode  workspace.ReaderMode
-	reader      repository.File
-	diff        repository.Diff
+	readerEntry           repository.Entry
+	readerMode            workspace.ReaderMode
+	reader                repository.File
+	diff                  repository.Diff
+	reviewSnapshot        review.Snapshot
+	ledger                review.Ledger
+	store                 *review.Store
+	reviewDocument        review.Document
+	reviewFile            review.Content
+	displayedComparison   *review.FileComparison
+	displayedBounds       *review.Bounds
+	requestedComparison   *review.FileComparison
+	requestedBounds       *review.Bounds
+	reviewScope           string
+	reviewWarning         string
+	comparisonWarning     string
+	reviewFull            map[string]bool
+	reviewQueue           []review.Delta
+	sessionDeltas         []review.Delta
+	reviewPersisting      bool
+	reviewLoaded          bool
+	reviewCursor          int
+	reviewSelectionAnchor int
+	reviewAssessments     map[string]review.Assessment
+	reviewProgress        map[string]reviewRollup
 
 	listGeneration    uint64
 	contentGeneration uint64
+	reviewGeneration  uint64
 	loaded            bool
 	listLoading       bool
 	readerLoading     bool
@@ -31,18 +54,23 @@ type filesState struct {
 
 func newFilesState() filesState {
 	return filesState{
-		place:          navigation.State{Focus: navigation.FocusNavigator},
-		tree:           filetree.New(nil),
-		listGeneration: 1,
-		listLoading:    true,
+		place:            navigation.State{Focus: navigation.FocusNavigator},
+		tree:             filetree.New(nil),
+		listGeneration:   1,
+		reviewGeneration: 1,
+		listLoading:      true,
+		reviewFull:       make(map[string]bool),
 	}
 }
 
 func (state *filesState) reload() effect {
 	state.listGeneration++
+	state.reviewGeneration++
 	state.listLoading = true
 	state.listError = nil
-	return effect{kind: effectLoadSnapshot, generation: state.listGeneration}
+	state.reviewSnapshot = review.Snapshot{Scope: state.reviewScope, Comparisons: make(map[string]review.FileComparison)}
+	state.rederiveReviews()
+	return effect{kind: effectLoadSnapshot, generation: state.listGeneration, reviewGeneration: state.reviewGeneration}
 }
 
 func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.FileSet, mode workspace.ReaderMode, visibleRows int) (filesState, effect) {
@@ -58,6 +86,12 @@ func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.File
 	}
 	state.listError = nil
 	state.snapshot = msg.snapshot
+	if msg.reviewCapable && msg.reviewGeneration == state.reviewGeneration {
+		state.reviewSnapshot = msg.reviewSnapshot
+		state.reviewScope = msg.reviewSnapshot.Scope
+		state.comparisonWarning = reviewLoadWarning(msg.reviewErr)
+		state.rederiveReviews()
+	}
 	pending := state.project(scope, mode, visibleRows, firstLoad, true)
 	return state, pending
 }
@@ -68,6 +102,10 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	}
 	state.reader = msg.file
 	state.diff = repository.Diff{}
+	state.reviewDocument = review.Document{}
+	state.reviewFile = review.Content{}
+	state.displayedComparison = nil
+	state.displayedBounds = nil
 	state.readerLoading = false
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
@@ -79,6 +117,10 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	}
 	state.diff = msg.diff
 	state.reader = repository.File{}
+	state.reviewDocument = review.Document{}
+	state.reviewFile = review.Content{}
+	state.displayedComparison = nil
+	state.displayedBounds = nil
 	state.readerLoading = false
 	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
@@ -138,12 +180,39 @@ func (state *filesState) requestReader(entry repository.Entry, mode workspace.Re
 	if state.readerEntry.Path != entry.Path || state.readerMode != mode {
 		state.reader = repository.File{}
 		state.diff = repository.Diff{}
+		state.reviewDocument = review.Document{}
+		state.reviewFile = review.Content{}
+		state.displayedComparison = nil
+		state.displayedBounds = nil
 	}
 	state.readerEntry = entry
 	state.readerMode = mode
 	state.readerLoading = true
+	state.requestedComparison = nil
+	state.requestedBounds = nil
 	kind := effectLoadFile
-	if mode == workspace.DiffReader {
+	if mode == workspace.FileReader {
+		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
+			comparisonCopy := comparison
+			boundsCopy := review.Bounds{Old: comparison.Old, New: comparison.New}
+			state.requestedComparison = &comparisonCopy
+			state.requestedBounds = &boundsCopy
+			return effect{kind: effectLoadReviewFile, generation: state.contentGeneration, entry: entry, comparison: comparison}
+		}
+	} else {
+		if comparison, ok := state.reviewSnapshot.Comparisons[entry.Path]; ok {
+			assessment := state.ledger.Assess(comparison)
+			bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
+			var retained *string
+			if assessment.State == review.Updated && !state.reviewFull[entry.Path] && assessment.Frontier != nil && assessment.Retained != nil {
+				bounds.Old = *assessment.Frontier
+				retained = assessment.Retained
+			}
+			comparisonCopy, boundsCopy := comparison, bounds
+			state.requestedComparison = &comparisonCopy
+			state.requestedBounds = &boundsCopy
+			return effect{kind: effectLoadReviewDocument, generation: state.contentGeneration, entry: entry, comparison: comparison, bounds: bounds, retained: retained}
+		}
 		kind = effectLoadDiff
 	}
 	return effect{kind: kind, generation: state.contentGeneration, entry: entry}
@@ -254,6 +323,12 @@ func (state *filesState) clearReader() {
 	state.readerEntry = repository.Entry{}
 	state.reader = repository.File{}
 	state.diff = repository.Diff{}
+	state.reviewDocument = review.Document{}
+	state.reviewFile = review.Content{}
+	state.displayedComparison = nil
+	state.displayedBounds = nil
+	state.requestedComparison = nil
+	state.requestedBounds = nil
 	state.readerLoading = false
 	state.place.ReaderOffset = 0
 }
@@ -282,6 +357,15 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		if entry, ok := state.entry(row.Path); ok {
 			presentation.Status = navigatorStatus(entry.State)
 			presentation.Dimmed = entry.State == repository.FileIgnored
+			if comparison, reviewable := state.reviewSnapshot.Comparisons[row.Path]; reviewable && entry.Changed() {
+				reviewState := state.reviewAssessment(row.Path, comparison).State
+				presentation.Review = &reviewState
+			}
+		} else if row.Kind == filetree.Directory {
+			reviewed, changed := state.directoryReviewProgress(row.Path)
+			if changed > 0 {
+				presentation.Progress = fmt.Sprintf("%d/%d", reviewed, changed)
+			}
 		}
 		rows[index] = presentation
 	}
@@ -301,9 +385,24 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		}
 		if state.readerMode == workspace.DiffReader {
 			readerTitle += "  diff"
+			if state.displayedBounds != nil && state.displayedComparison != nil {
+				assessment := state.ledger.Assess(*state.displayedComparison)
+				if assessment.State == review.Updated && state.displayedBounds.Old != state.displayedComparison.Old {
+					readerTitle += "  since reviewed"
+				} else if state.reviewFull[state.readerEntry.Path] && assessment.State == review.Updated {
+					readerTitle += "  full comparison"
+				} else if assessment.State == review.Partial {
+					readerTitle += "  older review gap; full comparison"
+				} else if assessment.State == review.BasisChanged {
+					readerTitle += "  review basis changed; full comparison"
+				}
+				if state.reviewDocument.Exact {
+					readerTitle += fmt.Sprintf("  +%d -%d", state.reviewDocument.Added, state.reviewDocument.Removed)
+				}
+			}
 		}
 	}
-	if state.readerLoading && (state.reader.Kind != 0 || state.diff.Kind != 0) {
+	if (state.readerLoading || state.listLoading) && (state.reader.Kind != 0 || state.diff.Kind != 0 || state.displayedBounds != nil) {
 		readerTitle += "  refreshing…"
 	}
 	readerEmpty := ui.Line{Text: "Select a file to read its current content.", Tone: ui.ToneQuiet}
@@ -329,12 +428,22 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		ReaderLines:    state.readerLines(),
 		ReaderEmpty:    readerEmpty,
 		ReaderOffset:   state.place.ReaderOffset,
+		FooterWarning:  firstWarning(state.reviewWarning, state.comparisonWarning),
 	}
 }
 
 func (state filesState) readerLines() []ui.Line {
 	if state.readerMode == workspace.DiffReader {
+		if state.displayedBounds != nil {
+			return reviewReaderLines(state.reviewDocument)
+		}
 		return diffReaderLines(state.diff)
+	}
+	if state.displayedComparison != nil {
+		if state.reviewFile.Endpoint != state.displayedComparison.New {
+			return []ui.Line{{Text: "File changed; refresh before marking reviewed.", Tone: ui.ToneError}}
+		}
+		return reviewFileReaderLines(state.reviewFile, state.readerEntry)
 	}
 	return fileReaderLines(state.reader, state.readerEntry)
 }
@@ -494,4 +603,13 @@ func navigatorStatus(state repository.FileState) ui.NavigatorStatus {
 	default:
 		return ui.StatusNone
 	}
+}
+
+func firstWarning(warnings ...string) string {
+	for _, warning := range warnings {
+		if warning != "" {
+			return warning
+		}
+	}
+	return ""
 }
