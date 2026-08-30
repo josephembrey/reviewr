@@ -16,6 +16,9 @@ type State struct {
 	Top          int
 	Focus        Focus
 	ReaderOffset int
+	// ReaderColumn is the wrapped segment's source-cell offset within
+	// ReaderOffset's logical row. It preserves place when pane width changes.
+	ReaderColumn int
 }
 
 // SelectedIdentity returns the selected item's stable identity.
@@ -63,6 +66,7 @@ func (s *State) SelectIndex(index int, visibleRows int) bool {
 	}
 	s.Selected = index
 	s.ReaderOffset = 0
+	s.ReaderColumn = 0
 	s.EnsureSelectionVisible(visibleRows)
 	return true
 }
@@ -100,12 +104,25 @@ func (s *State) EnsureSelectionVisible(visibleRows int) {
 func (s *State) ScrollReader(delta int, lineCount int, visibleRows int) {
 	maxOffset := max(0, lineCount-max(0, visibleRows))
 	s.ReaderOffset = clamp(s.ReaderOffset+delta, 0, maxOffset)
+	s.ReaderColumn = 0
 }
 
 // ClampReader reconciles scroll after content size or viewport changes.
 func (s *State) ClampReader(lineCount int, visibleRows int) {
 	maxOffset := max(0, lineCount-max(0, visibleRows))
 	s.ReaderOffset = clamp(s.ReaderOffset, 0, maxOffset)
+	s.ReaderColumn = 0
+}
+
+// ClampReaderSource reconciles a rich reader's stable logical row without
+// treating wrapped visual height as a number of source lines.
+func (s *State) ClampReaderSource(lineCount int) {
+	if lineCount <= 0 {
+		s.ReaderOffset = 0
+		s.ReaderColumn = 0
+		return
+	}
+	s.ReaderOffset = clamp(s.ReaderOffset, 0, lineCount-1)
 }
 
 func reconcileIndex(old []string, oldIndex int, current []string) int {

@@ -115,7 +115,7 @@ func (state filesState) landSnapshot(msg snapshotLoadedMsg, scope workspace.File
 	return state, pending
 }
 
-func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState {
+func (state filesState) landFile(msg fileLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
@@ -134,11 +134,11 @@ func (state filesState) landFile(msg fileLoadedMsg, visibleRows int) filesState 
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	return state
 }
 
-func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState {
+func (state filesState) landDiff(msg diffLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}
@@ -157,7 +157,7 @@ func (state filesState) landDiff(msg diffLoadedMsg, visibleRows int) filesState 
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	return state
 }
 
@@ -291,6 +291,7 @@ func (state *filesState) requestMode(mode workspace.ReaderMode) effect {
 		return effect{}
 	}
 	state.place.ReaderOffset = 0
+	state.place.ReaderColumn = 0
 	return state.requestReader(state.readerEntry, mode)
 }
 
@@ -300,6 +301,7 @@ func (state *filesState) selectDelta(delta, visibleRows int, mode workspace.Read
 
 func (state *filesState) selectIndex(index, visibleRows int, mode workspace.ReaderMode) effect {
 	readerOffset := state.place.ReaderOffset
+	readerColumn := state.place.ReaderColumn
 	if !state.place.SelectIndex(index, visibleRows) {
 		return effect{}
 	}
@@ -307,11 +309,13 @@ func (state *filesState) selectIndex(index, visibleRows int, mode workspace.Read
 	row, ok := state.tree.Row(identity)
 	if !ok || row.Kind == filetree.Directory {
 		state.place.ReaderOffset = readerOffset
+		state.place.ReaderColumn = readerColumn
 		return effect{}
 	}
 	entry, ok := state.entry(row.Path)
 	if !ok {
 		state.place.ReaderOffset = readerOffset
+		state.place.ReaderColumn = readerColumn
 		return effect{}
 	}
 	return state.requestReader(entry, mode)
@@ -400,6 +404,7 @@ func (state *filesState) clearReader() {
 	state.requestedBounds = nil
 	state.readerLoading = false
 	state.place.ReaderOffset = 0
+	state.place.ReaderColumn = 0
 }
 
 func (state filesState) entry(path string) (repository.Entry, bool) {
@@ -498,6 +503,7 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		ReaderDocument: state.readerDocument(),
 		ReaderEmpty:    readerEmpty,
 		ReaderOffset:   state.place.ReaderOffset,
+		ReaderColumn:   state.place.ReaderColumn,
 		FooterWarning:  firstWarning(state.reviewWarning, state.comparisonWarning),
 	}
 }

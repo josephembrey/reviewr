@@ -590,13 +590,18 @@ func renderReader(model Model) string {
 		content = []Line{model.ReaderEmpty}
 	}
 	total := len(content)
+	readerOffset := model.ReaderOffset
+	readerLayout := ReaderLayout{}
 	if document.Kind != ReaderDocumentNone {
-		total = len(document.Rows)
+		readerLayout = CalculateReaderLayout(g.ReaderRows, document)
+		total = readerLayout.Total
+		readerOffset = readerLayout.VisualOffset(model.ReaderOffset, model.ReaderColumn)
 	}
 	if len(commitRows) != 0 {
 		total = len(commitRows)
+		readerOffset = model.ReaderOffset
 	}
-	bar, overflow := CalculateScrollbar(g.ReaderRows, total, model.ReaderOffset)
+	bar, overflow := CalculateScrollbar(g.ReaderRows, total, readerOffset)
 	contentWidth := g.ReaderRows.Width
 	var scrollbar []string
 	if overflow {
@@ -604,16 +609,20 @@ func renderReader(model Model) string {
 		scrollbar = verticalScrollbar(bar, model.Focus == navigation.FocusReader)
 	}
 	readerGeometry := CalculateReaderGeometry(g.ReaderRows, document, scrollbar != nil)
+	if document.Kind != ReaderDocumentNone {
+		readerGeometry = readerLayout.Geometry
+	}
 	commitColumns := commitrow.Measure(commitRows, contentWidth)
 	now := time.Now()
 	for row := 0; row < g.ReaderRows.Height; row++ {
-		index := model.ReaderOffset + row
+		index := readerOffset + row
 		if index < total {
 			line := ""
 			if len(commitRows) != 0 {
 				line = renderCommitRow(commitRows[index], commitColumns, contentWidth, false, false, now)
 			} else if document.Kind != ReaderDocumentNone {
-				line = renderReaderRow(document.Rows[index], readerGeometry, model.Controls.DiffHighlight)
+				wrapped, continuation := readerLayout.Row(index)
+				line = renderReaderRowPart(wrapped, readerGeometry, model.Controls.DiffHighlight, continuation)
 			} else {
 				line = fit(renderLine(content[index]), contentWidth)
 			}
@@ -639,6 +648,10 @@ func renderReader(model Model) string {
 }
 
 func renderReaderRow(row ReaderRow, geometry ReaderGeometry, highlight workspace.DiffHighlight) string {
+	return renderReaderRowPart(row, geometry, highlight, false)
+}
+
+func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight workspace.DiffHighlight, continuation bool) string {
 	width := geometry.Content.Width
 	if width <= 0 {
 		return ""
@@ -657,7 +670,7 @@ func renderReaderRow(row ReaderRow, geometry ReaderGeometry, highlight workspace
 		barStyle = barStyle.Foreground(errorColor).Bold(true)
 	}
 	number := ""
-	if line := row.DisplayLine(); line > 0 {
+	if line := row.DisplayLine(); line > 0 && !continuation {
 		number = strconv.FormatUint(line, 10)
 	}
 	number = fmt.Sprintf("%*s ", geometry.Digits, number)

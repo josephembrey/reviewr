@@ -219,7 +219,10 @@ type Model struct {
 	ReaderCommitRows []commitrow.Row
 	ReaderEmpty      Line
 	ReaderOffset     int
-	FooterWarning    string
+	// ReaderColumn is the wrapped segment's source-cell offset within
+	// ReaderOffset's stable logical row.
+	ReaderColumn  int
+	FooterWarning string
 
 	Scratch            scratch.Presentation
 	ScratchStatus      string

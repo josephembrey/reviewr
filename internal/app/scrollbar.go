@@ -29,7 +29,7 @@ func (state scrollbarDragState) offsetAt(model *Model, y int) (int, bool) {
 	if state.pane == navigation.FocusReader {
 		rows = model.geometry.ReaderRows
 		total = model.activeReaderLineCount()
-		offset = place.ReaderOffset
+		offset = model.activeReaderVisualOffset()
 	}
 	bar, ok := ui.CalculateScrollbar(rows, total, offset)
 	if !ok {
@@ -49,7 +49,7 @@ func (model *Model) dragScrollbarTo(y int) {
 	place := model.activePlace()
 	place.Focus = model.scrollbar.pane
 	if model.scrollbar.pane == navigation.FocusReader {
-		place.ReaderOffset = offset
+		model.setActiveReaderVisualOffset(offset)
 		return
 	}
 	place.Top = offset

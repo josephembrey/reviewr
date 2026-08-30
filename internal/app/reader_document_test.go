@@ -188,3 +188,29 @@ func TestDiffHighlightToggleIsGlobalRenderOnlyAndEligibilityIsVisibleDocument(t 
 		t.Fatal("Stash diff did not inherit global eligibility")
 	}
 }
+
+func TestRichReaderScrollTraversesWrappedVisualRows(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 80, Height: 10})
+	model.active = workspace.Files
+	model.files.readerEntry = repository.Entry{Path: "long.go"}
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: []ui.ReaderRow{{
+		Identity: "line:1", Kind: ui.ReaderFile, Text: strings.Repeat("x", 1_000), NewLine: 1,
+	}}}
+	model.files.readerPresentation = &document
+	layout := ui.CalculateReaderLayout(model.geometry.ReaderRows, document)
+	if layout.Total <= model.geometry.ReaderRows.Height {
+		t.Fatalf("fixture did not overflow: total %d height %d", layout.Total, model.geometry.ReaderRows.Height)
+	}
+
+	model.apply(Action{Kind: ScrollReader, Amount: 1})
+	if model.files.place.ReaderOffset != 0 || model.files.place.ReaderColumn != layout.Geometry.Code.Width || model.activeReaderVisualOffset() != 1 {
+		t.Fatalf("first wrapped scroll = %+v visual=%d", model.files.place, model.activeReaderVisualOffset())
+	}
+	model.apply(Action{Kind: ScrollReader, Amount: 10_000})
+	want := layout.Total - model.geometry.ReaderRows.Height
+	if got := model.activeReaderVisualOffset(); got != want {
+		t.Fatalf("wrapped scroll bottom = %d, want %d; place=%+v", got, want, model.files.place)
+	}
+}

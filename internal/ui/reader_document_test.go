@@ -52,6 +52,59 @@ func TestReaderDocumentGutterIsStableAndAlignsEverySemanticKind(t *testing.T) {
 	}
 }
 
+func TestReaderLayoutWrapsStyledSourceRowsInsideCodeWidth(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
+		Kind: ReaderFile, Text: "abcdefghij", NewLine: 1,
+		Spans: []TextSpan{
+			{Text: "abcde", Style: TextStyle{Foreground: "4"}},
+			{Text: "fghij", Style: TextStyle{Foreground: "3"}},
+		},
+	}}}
+	layout := CalculateReaderLayout(Rect{Width: 10, Height: 2}, document)
+	if layout.Geometry.Code.Width != 5 || layout.Total != 2 {
+		t.Fatalf("reader layout = %+v", layout)
+	}
+	first, firstContinuation := layout.Row(0)
+	second, secondContinuation := layout.Row(1)
+	if firstContinuation || !secondContinuation || first.Text != "abcde" || second.Text != "fghij" {
+		t.Fatalf("wrapped rows = (%+v,%v), (%+v,%v)", first, firstContinuation, second, secondContinuation)
+	}
+	firstRendered := renderReaderRowPart(first, layout.Geometry, workspace.DiffHighlightSidebar, firstContinuation)
+	secondRendered := renderReaderRowPart(second, layout.Geometry, workspace.DiffHighlightSidebar, secondContinuation)
+	if got := ansi.Strip(firstRendered); got != "   1 abcde" {
+		t.Fatalf("first wrapped row = %q", got)
+	}
+	if got := ansi.Strip(secondRendered); got != "     fghij" {
+		t.Fatalf("continuation row = %q", got)
+	}
+	if !strings.Contains(firstRendered, "34m") || !strings.Contains(secondRendered, "33m") {
+		t.Fatalf("wrapped syntax styles were lost: %q / %q", firstRendered, secondRendered)
+	}
+}
+
+func TestReaderLayoutMapsWrappedVisualScrollToLogicalPlace(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{
+		{Kind: ReaderInsertion, Text: "abcdefghijkl", NewLine: 10},
+		{Kind: ReaderContext, Text: "tail", OldLine: 11, NewLine: 11},
+	}}
+	layout := CalculateReaderLayout(Rect{Width: 10, Height: 2}, document)
+	if layout.Total < 4 {
+		t.Fatalf("wrapped total = %d, want at least 4", layout.Total)
+	}
+	for visual := 0; visual < layout.Total; visual++ {
+		source, column := layout.SourceOffset(visual)
+		if roundTrip := layout.VisualOffset(source, column); roundTrip != visual {
+			t.Fatalf("visual %d -> (%d,%d) -> %d", visual, source, column, roundTrip)
+		}
+		row, continued := layout.Row(visual)
+		if source == 0 && continued && row.NewLine != 10 {
+			t.Fatalf("continuation lost source identity: %+v", row)
+		}
+	}
+}
+
 func TestReaderGutterMinimumNarrowWidthsAndScrollbarLane(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument}

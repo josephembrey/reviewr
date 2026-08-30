@@ -357,7 +357,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.MouseClickMsg, tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg, tea.WindowSizeMsg:
 			place := m.activePlace()
-			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+			readerOffset := m.activeReaderVisualOffset()
+			action, ok := routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), readerOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 			if !ok || (action.Kind != Resize && action.Kind != Quit && action.Kind != FinishPaneResize && action.Kind != FinishScrollbarDrag) {
 				return m, nil
 			}
@@ -391,12 +392,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.files = m.files.landReviewDocument(msg, m.geometry.ReaderRows.Height)
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return m, nil
 	case reviewFileLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
 			return m, nil
 		}
 		m.files = m.files.landReviewFile(msg, m.geometry.ReaderRows.Height)
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return m, nil
 	case reviewVerifiedMsg:
 		m.files, pending = m.files.landReviewVerified(msg)
@@ -409,12 +412,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.files = m.files.landFile(msg, m.geometry.ReaderRows.Height)
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return m, nil
 	case diffLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
 			return m, nil
 		}
 		m.files = m.files.landDiff(msg, m.geometry.ReaderRows.Height)
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		return m, nil
 	case commitsLoadedMsg:
 		if !m.acceptsRepositoryPoll(msg.background, msg.activity) {
@@ -482,6 +487,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.stashes = m.stashes.landReader(msg, m.geometry.ReaderRows.Height)
+		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
 		return m, nil
 	}
 
@@ -492,7 +498,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		action, ok = routeScratchMessage(msg, m.geometry, note.editor.Presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
 	} else {
 		place := m.activePlace()
-		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), place.ReaderOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
+		readerOffset := m.activeReaderVisualOffset()
+		action, ok = routeMessageWithRows(msg, place.Focus, m.geometry, m.destination(), m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), readerOffset, m.activeReaderLineCount(), m.activeNavigatorRows())
 	}
 	if !ok {
 		return m, nil
@@ -687,6 +694,7 @@ func (m *Model) apply(action Action) effect {
 	case ResizePanes:
 		if m.layout.dragging {
 			m.geometry = m.layout.dragTo(action.Position, m.geometry.Screen.Width, m.geometry.Screen.Height)
+			m.resizeWorkspaceState()
 		}
 	case FinishPaneResize:
 		m.layout.finishDrag()
@@ -791,7 +799,7 @@ func (m *Model) apply(action Action) effect {
 			m.files.collapseSelected(m.geometry.NavigatorRows.Height)
 		}
 	case ScrollReader:
-		m.activePlace().ScrollReader(action.Amount, m.activeReaderLineCount(), m.geometry.ReaderRows.Height)
+		m.scrollActiveReader(action.Amount)
 	default:
 		if m.scratch {
 			return m.note.apply(action, m.geometry)
@@ -875,6 +883,9 @@ func (m *Model) finishScratchExit(exit scratchExit) effect {
 }
 
 func (m Model) activeReaderLineCount() int {
+	if layout, ok := m.activeReaderLayout(); ok {
+		return layout.Total
+	}
 	if m.gitStashesActive() {
 		return len(m.stashes.readerRows())
 	}
@@ -885,6 +896,59 @@ func (m Model) activeReaderLineCount() int {
 		return len(commitSummaryLines(m.history.summary))
 	}
 	return len(m.files.readerRows())
+}
+
+func (m Model) activeReaderLayout() (ui.ReaderLayout, bool) {
+	var document ui.ReaderDocument
+	switch {
+	case m.gitStashesActive():
+		document = m.stashes.readerDocument()
+	case m.active == workspace.Files:
+		document = m.files.readerDocument()
+	default:
+		return ui.ReaderLayout{}, false
+	}
+	if document.Kind == ui.ReaderDocumentNone {
+		return ui.ReaderLayout{}, false
+	}
+	return ui.CalculateReaderLayout(m.geometry.ReaderRows, document), true
+}
+
+func (m Model) activeReaderVisualOffset() int {
+	place := m.activePlace()
+	if layout, ok := m.activeReaderLayout(); ok {
+		return layout.VisualOffset(place.ReaderOffset, place.ReaderColumn)
+	}
+	return place.ReaderOffset
+}
+
+func (m *Model) setActiveReaderVisualOffset(offset int) {
+	place := m.activePlace()
+	if layout, ok := m.activeReaderLayout(); ok {
+		maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+		source, column := layout.SourceOffset(min(max(offset, 0), maximum))
+		place.ReaderOffset = source
+		place.ReaderColumn = column
+		return
+	}
+	place.ReaderOffset = min(max(offset, 0), max(0, m.activeReaderLineCount()-m.geometry.ReaderRows.Height))
+	place.ReaderColumn = 0
+}
+
+func (m *Model) scrollActiveReader(delta int) {
+	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
+}
+
+func (m Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
+	if document.Kind == ui.ReaderDocumentNone {
+		place.ClampReader(0, m.geometry.ReaderRows.Height)
+		return
+	}
+	layout := ui.CalculateReaderLayout(m.geometry.ReaderRows, document)
+	maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+	source, column := layout.SourceOffset(min(layout.VisualOffset(place.ReaderOffset, place.ReaderColumn), maximum))
+	place.ReaderOffset = source
+	place.ReaderColumn = column
 }
 
 func (m Model) activeNavigatorRows() []ui.NavigatorRow {
@@ -904,15 +968,15 @@ func (m *Model) resizeWorkspaceState() {
 	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
 	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil {
-		m.files.place.ClampReader(len(m.files.readerRows()), m.geometry.ReaderRows.Height)
+	if m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil || m.files.readerDocument().Kind != ui.ReaderDocumentNone {
+		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 	}
 	if m.history.summary.OID != "" {
 		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
 	}
 	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
-	if m.stashes.readerFileID != "" {
-		m.stashes.place.ClampReader(len(m.stashes.readerRows()), m.geometry.ReaderRows.Height)
+	if m.stashes.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone {
+		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
 	}
 }
 

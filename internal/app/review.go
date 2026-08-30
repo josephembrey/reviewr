@@ -55,7 +55,7 @@ func (state *filesState) requestComparison(scope string) effect {
 	}
 }
 
-func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode workspace.ReaderMode, visibleRows int) (filesState, effect) {
+func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode workspace.ReaderMode, _ int) (filesState, effect) {
 	if msg.listGeneration != state.listGeneration || msg.reviewGeneration != state.reviewGeneration || msg.scope != state.reviewScope {
 		return state, effect{}
 	}
@@ -71,7 +71,7 @@ func (state filesState) landReviewSnapshot(msg reviewSnapshotLoadedMsg, mode wor
 		return state, effect{}
 	}
 	pending := state.requestReader(state.readerEntry, mode)
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	return state, pending
 }
 
@@ -95,7 +95,7 @@ func (state filesState) landReviewState(msg reviewStateLoadedMsg, mode workspace
 	return state, pending
 }
 
-func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, visibleRows int) filesState {
+func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || state.readerMode != workspace.DiffReader ||
 		msg.entry.Path != state.readerEntry.Path || state.requestedComparison == nil || state.requestedBounds == nil ||
 		*state.requestedComparison != msg.comparison || *state.requestedBounds != msg.bounds {
@@ -126,14 +126,14 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg, visibleR
 		presentation = state.deriveReaderDocument()
 	}
 	state.readerPresentation = &presentation
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	if !msg.document.Exact && msg.document.Reason != "" {
 		state.comparisonWarning = msg.document.Reason
 	}
 	return state
 }
 
-func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int) filesState {
+func (state filesState) landReviewFile(msg reviewFileLoadedMsg, _ int) filesState {
 	if msg.generation != state.contentGeneration || state.readerMode != workspace.FileReader ||
 		msg.entry.Path != state.readerEntry.Path || state.requestedComparison == nil || state.requestedBounds == nil ||
 		*state.requestedComparison != msg.comparison {
@@ -160,7 +160,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg, visibleRows int)
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	if msg.content.Endpoint != comparison.New {
 		state.comparisonWarning = "file changed; refresh before marking reviewed"
 	}

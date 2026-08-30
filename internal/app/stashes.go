@@ -13,6 +13,7 @@ import (
 type stashReaderPlace struct {
 	fileIdentity string
 	readerOffset int
+	readerColumn int
 }
 
 // stashState owns Stashes independently from Log and Files. Selectors are
@@ -115,6 +116,7 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 		state.fileSelected = 0
 		state.clearReader()
 		state.place.ReaderOffset = 0
+		state.place.ReaderColumn = 0
 		return state, effect{}
 	}
 	wanted := oldIdentity
@@ -130,8 +132,10 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 	state.fileSelected = indexIdentity(newIdentities, identity)
 	if saved := state.readerPlaces[selectedOID]; saved.fileIdentity == identity {
 		state.place.ReaderOffset = saved.readerOffset
+		state.place.ReaderColumn = saved.readerColumn
 	} else if oldIdentity != identity {
 		state.place.ReaderOffset = 0
+		state.place.ReaderColumn = 0
 	}
 	if msg.background && identity == oldIdentity {
 		return state, state.requestSelectedFileQuiet()
@@ -139,7 +143,7 @@ func (state stashState) landFiles(msg stashFilesLoadedMsg, visibleRows int) (sta
 	return state, state.requestSelectedFile(visibleRows)
 }
 
-func (state stashState) landReader(msg stashFileLoadedMsg, visibleRows int) stashState {
+func (state stashState) landReader(msg stashFileLoadedMsg, _ int) stashState {
 	selectedOID, selected := state.place.SelectedIdentity()
 	if msg.generation != state.readerGeneration || !selected || msg.oid != selectedOID ||
 		msg.oid != state.readerOID || msg.fileIdentity != state.readerFileID {
@@ -155,7 +159,7 @@ func (state stashState) landReader(msg stashFileLoadedMsg, visibleRows int) stas
 	}
 	state.readerPresentation = &presentation
 	state.place.ReaderOffset = reconcileLogicalLine(oldLines, oldOffset, readerRowIdentities(state.readerRows()))
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	state.saveReaderPlace()
 	return state
 }
@@ -183,9 +187,11 @@ func (state *stashState) selectFileDelta(delta, visibleRows int) effect {
 	}
 	state.fileSelected = next
 	state.place.ReaderOffset = 0
+	state.place.ReaderColumn = 0
 	if oid, ok := state.place.SelectedIdentity(); ok {
 		if saved := state.readerPlaces[oid]; saved.fileIdentity == state.selectedFileIdentity() {
 			state.place.ReaderOffset = saved.readerOffset
+			state.place.ReaderColumn = saved.readerColumn
 		}
 	}
 	return state.requestSelectedFile(visibleRows)
@@ -205,6 +211,7 @@ func (state *stashState) requestSelectedFiles() effect {
 		state.fileSelected = 0
 		state.clearReader()
 		state.place.ReaderOffset = 0
+		state.place.ReaderColumn = 0
 	}
 	state.filesOID = stash.OID
 	return effect{kind: effectLoadStashFiles, generation: state.filesGeneration, identity: stash.OID, stashSource: stash.Source}
@@ -223,7 +230,7 @@ func (state *stashState) requestSelectedFilesQuiet() effect {
 	}
 }
 
-func (state *stashState) requestSelectedFile(visibleRows int) effect {
+func (state *stashState) requestSelectedFile(_ int) effect {
 	stash, stashOK := state.selectedStash()
 	if !stashOK || state.fileSelected < 0 || state.fileSelected >= len(state.files) {
 		state.clearReader()
@@ -239,7 +246,7 @@ func (state *stashState) requestSelectedFile(visibleRows int) effect {
 	}
 	state.readerOID = stash.OID
 	state.readerFileID = fileIdentity
-	state.place.ClampReader(len(state.readerRows()), visibleRows)
+	state.place.ClampReaderSource(len(state.readerRows()))
 	return effect{
 		kind: effectLoadStashFile, generation: state.readerGeneration, identity: stash.OID,
 		stashSource: stash.Source, changedFile: change,
@@ -270,7 +277,10 @@ func (state *stashState) saveReaderPlace() {
 	if identity == "" {
 		return
 	}
-	state.readerPlaces[oid] = stashReaderPlace{fileIdentity: identity, readerOffset: state.place.ReaderOffset}
+	state.readerPlaces[oid] = stashReaderPlace{
+		fileIdentity: identity, readerOffset: state.place.ReaderOffset,
+		readerColumn: state.place.ReaderColumn,
+	}
 }
 
 func (state *stashState) clearFiles() {
@@ -282,6 +292,7 @@ func (state *stashState) clearFiles() {
 	state.filesError = nil
 	state.clearReader()
 	state.place.ReaderOffset = 0
+	state.place.ReaderColumn = 0
 }
 
 func (state *stashState) clearReader() {
@@ -411,6 +422,7 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
 		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: state.readerDocument(),
 		ReaderEmpty: readerEmpty, ReaderOffset: state.place.ReaderOffset,
+		ReaderColumn: state.place.ReaderColumn,
 	}
 }
 
