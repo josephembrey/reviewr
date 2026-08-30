@@ -204,10 +204,12 @@ var (
 	fileIconCyanColor   = lipgloss.Color("#56B6C2")
 	nixIconBlueColor    = lipgloss.Color("#7EBAE4")
 	// File-type icons above intentionally punch through the terminal palette.
-	// Ordinary folders use the terminal's default foreground; only ignored
-	// content is deliberately de-emphasized.
-	ignoredTreeColor = lipgloss.BrightBlack
-	ignoredTreeStyle = lipgloss.NewStyle().Foreground(ignoredTreeColor).Faint(true)
+	// Match the legacy terminal palette: directories carry a bright-blue
+	// identity accent, neutral icons and ignored rows use readable ANSI white,
+	// and only truly quiet metadata falls through to BrightBlack.
+	directoryTreeColor = lipgloss.BrightBlue
+	ignoredTreeColor   = lipgloss.White
+	ignoredTreeStyle   = lipgloss.NewStyle().Foreground(ignoredTreeColor)
 )
 
 // treeRowStyleLayers is the narrow merge seam for later status and ignored metadata. Status owns
@@ -241,12 +243,12 @@ type resolvedTreeRowStyles struct {
 
 func resolveTreeRowStyles(item NavigatorRow, icon fileTreeIcon, layers treeRowStyleLayers) resolvedTreeRowStyles {
 	styles := resolvedTreeRowStyles{
-		marker: dimStyle,
+		marker: mutedStyle,
 		icon:   lipgloss.NewStyle().Foreground(fileTreeIconColor(icon.tone)),
 	}
 	if item.Directory {
-		styles.marker = chromeStyle
-		styles.filename = chromeStyle
+		styles.marker = lipgloss.NewStyle().Foreground(directoryTreeColor)
+		styles.filename = lipgloss.NewStyle().Foreground(directoryTreeColor).Bold(true)
 	}
 	if color, ok := treeStatusColor(layers.statusAccent); ok {
 		styles.marker = lipgloss.NewStyle().Foreground(color)
@@ -289,24 +291,24 @@ func fileTreeIconColor(tone fileIconTone) color.Color {
 	case fileIconNix:
 		return nixIconBlueColor
 	case fileIconDirectory:
-		return lipgloss.NoColor{}
+		return directoryTreeColor
 	default:
-		return dimColor
+		return secondaryColor
 	}
 }
 
 func treeStatusColor(accent treeStatusAccent) (color.Color, bool) {
 	switch accent {
 	case treeStatusAdded:
-		return lipgloss.Color("2"), true
+		return lipgloss.BrightGreen, true
 	case treeStatusModified:
-		return lipgloss.Color("3"), true
+		return lipgloss.BrightBlue, true
 	case treeStatusDeleted:
-		return lipgloss.Color("1"), true
+		return lipgloss.BrightRed, true
 	case treeStatusRenamed:
-		return lipgloss.Color("5"), true
+		return lipgloss.BrightMagenta, true
 	case treeStatusUntracked:
-		return lipgloss.Color("6"), true
+		return lipgloss.BrightGreen, true
 	default:
 		return nil, false
 	}

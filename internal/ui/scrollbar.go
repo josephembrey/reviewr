@@ -57,13 +57,13 @@ func verticalScrollbar(viewport, total, offset int, focused bool) []string {
 		return nil
 	}
 
-	thumbStyle := dimStyle.Bold(true)
+	thumbStyle := chromeStyle.Bold(true)
 	if focused {
 		thumbStyle = headerStyle
 	}
 	bar := make([]string, viewport)
 	for row := range bar {
-		bar[row] = dimStyle.Render("▕")
+		bar[row] = mutedStyle.Render("▕")
 		if barGeometry.Thumb.Contains(barGeometry.Thumb.X, row) {
 			bar[row] = thumbStyle.Render("▐")
 		}

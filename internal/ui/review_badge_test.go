@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/review"
@@ -25,15 +24,13 @@ func TestReviewBadgesUseIndependentAlignedRightSideField(t *testing.T) {
 	}
 }
 
-func TestUnreviewedBadgeAndDirectoryProgressUseDefaultForeground(t *testing.T) {
+func TestUnreviewedBadgeAndDirectoryProgressUseReadableSecondaryForeground(t *testing.T) {
 	t.Parallel()
-	if _, ok := reviewBadgeStyle(review.Unreviewed).GetForeground().(lipgloss.NoColor); !ok {
-		t.Fatalf("unreviewed badge foreground = %T, want terminal default", reviewBadgeStyle(review.Unreviewed).GetForeground())
-	}
+	assertSameColor(t, reviewBadgeStyle(review.Unreviewed).GetForeground(), secondaryColor)
 
 	directory := NavigatorRow{Label: "src", Tree: true, Directory: true, Expanded: true, Progress: "2/3"}
 	rendered := renderNavigatorPresentationRow(directory, 20, false, false, commitrow.Columns{}, time.Time{})
-	if strings.Contains(rendered, dimStyle.Render(" 2/3")) {
+	if strings.Contains(rendered, mutedStyle.Render(" 2/3")) {
 		t.Fatalf("directory review progress is incorrectly muted: %q", rendered)
 	}
 }

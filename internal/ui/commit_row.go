@@ -12,11 +12,11 @@ import (
 )
 
 var graphPalette = []color.Color{
-	lipgloss.Blue,
+	accentColor,
 	lipgloss.Magenta,
 	lipgloss.Green,
 	lipgloss.Yellow,
-	lipgloss.Cyan,
+	lipgloss.Yellow,
 	lipgloss.Red,
 }
 
@@ -38,7 +38,7 @@ func renderCommitRow(row commitrow.Row, columns commitrow.Columns, width int, se
 	var rendered strings.Builder
 	rendered.WriteString(renderCommitGraph(row.Graph, columns.Graph, selected, focused))
 	sha := truncatePlain(SafeSingleLine(row.ShortOID), commitrow.SHAWidth)
-	rendered.WriteString(commitCellStyle(lipgloss.Blue, selected, focused).Render(padRight(sha, commitrow.SHAWidth)))
+	rendered.WriteString(commitCellStyle(accentColor, selected, focused).Render(padRight(sha, commitrow.SHAWidth)))
 	rendered.WriteString(commitCellStyle(nil, selected, focused).Render("  "))
 	subject := truncatePlain(SafeSingleLine(row.Subject), subjectWidth)
 	rendered.WriteString(commitCellStyle(nil, selected, focused).Render(padRight(subject, subjectWidth)))
@@ -50,14 +50,14 @@ func renderCommitRow(row commitrow.Row, columns commitrow.Columns, width int, se
 		author := truncatePlain(SafeSingleLine(row.Author), columns.Author)
 		gap := max(2, trailingWidth-(columns.Author+2+columns.Age))
 		rendered.WriteString(commitCellStyle(nil, selected, focused).Render(strings.Repeat(" ", gap)))
-		rendered.WriteString(commitCellStyle(dimColor, selected, focused).Render(padRight(author, columns.Author)))
+		rendered.WriteString(commitCellStyle(mutedColor, selected, focused).Render(padRight(author, columns.Author)))
 		trailingWidth -= gap + columns.Author
 	}
 	if columns.Age > 0 {
 		gap := max(2, trailingWidth-columns.Age)
 		rendered.WriteString(commitCellStyle(nil, selected, focused).Render(strings.Repeat(" ", gap)))
 		age := truncatePlain(commitrow.AgeLabel(now, row.AuthoredUnix), columns.Age)
-		rendered.WriteString(commitCellStyle(dimColor, selected, focused).Render(padLeft(age, columns.Age)))
+		rendered.WriteString(commitCellStyle(mutedColor, selected, focused).Render(padLeft(age, columns.Age)))
 	}
 	remaining := width - lipgloss.Width(rendered.String())
 	if remaining > 0 {
@@ -114,7 +114,7 @@ func renderCommitTrail(row commitrow.Row, width int, selected, focused bool) str
 			break
 		}
 		if !first {
-			write(" · ", dimColor)
+			write(" · ", mutedColor)
 		}
 		icon, semanticColor := commitRefStyle(reference.Kind)
 		write(icon+" "+SafeSingleLine(reference.Name), semanticColor)
@@ -122,9 +122,9 @@ func renderCommitTrail(row commitrow.Row, width int, selected, focused bool) str
 	}
 	if row.Merge && remaining > 0 {
 		if !first {
-			write(" · ", dimColor)
+			write(" · ", mutedColor)
 		}
-		write("merge", dimColor)
+		write("merge", mutedColor)
 	}
 	if remaining > 0 {
 		write(strings.Repeat(" ", remaining), nil)
@@ -135,7 +135,7 @@ func renderCommitTrail(row commitrow.Row, width int, selected, focused bool) str
 func commitRefStyle(kind commitrow.RefKind) (string, color.Color) {
 	switch kind {
 	case commitrow.Remote:
-		return "", lipgloss.Blue
+		return "", accentColor
 	case commitrow.Tag:
 		return "", lipgloss.Yellow
 	default:

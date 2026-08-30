@@ -30,10 +30,10 @@ func RenderMinimumSize(width, height int) string {
 	}
 	message := []string{
 		errorStyle.Bold(true).Render("terminal too small"),
-		dimStyle.Render("reviewr needs more room"),
+		mutedStyle.Render("reviewr needs more room"),
 		fmt.Sprintf("current  %d × %d", width, height),
 		fmt.Sprintf("minimum  %d × %d", MinimumWidth, MinimumHeight),
-		dimStyle.Render("resize to continue  •  q quit"),
+		mutedStyle.Render("resize to continue  •  q quit"),
 	}
 	rows := make([]string, height)
 	start := max(0, (height-len(message))/2)

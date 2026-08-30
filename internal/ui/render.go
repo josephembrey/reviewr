@@ -18,17 +18,18 @@ var (
 	// Structural and semantic roles use the terminal's basic palette. This
 	// keeps reviewr coherent with both generated palettes and conventional
 	// ANSI themes; file-type icons are the deliberate truecolor exception.
-	accentColor = lipgloss.Blue
-	dimColor    = lipgloss.BrightBlack
-	errorColor  = lipgloss.Red
-	addedColor  = lipgloss.Green
-	purpleColor = lipgloss.Magenta
-	yellowColor = lipgloss.Yellow
+	accentColor    = lipgloss.Cyan
+	secondaryColor = lipgloss.White
+	mutedColor     = lipgloss.BrightBlack
+	errorColor     = lipgloss.Red
+	addedColor     = lipgloss.Green
+	purpleColor    = lipgloss.Magenta
+	yellowColor    = lipgloss.Yellow
 
 	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	focusedTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	chromeStyle       = lipgloss.NewStyle()
-	dimStyle          = lipgloss.NewStyle().Foreground(dimColor)
+	chromeStyle       = lipgloss.NewStyle().Foreground(secondaryColor)
+	mutedStyle        = lipgloss.NewStyle().Foreground(mutedColor)
 	errorStyle        = lipgloss.NewStyle().Foreground(errorColor)
 	addedStyle        = lipgloss.NewStyle().Foreground(addedColor)
 	purpleStyle       = lipgloss.NewStyle().Foreground(purpleColor)
@@ -526,7 +527,7 @@ func renderTextStyle(text string, value TextStyle) string {
 func renderToneText(text string, tone Tone) string {
 	switch tone {
 	case ToneQuiet:
-		return dimStyle.Render(text)
+		return mutedStyle.Render(text)
 	case ToneError:
 		return errorStyle.Render(text)
 	case ToneAccent:

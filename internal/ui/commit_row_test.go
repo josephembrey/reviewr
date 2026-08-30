@@ -57,7 +57,7 @@ func TestCommitRowUsesGraphAndSemanticANSIPalette(t *testing.T) {
 			t.Fatalf("semantic trail missing %q: %q", value, plain)
 		}
 	}
-	for _, sgr := range []string{"\x1b[34m", "\x1b[32m", "\x1b[33m"} {
+	for _, sgr := range []string{"\x1b[36m", "\x1b[32m", "\x1b[33m"} {
 		if !strings.Contains(rendered, sgr) {
 			t.Fatalf("ANSI palette sequence %q missing from %q", sgr, rendered)
 		}

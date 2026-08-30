@@ -97,6 +97,15 @@ func TestNixIconUsesCanonicalTruecolorBlue(t *testing.T) {
 	}
 }
 
+func TestNeutralFileIconUsesReadableSecondaryANSI(t *testing.T) {
+	t.Parallel()
+	icon := treeFileIcon("NOTICE")
+	if icon.tone != fileIconNeutral {
+		t.Fatalf("neutral icon tone = %v, want neutral", icon.tone)
+	}
+	assertSameColor(t, fileTreeIconColor(icon.tone), secondaryColor)
+}
+
 func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 	t.Parallel()
 	file := NavigatorRow{Tree: true, Label: "main.rs"}
@@ -117,26 +126,27 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			name:             "ordinary file keeps default filename",
 			item:             file,
 			icon:             icon,
-			wantMarker:       dimColor,
+			wantMarker:       mutedColor,
 			wantIcon:         fileIconOrangeColor,
 			filenameHasColor: false,
 		},
 		{
-			name:             "ordinary directory uses terminal foreground",
+			name:             "ordinary directory uses legacy bright-blue identity",
 			item:             NavigatorRow{Tree: true, Label: "src", Directory: true},
 			icon:             treeDirectoryIcon(false),
-			wantMarker:       lipgloss.NoColor{},
-			wantIcon:         lipgloss.NoColor{},
-			filenameHasColor: false,
+			wantMarker:       directoryTreeColor,
+			wantIcon:         directoryTreeColor,
+			wantFilename:     directoryTreeColor,
+			filenameHasColor: true,
 		},
 		{
 			name:             "status accents marker and filename only",
 			item:             file,
 			icon:             icon,
 			layers:           treeRowStyleLayers{statusAccent: treeStatusModified},
-			wantMarker:       lipgloss.Color("3"),
+			wantMarker:       lipgloss.BrightBlue,
 			wantIcon:         fileIconOrangeColor,
-			wantFilename:     lipgloss.Color("3"),
+			wantFilename:     lipgloss.BrightBlue,
 			filenameHasColor: true,
 		},
 		{
@@ -154,7 +164,7 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			item:             file,
 			icon:             icon,
 			layers:           treeRowStyleLayers{selected: true, focused: true},
-			wantMarker:       dimColor,
+			wantMarker:       mutedColor,
 			wantIcon:         fileIconOrangeColor,
 			wantSelection:    true,
 			wantFocusedBold:  true,
@@ -165,16 +175,8 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			styles := resolveTreeRowStyles(test.item, test.icon, test.layers)
-			if test.item.Directory && !test.layers.ignored {
-				for name, foreground := range map[string]color.Color{
-					"marker": styles.marker.GetForeground(),
-					"icon":   styles.icon.GetForeground(),
-					"name":   styles.filename.GetForeground(),
-				} {
-					if _, ok := foreground.(lipgloss.NoColor); !ok {
-						t.Fatalf("ordinary directory %s foreground = %T, want terminal default", name, foreground)
-					}
-				}
+			if test.item.Directory && !test.layers.ignored && !styles.filename.GetBold() {
+				t.Fatal("ordinary directory name is not bold")
 			}
 			assertSameColor(t, styles.marker.GetForeground(), test.wantMarker)
 			assertSameColor(t, styles.icon.GetForeground(), test.wantIcon)
@@ -186,8 +188,8 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			if test.filenameHasColor {
 				assertSameColor(t, styles.filename.GetForeground(), test.wantFilename)
 			}
-			if test.layers.ignored && (!styles.marker.GetFaint() || !styles.icon.GetFaint() || !styles.filename.GetFaint()) {
-				t.Fatal("ignored content is not dimmer than ordinary directory content")
+			if test.layers.ignored && (styles.marker.GetFaint() || styles.icon.GetFaint() || styles.filename.GetFaint()) {
+				t.Fatal("ignored content uses faint rendering instead of legacy ANSI white")
 			}
 			if styles.row.GetReverse() || styles.row.GetBold() != test.wantFocusedBold {
 				t.Fatalf("row reverse=%v bold=%v, want reverse=false bold=%v", styles.row.GetReverse(), styles.row.GetBold(), test.wantFocusedBold)

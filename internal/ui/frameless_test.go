@@ -93,8 +93,8 @@ func TestDividerUsesAccentOnlyWhileDragging(t *testing.T) {
 	rect := Rect{Width: 1, Height: 2}
 	idle := renderDivider(rect, false)
 	dragging := renderDivider(rect, true)
-	if strings.Contains(idle, dimStyle.Render("│")) || ansi.Strip(idle) != idle {
-		t.Fatalf("idle divider does not use terminal default foreground: %q", idle)
+	if !strings.Contains(idle, chromeStyle.Render("│")) || strings.Contains(idle, mutedStyle.Render("│")) {
+		t.Fatalf("idle divider does not use readable secondary foreground: %q", idle)
 	}
 	if !strings.Contains(dragging, headerStyle.Render("│")) {
 		t.Fatalf("dragging divider lacks accent style: %q", dragging)
@@ -129,9 +129,10 @@ func TestSelectionStyleUsesTerminalReverseWithoutAccentColor(t *testing.T) {
 
 func TestStructuralPaletteUsesTerminalANSIRoles(t *testing.T) {
 	t.Parallel()
-	got := []ansi.BasicColor{accentColor, dimColor, errorColor, addedColor, purpleColor, yellowColor}
+	got := []ansi.BasicColor{accentColor, secondaryColor, mutedColor, errorColor, addedColor, purpleColor, yellowColor}
 	want := []ansi.BasicColor{
-		lipgloss.Blue,
+		lipgloss.Cyan,
+		lipgloss.White,
 		lipgloss.BrightBlack,
 		lipgloss.Red,
 		lipgloss.Green,
@@ -145,12 +146,10 @@ func TestStructuralPaletteUsesTerminalANSIRoles(t *testing.T) {
 	}
 }
 
-func TestStructuralChromeUsesTerminalDefaultForeground(t *testing.T) {
+func TestStructuralChromeUsesReadableSecondaryForeground(t *testing.T) {
 	t.Parallel()
-	if _, ok := chromeStyle.GetForeground().(lipgloss.NoColor); !ok {
-		t.Fatalf("chrome foreground = %T, want terminal default", chromeStyle.GetForeground())
-	}
-	if _, ok := dimStyle.GetForeground().(lipgloss.NoColor); ok {
+	assertSameColor(t, chromeStyle.GetForeground(), secondaryColor)
+	if _, ok := mutedStyle.GetForeground().(lipgloss.NoColor); ok {
 		t.Fatal("muted style unexpectedly uses terminal default foreground")
 	}
 }
@@ -317,9 +316,9 @@ func TestTreeSelectionUsesOneWhiteBarInsteadOfReversingFileColors(t *testing.T) 
 	if styles.row.GetForeground() != lipgloss.Black || styles.row.GetBackground() != lipgloss.White {
 		t.Fatalf("selection colors = foreground %v background %v, want black on white", styles.row.GetForeground(), styles.row.GetBackground())
 	}
-	assertSameColor(t, styles.marker.GetForeground(), lipgloss.Yellow)
+	assertSameColor(t, styles.marker.GetForeground(), lipgloss.BrightBlue)
 	assertSameColor(t, styles.icon.GetForeground(), fileTreeIconColor(icon.tone))
-	assertSameColor(t, styles.filename.GetForeground(), lipgloss.Yellow)
+	assertSameColor(t, styles.filename.GetForeground(), lipgloss.BrightBlue)
 }
 
 func TestBontreeTreeRowsClipAtEveryNarrowWidth(t *testing.T) {
