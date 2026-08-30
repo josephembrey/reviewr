@@ -236,7 +236,14 @@ func (r *Repository) ListCommits(query CommitQuery) ([]Commit, error) {
 	for index, commit := range commits {
 		refs := make([]CommitRef, len(commit.Refs))
 		for refIndex, reference := range commit.Refs {
-			refs[refIndex] = CommitRef{Kind: CommitRefKind(reference.Kind), Name: reference.Name}
+			kind := CommitBranchRef
+			switch reference.Kind {
+			case gitadapter.RemoteRef:
+				kind = CommitRemoteRef
+			case gitadapter.TagRef:
+				kind = CommitTagRef
+			}
+			refs[refIndex] = CommitRef{Kind: kind, Name: reference.Name}
 		}
 		result[index] = Commit{
 			OID:          commit.OID,

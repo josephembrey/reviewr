@@ -16,7 +16,7 @@ func buildCommitRows(commits []repository.Commit, traversal workspace.GitTravers
 		}
 		graphCommits[index] = commitgraph.Commit{
 			OID:     commit.OID,
-			Parents: append([]string(nil), parents...),
+			Parents: parents,
 			Merge:   commit.Merge,
 		}
 	}
@@ -25,13 +25,19 @@ func buildCommitRows(commits []repository.Commit, traversal workspace.GitTravers
 	for index, commit := range commits {
 		refs := make([]commitrow.Ref, len(commit.Refs))
 		for refIndex, reference := range commit.Refs {
-			refs[refIndex] = commitrow.Ref{Kind: commitrow.RefKind(reference.Kind), Name: reference.Name}
+			kind := commitrow.Branch
+			switch reference.Kind {
+			case repository.CommitRemoteRef:
+				kind = commitrow.Remote
+			case repository.CommitTagRef:
+				kind = commitrow.Tag
+			}
+			refs[refIndex] = commitrow.Ref{Kind: kind, Name: reference.Name}
 		}
 		rows[index] = commitrow.Row{
 			Graph:        graphs[index],
 			OID:          commit.OID,
 			ShortOID:     commit.ShortOID,
-			Parents:      append([]string(nil), commit.Parents...),
 			Subject:      commit.Subject,
 			Author:       commit.Author,
 			AuthoredUnix: commit.AuthoredUnix,

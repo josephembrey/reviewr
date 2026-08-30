@@ -39,7 +39,6 @@ type Row struct {
 	Graph        commitgraph.Row
 	OID          string
 	ShortOID     string
-	Parents      []string
 	Subject      string
 	Author       string
 	AuthoredUnix int64
