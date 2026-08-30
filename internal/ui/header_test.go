@@ -111,8 +111,8 @@ func TestHeaderRightAlignsChangeSummary(t *testing.T) {
 	if !strings.Contains(frame, addedStyle.Render("+345")) || !strings.Contains(frame, errorStyle.Render("-67")) {
 		t.Fatalf("header stats lack semantic colors: %q", frame)
 	}
-	if strings.Contains(frame, mutedStyle.Render("12 changes ")) {
-		t.Fatalf("header change count is incorrectly muted: %q", frame)
+	if !strings.Contains(frame, mutedStyle.Render("12 changes")) {
+		t.Fatalf("header change count lacks muted treatment: %q", frame)
 	}
 }
 

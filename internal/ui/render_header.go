@@ -54,7 +54,7 @@ func renderHeaderControl(control headerControl, wide bool) string {
 }
 
 func renderChangeSummary(summary ChangeSummary) string {
-	result := chromeStyle.Render(fmt.Sprintf("%d changes", summary.Files))
+	result := mutedStyle.Render(fmt.Sprintf("%d changes", summary.Files))
 	if totals := renderChangeTotals(summary); totals != "" {
 		result += " " + totals
 	}
