@@ -48,7 +48,7 @@
 ## 4. Semantic review interaction
 
 - [x] 4.1 Add semantic `x` mark/unmark routing for selected concrete Files navigator rows and the open
-  Files reader, keeping directories, unchanged rows, Git, Scratch, unavailable bounds, and ordinary
+  Files reader, keeping directories, unchanged rows, Git, Notes, unavailable bounds, and ordinary
   observation inert; verify opening, scrolling, EOF, comments, refresh, and Herdr events never cover.
 - [x] 4.2 Apply marks immediately in memory and serialize persistence effects as authored deltas,
   adopting locked merged state without losing queued local actions; test success, failure, rapid

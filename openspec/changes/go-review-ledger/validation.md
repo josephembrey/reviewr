@@ -73,25 +73,25 @@ fixture:
 
 The completed ledger was reconciled with exact main tip
 `c4b0574f1cea2f299a8912be260c2d888e04c7a4` after main added Git Log/Refs/Stashes, the shared
-Files/Stashes reader document, Scratch, compact rows and headers, and initial recursive Files
+Files/Stashes reader document, Notes, compact rows and headers, and initial recursive Files
 collapse.
 
-- Main remains authoritative for the typed repository snapshot and reads, Git and Scratch state,
+- Main remains authoritative for the typed repository snapshot and reads, Git and Notes state,
   Bontree icons/status styling, first-snapshot `CollapseAll`, and shared render/hit-test geometry.
   Review remains an additive Files-only comparison provider and optional right-side row field.
-- The canonical Git common-directory resolver is shared as the path authority. Scratch remains
+- The canonical Git common-directory resolver is shared as the path authority. Notes remains
   clone-scoped under its own private note store; review receipt keys additionally include the
   canonical worktree and remain under the independent `reviews/` store.
 - `TestInitialNestedCollapseCoexistsWithReviewBadgesAndRollups` proves hidden nested descendants
   remain initially collapsed while their parent derives complete review progress and visible changed
   files retain independent badges.
-- `TestReviewActivityLeavesGitAndScratchPlaceUntouched` performs exact Files review activity and
-  proves Log, Refs, Stashes, and Scratch place state remain unchanged; semantic review actions are
+- `TestReviewActivityLeavesGitAndNotesPlaceUntouched` performs exact Files review activity and
+  proves Log, Refs, Stashes, and Notes place state remain unchanged; semantic review actions are
   rejected whenever the current destination is not Files.
 - `TestPTYReviewLedgerReconciliation` passes against a real Git fixture at 80x24 and 60x12. It
   covers initial collapsed progress, binary Basis changed, `x`, both `R` bounds, priority `X`
   ancestor expansion, a painted separator-cell badge click, text Updated and `since reviewed`,
-  refresh, restart recovery, and Git/Scratch switching.
+  refresh, restart recovery, and Git/Notes switching.
 
 ### Reconciliation benchmark
 
@@ -111,7 +111,7 @@ one tree renderer and one review geometry calculation.
 ### Reconciliation gates
 
 - Focused ordinary and race tests for review, repository, app, UI, tree/navigation, Git,
-  Scratch, commit graph/rows, and the executable: pass.
+  Notes, commit graph/rows, and the executable: pass.
 - `nix develop -c just check`: pass, including hooks, ordinary tests, `dev` tests, the full race
   suite, and both real PTY tests.
 - `nix develop -c just build`: pass.

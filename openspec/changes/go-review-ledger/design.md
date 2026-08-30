@@ -32,7 +32,7 @@ repository and pure coverage derivation.
 - Add rich filetype mappings, recolor Git status, or replace the existing file tree.
 - Add approval, shared reviewer state, sessions, comment persistence, agent-turn causality, fuzzy
   lineage, or semantic dependency invalidation.
-- Add review controls to Git Log, Stashes, Refs, Scratch, or any other observation-only workspace.
+- Add review controls to Git Log, Stashes, Refs, Notes, or any other observation-only destination.
 
 ## Decisions
 
