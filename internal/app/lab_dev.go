@@ -20,9 +20,6 @@ func (m *Model) updateLab(msg tea.Msg) (bool, tea.Cmd) {
 	key, isKey := msg.(tea.KeyPressMsg)
 	if isKey && key.String() == "ctrl+l" {
 		m.lab.active = !m.lab.active
-		if m.lab.active {
-			return true, tea.RequestBackgroundColor
-		}
 		return true, nil
 	}
 	if !m.lab.active {

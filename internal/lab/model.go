@@ -3,11 +3,7 @@
 // Package lab contains development-only interface experiments.
 package lab
 
-import (
-	"image/color"
-
-	tea "charm.land/bubbletea/v2"
-)
+import tea "charm.land/bubbletea/v2"
 
 // Model is the place state for the switcher comparison page.
 type Model struct {
@@ -23,22 +19,16 @@ type Model struct {
 	foldMotionTarget     int
 	foldMotionSpeed      int
 	foldMotionGeneration uint64
-	terminalBackground   color.RGBA
-	backgroundReported   bool
 }
 
 // New returns the initial lab state.
 func New() Model {
-	return Model{terminalBackground: fallbackTerminalBackground}
+	return Model{}
 }
 
 // Update handles only lab-local controls and animation frames. Unknown messages
 // remain available to the real application behind the development overlay.
 func (model Model) Update(msg tea.Msg) (Model, tea.Cmd, bool) {
-	if background, ok := msg.(tea.BackgroundColorMsg); ok {
-		model.setTerminalBackground(background.Color)
-		return model, nil, true
-	}
 	if tick, ok := msg.(foldMotionTick); ok {
 		return model.updateFoldMotionTick(tick)
 	}
@@ -61,7 +51,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd, bool) {
 		model, command := model.updateFoldMotion(key)
 		return model, command, true
 	}
-	if model.page == labPageANSIPalette || model.page == labPageDiffTints {
+	if model.page == labPageANSIPalette {
 		return model, nil, true
 	}
 	switch key.String() {
