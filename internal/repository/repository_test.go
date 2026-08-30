@@ -688,10 +688,11 @@ func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
 }
 
 type gitState struct {
-	status []byte
-	index  []byte
-	head   string
-	refs   string
+	status  []byte
+	index   []byte
+	head    string
+	refs    string
+	objects string
 }
 
 func captureGitState(t *testing.T, root string) gitState {
@@ -706,10 +707,11 @@ func captureGitState(t *testing.T, root string) gitState {
 		t.Fatal(err)
 	}
 	return gitState{
-		status: status,
-		index:  index,
-		head:   string(runGitBytes(t, root, "rev-parse", "HEAD")),
-		refs:   string(runGitBytes(t, root, "show-ref", "--head", "--dereference")),
+		status:  status,
+		index:   index,
+		head:    string(runGitBytes(t, root, "rev-parse", "HEAD")),
+		refs:    string(runGitBytes(t, root, "show-ref", "--head", "--dereference")),
+		objects: string(runGitBytes(t, root, "cat-file", "--batch-all-objects", "--batch-check=%(objectname)")),
 	}
 }
 
@@ -746,5 +748,5 @@ func runGitBytes(t *testing.T, root string, args ...string) []byte {
 }
 
 func (s gitState) String() string {
-	return fmt.Sprintf("status=%q index=%x head=%q refs=%q", s.status, s.index, s.head, s.refs)
+	return fmt.Sprintf("status=%q index=%x head=%q refs=%q objects=%q", s.status, s.index, s.head, s.refs, s.objects)
 }
