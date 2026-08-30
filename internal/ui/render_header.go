@@ -8,6 +8,22 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
+var (
+	headerControlStyles = map[HitKind]lipgloss.Style{
+		HitTertiaryControl:      purpleStyle,
+		HitComparisonControl:    yellowStyle,
+		HitDiffHighlightControl: headerStyle,
+	}
+	workspaceSwitcherLabels = [...]struct {
+		kind  workspace.Kind
+		label string
+	}{
+		{workspace.Files, "files"},
+		{workspace.Git, "git"},
+		{workspace.Notes, "notes"},
+	}
+)
+
 func renderHeader(model Model) string {
 	g := model.Geometry
 	switcher := renderWorkspaceSwitcher(g.HeaderSwitcher.Width, model.Workspace)
@@ -35,13 +51,8 @@ func renderHeader(model Model) string {
 
 func renderHeaderControl(control headerControl, wide bool) string {
 	style := addedStyle
-	switch control.hit {
-	case HitTertiaryControl:
-		style = purpleStyle
-	case HitComparisonControl:
-		style = yellowStyle
-	case HitDiffHighlightControl:
-		style = headerStyle
+	if semanticStyle, ok := headerControlStyles[control.hit]; ok {
+		style = semanticStyle
 	}
 	key := ""
 	if wide {
@@ -74,18 +85,10 @@ func renderChangeTotals(summary ChangeSummary) string {
 }
 
 func renderWorkspaceSwitcher(width int, activeWorkspace workspace.Kind) string {
-	labels := []struct {
-		kind  workspace.Kind
-		label string
-	}{
-		{workspace.Files, "files"},
-		{workspace.Git, "git"},
-		{workspace.Notes, "notes"},
-	}
 	var rendered strings.Builder
 	rendered.WriteString(headerStyle.Render("tab"))
 	rendered.WriteString(chromeStyle.Render(" ["))
-	for index, item := range labels {
+	for index, item := range workspaceSwitcherLabels {
 		if index > 0 {
 			rendered.WriteString(mutedStyle.Render("|"))
 		}

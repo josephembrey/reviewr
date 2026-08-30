@@ -10,6 +10,28 @@ import (
 	"github.com/josephembrey/reviewr/internal/review"
 )
 
+type treeStatusPresentation struct {
+	marker string
+	accent treeStatusAccent
+}
+
+var (
+	reviewBadgeStyles = [...]lipgloss.Style{
+		review.Reviewed:     addedStyle,
+		review.Updated:      headerStyle,
+		review.Partial:      yellowStyle,
+		review.BasisChanged: errorStyle,
+	}
+	treeStatusPresentations = [...]treeStatusPresentation{
+		StatusModified:  {marker: "M", accent: treeStatusModified},
+		StatusAdded:     {marker: "A", accent: treeStatusAdded},
+		StatusDeleted:   {marker: "D", accent: treeStatusDeleted},
+		StatusRenamed:   {marker: "R", accent: treeStatusRenamed},
+		StatusUntracked: {marker: "?", accent: treeStatusUntracked},
+		StatusIgnored:   {marker: "I", accent: treeStatusNone},
+	}
+)
+
 func renderNavigator(model Model) string {
 	g := model.Geometry
 	rows := make([]string, 0, g.NavigatorRows.Height)
@@ -22,14 +44,7 @@ func renderNavigator(model Model) string {
 		contentWidth = bar.Content.Width
 		scrollbar = verticalScrollbar(bar, model.Focus == navigation.FocusNavigator)
 	}
-	commitRows := make([]commitrow.Row, 0, len(model.NavigatorRows))
-	for _, row := range model.NavigatorRows {
-		if row.Commit != nil {
-			commitRows = append(commitRows, *row.Commit)
-		}
-	}
-	commitColumns := commitrow.Measure(commitRows, contentWidth)
-	now := time.Now()
+	commitColumns, now := measureNavigatorCommits(model.NavigatorRows, model.Top, visibleRows, contentWidth)
 	for row := 0; row < visibleRows; row++ {
 		index := model.Top + row
 		if index >= len(model.NavigatorRows) {
@@ -63,6 +78,30 @@ func renderNavigator(model Model) string {
 		renderTitle(title, model.Focus == navigation.FocusNavigator),
 		rows,
 	)
+}
+
+// measureNavigatorCommits avoids scanning large file trees and refs lists.
+// Commit columns still measure the complete commit set whenever one is visible.
+func measureNavigatorCommits(rows []NavigatorRow, top, height, width int) (commitrow.Columns, time.Time) {
+	start := clamp(top, 0, len(rows))
+	end := clamp(top+height, start, len(rows))
+	visibleCommit := false
+	for _, row := range rows[start:end] {
+		if row.Commit != nil {
+			visibleCommit = true
+			break
+		}
+	}
+	if !visibleCommit {
+		return commitrow.Columns{}, time.Time{}
+	}
+	commits := make([]commitrow.Row, 0, len(rows))
+	for _, row := range rows {
+		if row.Commit != nil {
+			commits = append(commits, *row.Commit)
+		}
+	}
+	return commitrow.Measure(commits, width), time.Now()
 }
 
 func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool, columns commitrow.Columns, now time.Time) string {
@@ -130,37 +169,18 @@ func renderTreeNavigatorRow(item NavigatorRow, width int, layers treeRowStyleLay
 }
 
 func reviewBadgeStyle(state review.State) lipgloss.Style {
-	switch state {
-	case review.Reviewed:
-		return addedStyle
-	case review.Updated:
-		return headerStyle
-	case review.Partial:
-		return yellowStyle
-	case review.BasisChanged:
-		return errorStyle
-	default:
-		return chromeStyle
+	if state != review.Unreviewed && int(state) < len(reviewBadgeStyles) {
+		return reviewBadgeStyles[state]
 	}
+	return chromeStyle
 }
 
 func treeNavigatorStatus(status NavigatorStatus) (string, treeStatusAccent) {
-	switch status {
-	case StatusModified:
-		return "M", treeStatusModified
-	case StatusAdded:
-		return "A", treeStatusAdded
-	case StatusDeleted:
-		return "D", treeStatusDeleted
-	case StatusRenamed:
-		return "R", treeStatusRenamed
-	case StatusUntracked:
-		return "?", treeStatusUntracked
-	case StatusIgnored:
-		return "I", treeStatusNone
-	default:
+	if int(status) >= len(treeStatusPresentations) {
 		return "", treeStatusNone
 	}
+	presentation := treeStatusPresentations[status]
+	return presentation.marker, presentation.accent
 }
 
 func renderCompactNavigatorRow(item NavigatorRow, width int, selected, focused bool) string {

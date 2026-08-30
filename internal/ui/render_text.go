@@ -6,6 +6,16 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+var toneStyles = [...]lipgloss.Style{
+	ToneQuiet:   mutedStyle,
+	ToneError:   errorStyle,
+	ToneAccent:  purpleStyle,
+	ToneAdded:   addedStyle,
+	ToneRemoved: errorStyle,
+	ToneInfo:    headerStyle,
+	ToneWarning: yellowStyle,
+}
+
 func renderSegments(segments []Segment) string {
 	var value strings.Builder
 	for _, segment := range segments {
@@ -47,22 +57,8 @@ func renderTextStyle(text string, value TextStyle) string {
 }
 
 func renderToneText(text string, tone Tone) string {
-	switch tone {
-	case ToneQuiet:
-		return mutedStyle.Render(text)
-	case ToneError:
-		return errorStyle.Render(text)
-	case ToneAccent:
-		return purpleStyle.Render(text)
-	case ToneAdded:
-		return addedStyle.Render(text)
-	case ToneRemoved:
-		return errorStyle.Render(text)
-	case ToneInfo:
-		return headerStyle.Render(text)
-	case ToneWarning:
-		return yellowStyle.Render(text)
-	default:
-		return text
+	if tone != ToneDefault && int(tone) < len(toneStyles) {
+		return toneStyles[tone].Render(text)
 	}
+	return text
 }

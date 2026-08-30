@@ -75,8 +75,8 @@ func (g Geometry) HitNavigatorReview(x, y, top int, rows []NavigatorRow) (int, b
 		return 0, false
 	}
 	contentWidth := g.NavigatorRows.Width
-	if _, ok := CalculateScrollbar(g.NavigatorRows, len(rows), top); ok {
-		contentWidth--
+	if bar, ok := CalculateScrollbar(g.NavigatorRows, len(rows), top); ok {
+		contentWidth = bar.Content.Width
 	}
 	layout := LayoutNavigatorRow(rows[index], contentWidth)
 	review := layout.Review

@@ -13,32 +13,23 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
+type readerBarPresentation struct {
+	glyph string
+	style lipgloss.Style
+}
+
+var readerChangeBars = [...]readerBarPresentation{
+	ReaderInsertion: {glyph: "▌", style: lipgloss.NewStyle().Foreground(addedColor).Bold(true)},
+	ReaderDeletion:  {glyph: "▌", style: lipgloss.NewStyle().Foreground(errorColor).Bold(true)},
+}
+
 func renderReader(model Model) string {
 	g := model.Geometry
 	title := SafeSingleLine(model.ReaderTitle)
 	rows := make([]string, 0, g.ReaderRows.Height)
-	content := model.ReaderLines
 	document := model.ReaderDocument
 	commitRows := model.ReaderCommitRows
-	if document.Kind == ReaderDocumentNone && len(content) == 0 && len(commitRows) == 0 && model.ReaderEmpty.Text != "" {
-		content = []Line{model.ReaderEmpty}
-	}
-	total := len(content)
-	readerOffset := model.ReaderOffset
-	readerLayout := ReaderLayout{}
-	if document.Kind != ReaderDocumentNone {
-		if model.ReaderLayout != nil {
-			readerLayout = *model.ReaderLayout
-		} else {
-			readerLayout = CalculateReaderLayout(g.ReaderRows, document)
-		}
-		total = readerLayout.Total
-		readerOffset = readerLayout.VisualOffset(model.ReaderOffset, model.ReaderColumn)
-	}
-	if len(commitRows) != 0 {
-		total = len(commitRows)
-		readerOffset = model.ReaderOffset
-	}
+	content, readerLayout, total, readerOffset := readerContent(model, g.ReaderRows)
 	bar, overflow := CalculateScrollbar(g.ReaderRows, total, readerOffset)
 	contentWidth := g.ReaderRows.Width
 	var scrollbar []string
@@ -50,32 +41,26 @@ func renderReader(model Model) string {
 	if document.Kind == ReaderDocumentNone {
 		readerGeometry = CalculateReaderGeometry(g.ReaderRows, document, scrollbar != nil)
 	}
-	commitColumns := commitrow.Measure(commitRows, contentWidth)
+	var commitColumns commitrow.Columns
+	var now time.Time
+	if len(commitRows) != 0 {
+		commitColumns = commitrow.Measure(commitRows, contentWidth)
+		now = time.Now()
+	}
 	highlight := readerDiffHighlight(document, model.Controls.DiffHighlight)
-	now := time.Now()
 	for row := 0; row < g.ReaderRows.Height; row++ {
 		index := readerOffset + row
+		line := ""
 		if index < total {
-			line := ""
-			if len(commitRows) != 0 {
-				line = renderCommitRow(commitRows[index], commitColumns, contentWidth, false, false, now)
-			} else if document.Kind != ReaderDocumentNone {
-				wrapped, continuation := readerLayout.Row(index)
-				line = renderReaderRowPart(wrapped, readerGeometry, highlight, continuation)
-			} else {
-				line = fit(renderLine(content[index]), contentWidth)
-			}
-			if overflow {
-				line += scrollbar[row]
-			}
-			rows = append(rows, line)
-		} else {
-			line := ""
-			if overflow {
-				line = fit(line, contentWidth) + scrollbar[row]
-			}
-			rows = append(rows, line)
+			line = renderReaderContentLine(index, contentWidth, &model, content, readerLayout, readerGeometry, commitColumns, now, highlight)
 		}
+		if overflow {
+			if index >= total {
+				line = fit(line, contentWidth)
+			}
+			line += scrollbar[row]
+		}
+		rows = append(rows, line)
 	}
 	return renderSurface(
 		g.Reader,
@@ -84,6 +69,42 @@ func renderReader(model Model) string {
 		renderTitle(title, model.Focus == navigation.FocusReader),
 		rows,
 	)
+}
+
+func readerContent(model Model, rows Rect) ([]Line, ReaderLayout, int, int) {
+	content := model.ReaderLines
+	document := model.ReaderDocument
+	if document.Kind == ReaderDocumentNone && len(content) == 0 && len(model.ReaderCommitRows) == 0 && model.ReaderEmpty.Text != "" {
+		content = []Line{model.ReaderEmpty}
+	}
+	total := len(content)
+	offset := model.ReaderOffset
+	layout := ReaderLayout{}
+	if document.Kind != ReaderDocumentNone {
+		if model.ReaderLayout != nil {
+			layout = *model.ReaderLayout
+		} else {
+			layout = CalculateReaderLayout(rows, document)
+		}
+		total = layout.Total
+		offset = layout.VisualOffset(model.ReaderOffset, model.ReaderColumn)
+	}
+	if len(model.ReaderCommitRows) != 0 {
+		total = len(model.ReaderCommitRows)
+		offset = model.ReaderOffset
+	}
+	return content, layout, total, offset
+}
+
+func renderReaderContentLine(index, width int, model *Model, content []Line, layout ReaderLayout, geometry ReaderGeometry, columns commitrow.Columns, now time.Time, highlight workspace.DiffHighlight) string {
+	if len(model.ReaderCommitRows) != 0 {
+		return renderCommitRow(model.ReaderCommitRows[index], columns, width, false, false, now)
+	}
+	if model.ReaderDocument.Kind != ReaderDocumentNone {
+		wrapped, continuation := layout.Row(index)
+		return renderReaderRowPart(wrapped, geometry, highlight, continuation)
+	}
+	return fit(renderLine(content[index]), width)
 }
 
 func readerDiffHighlight(document ReaderDocument, requested workspace.DiffHighlight) workspace.DiffHighlight {
@@ -105,58 +126,66 @@ func renderReaderRowPart(row ReaderRow, geometry ReaderGeometry, highlight works
 	if row.Kind == ReaderFold {
 		return renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	}
+	bar, barStyle := readerChangeBar(row, continuation)
+	number := readerLineNumber(row, geometry.Digits, continuation)
 	changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
-	background := changed && highlight == workspace.DiffHighlightBackground
+	if changed && highlight == workspace.DiffHighlightBackground {
+		return renderReaderBackgroundRow(row, bar, number, width)
+	}
+	line := barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
+	return fit(line, width)
+}
 
-	bar := " "
-	barStyle := lipgloss.NewStyle()
-	removedBoundary := !continuation && (row.RemovedBefore > 0 || row.RemovedAfter > 0)
-	switch {
-	case removedBoundary && row.Kind == ReaderInsertion:
+func readerChangeBar(row ReaderRow, continuation bool) (string, lipgloss.Style) {
+	if !continuation && (row.RemovedBefore > 0 || row.RemovedAfter > 0) {
+		return readerBoundaryBar(row)
+	}
+	if int(row.Kind) < len(readerChangeBars) && readerChangeBars[row.Kind].glyph != "" {
+		presentation := readerChangeBars[row.Kind]
+		return presentation.glyph, presentation.style
+	}
+	return " ", lipgloss.NewStyle()
+}
+
+func readerBoundaryBar(row ReaderRow) (string, lipgloss.Style) {
+	if row.Kind == ReaderInsertion {
 		// One terminal cell carries both halves of a replacement boundary:
 		// removed above in red, current addition below in green.
-		bar = "▀"
-		barStyle = barStyle.Foreground(errorColor).Background(addedColor).Bold(true)
-	case removedBoundary:
-		bar = "▴"
-		if row.RemovedBefore > 0 && row.RemovedAfter > 0 {
-			bar = "◆"
-		} else if row.RemovedAfter > 0 {
-			bar = "▾"
-		}
-		barStyle = barStyle.Foreground(errorColor).Bold(true)
-	case row.Kind == ReaderInsertion:
-		bar = "▌"
-		barStyle = barStyle.Foreground(addedColor).Bold(true)
-	case row.Kind == ReaderDeletion:
-		bar = "▌"
-		barStyle = barStyle.Foreground(errorColor).Bold(true)
+		style := lipgloss.NewStyle().Foreground(errorColor).Background(addedColor).Bold(true)
+		return "▀", style
 	}
+	bar := "▴"
+	if row.RemovedBefore > 0 && row.RemovedAfter > 0 {
+		bar = "◆"
+	} else if row.RemovedAfter > 0 {
+		bar = "▾"
+	}
+	return bar, lipgloss.NewStyle().Foreground(errorColor).Bold(true)
+}
+
+func readerLineNumber(row ReaderRow, digits int, continuation bool) string {
 	number := ""
 	if line := row.DisplayLine(); line > 0 && !continuation {
 		number = strconv.FormatUint(line, 10)
 	}
-	number = fmt.Sprintf("%*s ", geometry.Digits, number)
+	return fmt.Sprintf("%*s ", digits, number)
+}
 
-	if background {
-		backgroundColor := lipgloss.Green
-		barColor := lipgloss.BrightGreen
-		if row.Kind == ReaderDeletion {
-			backgroundColor = lipgloss.Red
-			barColor = lipgloss.BrightRed
-		}
-		base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black)
-		barStyle = base.Foreground(barColor).Bold(true)
-		line := barStyle.Render(bar) + base.Render(number) + renderReaderPayload(row, backgroundColor)
-		line = clip(line, width)
-		if padding := width - lipgloss.Width(line); padding > 0 {
-			line += base.Render(strings.Repeat(" ", padding))
-		}
-		return line
+func renderReaderBackgroundRow(row ReaderRow, bar, number string, width int) string {
+	backgroundColor := lipgloss.Green
+	barColor := lipgloss.BrightGreen
+	if row.Kind == ReaderDeletion {
+		backgroundColor = lipgloss.Red
+		barColor = lipgloss.BrightRed
 	}
-
-	line := barStyle.Render(bar) + mutedStyle.Render(number) + renderReaderPayload(row, nil)
-	return fit(line, width)
+	base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black)
+	barStyle := base.Foreground(barColor).Bold(true)
+	line := barStyle.Render(bar) + base.Render(number) + renderReaderPayload(row, backgroundColor)
+	line = clip(line, width)
+	if padding := width - lipgloss.Width(line); padding > 0 {
+		line += base.Render(strings.Repeat(" ", padding))
+	}
+	return line
 }
 
 func renderReaderFoldPayload(text string, width int, expanded bool) string {

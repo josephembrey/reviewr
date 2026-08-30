@@ -65,9 +65,6 @@ func renderSurface(surface, titleRect, rowsRect Rect, title string, rows []strin
 		return ""
 	}
 	lines := make([]string, surface.Height)
-	for index := range lines {
-		lines[index] = strings.Repeat(" ", surface.Width)
-	}
 	if titleRect.Width > 0 && titleRect.Height > 0 {
 		lines[titleRect.Y-surface.Y] = fit(title, titleRect.Width)
 	}
@@ -78,7 +75,17 @@ func renderSurface(surface, titleRect, rowsRect Rect, title string, rows []strin
 		}
 		lines[rowsRect.Y-surface.Y+index] = fit(row, rowsRect.Width)
 	}
+	fillSurfaceGaps(lines, surface.Width)
 	return strings.Join(lines, "\n")
+}
+
+func fillSurfaceGaps(lines []string, width int) {
+	blank := strings.Repeat(" ", width)
+	for index, line := range lines {
+		if line == "" {
+			lines[index] = blank
+		}
+	}
 }
 
 func fit(value string, width int) string {

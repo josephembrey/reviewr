@@ -64,6 +64,28 @@ func TestCommitRowUsesGraphAndSemanticANSIPalette(t *testing.T) {
 	}
 }
 
+func TestMeasureNavigatorCommitsOnlyScansCommitViewports(t *testing.T) {
+	t.Parallel()
+	commits := commitFixtureRows()[:2]
+	rows := []NavigatorRow{
+		{Label: "ordinary file"},
+		{Commit: &commits[0]},
+		{Commit: &commits[1]},
+	}
+	columns, now := measureNavigatorCommits(rows, 0, 1, 80)
+	if columns != (commitrow.Columns{}) || !now.IsZero() {
+		t.Fatalf("non-commit viewport measured columns %+v at %v", columns, now)
+	}
+
+	columns, now = measureNavigatorCommits(rows, 1, 1, 80)
+	if want := commitrow.Measure(commits, 80); columns != want {
+		t.Fatalf("commit viewport columns = %+v, want %+v", columns, want)
+	}
+	if now.IsZero() {
+		t.Fatal("commit viewport did not capture one shared age timestamp")
+	}
+}
+
 func TestCommitRowSelectionCoversEveryCellAndKeepsLaneColor(t *testing.T) {
 	t.Parallel()
 	rows := commitFixtureRows()

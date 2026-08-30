@@ -47,17 +47,9 @@ func renderNotesTitle(g Geometry, scope notes.Scope, hasWorktree bool) string {
 	}
 	width := min(g.NotesTitle.Width, g.NotesWorktreeScope.X+g.NotesWorktreeScope.Width-g.NotesTitle.X)
 	value := []byte(strings.Repeat(" ", max(0, width)))
-	paint := func(x int, label string) {
-		for index := 0; index < len(label); index++ {
-			position := x - g.NotesTitle.X + index
-			if position >= 0 && position < len(value) {
-				value[position] = label[index]
-			}
-		}
-	}
-	paint(g.NotesTitle.X, "Notes")
-	paint(g.NotesProjectScope.X+1, "project")
-	paint(g.NotesWorktreeScope.X+1, "worktree")
+	paintNotesTitle(value, 0, "Notes")
+	paintNotesTitle(value, g.NotesProjectScope.X+1-g.NotesTitle.X, "project")
+	paintNotesTitle(value, g.NotesWorktreeScope.X+1-g.NotesTitle.X, "worktree")
 	selected := g.NotesProjectScope
 	if scope == notes.Worktree {
 		selected = g.NotesWorktreeScope
@@ -68,19 +60,19 @@ func renderNotesTitle(g Geometry, scope notes.Scope, hasWorktree bool) string {
 			value[selected.X-g.NotesTitle.X+selected.Width-1] = ']'
 		}
 	}
+	return renderNotesTitleSpans(g, selected, value)
+}
+
+func renderNotesTitleSpans(g Geometry, selected Rect, value []byte) string {
 	var rendered strings.Builder
-	isFocused := func(index int) bool {
-		x := g.NotesTitle.X + index
-		return x < g.NotesTitle.X+len("Notes") || selected.Contains(x, g.NotesTitle.Y)
-	}
 	for index := 0; index < len(value); {
-		focused := isFocused(index)
+		focused := notesTitleFocused(g, selected, index)
 		style := chromeStyle
 		if focused {
 			style = focusedTitleStyle
 		}
 		end := index + 1
-		for end < len(value) && isFocused(end) == focused {
+		for end < len(value) && notesTitleFocused(g, selected, end) == focused {
 			end++
 		}
 		rendered.WriteString(style.Render(string(value[index:end])))
@@ -89,30 +81,46 @@ func renderNotesTitle(g Geometry, scope notes.Scope, hasWorktree bool) string {
 	return rendered.String()
 }
 
+func paintNotesTitle(value []byte, position int, label string) {
+	if position >= len(value) || position+len(label) <= 0 {
+		return
+	}
+	source := max(0, -position)
+	destination := max(0, position)
+	copy(value[destination:], label[source:])
+}
+
+func notesTitleFocused(g Geometry, selected Rect, index int) bool {
+	x := g.NotesTitle.X + index
+	return x < g.NotesTitle.X+len("Notes") || selected.Contains(x, g.NotesTitle.Y)
+}
+
 func renderNotesRow(row notes.Row, cursorRow bool, presentation notes.Presentation, width int) string {
 	var rendered strings.Builder
 	for _, cell := range row.Cells {
-		value := cell.Display
-		selected := presentation.HasSelection && cell.Index >= presentation.SelectionStart && cell.Index < presentation.SelectionEnd
-		cursor := cursorRow && cell.Index == presentation.Cursor
-		switch {
-		case cursor:
-			value = headerStyle.Reverse(true).Render(value)
-		case selected:
-			value = selectionStyle(true).Render(value)
-		case cell.Index >= 0 && cell.Index < len(presentation.Styles):
-			style := presentation.Styles[cell.Index]
-			value = renderTextStyle(value, TextStyle{
-				Foreground: style.Foreground,
-				Bold:       style.Bold,
-				Italic:     style.Italic,
-				Underline:  style.Underline,
-			})
-		}
-		rendered.WriteString(value)
+		rendered.WriteString(renderNotesCell(cell, cursorRow, presentation))
 	}
 	if cursorRow && presentation.Cursor == row.End && lipgloss.Width(rendered.String()) < width {
 		rendered.WriteString(headerStyle.Reverse(true).Render(" "))
 	}
 	return rendered.String()
+}
+
+func renderNotesCell(cell notes.Cell, cursorRow bool, presentation notes.Presentation) string {
+	if cursorRow && cell.Index == presentation.Cursor {
+		return headerStyle.Reverse(true).Render(cell.Display)
+	}
+	if presentation.HasSelection && cell.Index >= presentation.SelectionStart && cell.Index < presentation.SelectionEnd {
+		return selectionStyle(true).Render(cell.Display)
+	}
+	if cell.Index < 0 || cell.Index >= len(presentation.Styles) {
+		return cell.Display
+	}
+	style := presentation.Styles[cell.Index]
+	return renderTextStyle(cell.Display, TextStyle{
+		Foreground: style.Foreground,
+		Bold:       style.Bold,
+		Italic:     style.Italic,
+		Underline:  style.Underline,
+	})
 }
