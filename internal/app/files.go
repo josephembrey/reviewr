@@ -341,6 +341,15 @@ func (state *filesState) collapseSelected(visibleRows int) bool {
 	return true
 }
 
+func (state filesState) selectedKind() (filetree.Kind, bool) {
+	identity, ok := state.place.SelectedIdentity()
+	if !ok {
+		return 0, false
+	}
+	row, ok := state.tree.Row(identity)
+	return row.Kind, ok
+}
+
 func (state *filesState) toggleSelected(visibleRows int) bool {
 	identity, ok := state.place.SelectedIdentity()
 	if !ok || !state.tree.Toggle(identity) {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/herdr"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/notes"
@@ -766,13 +767,25 @@ func (m *Model) apply(action Action) effect {
 		if m.gitStashesActive() {
 			return m.stashes.selectFileDelta(-1, m.geometry.ReaderRows.Height)
 		}
-	case ExpandDirectory:
+	case ExpandNavigatorSelection:
 		if m.active == workspace.Files {
-			m.files.expandSelected(m.geometry.NavigatorRows.Height)
+			if kind, ok := m.files.selectedKind(); ok {
+				if kind == filetree.Directory {
+					m.files.expandSelected(m.geometry.NavigatorRows.Height)
+				} else if m.controls.Reader == workspace.DiffReader && m.files.setReaderContextExpanded(true) {
+					m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+				}
+			}
 		}
-	case CollapseDirectory:
+	case CollapseNavigatorSelection:
 		if m.active == workspace.Files {
-			m.files.collapseSelected(m.geometry.NavigatorRows.Height)
+			if kind, ok := m.files.selectedKind(); ok {
+				if kind == filetree.Directory {
+					m.files.collapseSelected(m.geometry.NavigatorRows.Height)
+				} else if m.controls.Reader == workspace.DiffReader && m.files.setReaderContextExpanded(false) {
+					m.clampDocumentReader(&m.files.place, m.files.readerDocument())
+				}
+			}
 		}
 	case ExpandReaderContext:
 		if m.gitStashesActive() {

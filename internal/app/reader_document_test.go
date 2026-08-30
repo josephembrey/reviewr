@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/review"
@@ -254,6 +256,41 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	}, model.geometry.ReaderRows.Height)
 	if !model.files.readerContextExpanded || len(model.files.readerRows()) != len(document.Rows) {
 		t.Fatalf("same-identity refresh reset authored fold state: expanded=%v rows=%d", model.files.readerContextExpanded, len(model.files.readerRows()))
+	}
+}
+
+func TestNavigatorFileHorizontalKeysChangeDiffDetailWithoutMovingFocus(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
+	model.controls.Reader = workspace.DiffReader
+	model.files.tree = filetree.New([]string{"main.go"})
+	model.files.place.Reconcile(model.files.tree.Identities())
+	model.files.place.Focus = navigation.FocusNavigator
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerMode = workspace.DiffReader
+	document := foldableDiffDocument()
+	model.files.readerPresentation = &document
+
+	press := func(key tea.Key) {
+		next, command := model.Update(tea.KeyPressMsg(key))
+		model = next.(Model)
+		if command != nil {
+			t.Fatalf("horizontal detail key %q produced a command", key.String())
+		}
+	}
+	press(tea.Key{Code: 'l', Text: "l"})
+	if !model.files.readerContextExpanded || model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("navigator l = expanded %v focus %v", model.files.readerContextExpanded, model.files.place.Focus)
+	}
+	selected, _ := model.files.place.SelectedIdentity()
+	if selected != filetree.FileIdentity("main.go") {
+		t.Fatalf("navigator l moved selection to %q", selected)
+	}
+
+	press(tea.Key{Code: tea.KeyLeft})
+	if model.files.readerContextExpanded || model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("navigator left = expanded %v focus %v", model.files.readerContextExpanded, model.files.place.Focus)
 	}
 }
 

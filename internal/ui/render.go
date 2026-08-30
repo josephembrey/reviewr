@@ -121,7 +121,7 @@ func renderFooter(model Model) string {
 		}
 		entries = append(destinations, append(local,
 			footerEntry{key: "j/k", label: "move"},
-			footerEntry{key: "h/l", label: "fold"},
+			footerEntry{key: "h/l", label: "less/more"},
 			footerEntry{key: "z", label: "swap"},
 			footerEntry{key: "x", label: "review"},
 			footerEntry{key: "R", label: "bounds"},

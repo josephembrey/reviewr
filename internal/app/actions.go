@@ -34,8 +34,8 @@ const (
 	ActivateNavigatorRow
 	SelectNextFile
 	SelectPreviousFile
-	ExpandDirectory
-	CollapseDirectory
+	ExpandNavigatorSelection
+	CollapseNavigatorSelection
 	ExpandReaderContext
 	CollapseReaderContext
 	FocusNavigator
@@ -276,14 +276,14 @@ func routeMessageWithRows(msg tea.Msg, focus navigation.Focus, geometry ui.Geome
 			return Action{Kind: ScrollReader, Amount: -1}, true
 		case "l", "right":
 			if active == workspace.Files && focus == navigation.FocusNavigator {
-				return Action{Kind: ExpandDirectory}, true
+				return Action{Kind: ExpandNavigatorSelection}, true
 			}
 			if focus == navigation.FocusReader && controls.RichDiff {
 				return Action{Kind: ExpandReaderContext}, true
 			}
 		case "h", "left":
 			if active == workspace.Files && focus == navigation.FocusNavigator {
-				return Action{Kind: CollapseDirectory}, true
+				return Action{Kind: CollapseNavigatorSelection}, true
 			}
 			if focus == navigation.FocusReader && controls.RichDiff {
 				return Action{Kind: CollapseReaderContext}, true
