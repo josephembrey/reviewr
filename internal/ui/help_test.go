@@ -71,6 +71,24 @@ func TestHunkShortcutIsUnambiguousInFileAndStashFooters(t *testing.T) {
 	}
 }
 
+func TestFooterKeySeparatorsUseNormalTextColor(t *testing.T) {
+	t.Parallel()
+	rendered := renderFooterEntry(footerEntry{key: "[/]", label: "hunks"})
+	for _, expected := range []string{
+		headerStyle.Render("["),
+		chromeStyle.Render("/"),
+		headerStyle.Render("]"),
+		chromeStyle.Render(" hunks"),
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("footer entry %q is missing styled segment %q", rendered, expected)
+		}
+	}
+	if strings.Contains(rendered, headerStyle.Render("[/]")) {
+		t.Fatalf("footer entry colored separator as a key: %q", rendered)
+	}
+}
+
 func TestHelpPopupFitsMinimumApplicationSurface(t *testing.T) {
 	t.Parallel()
 	popup := renderHelpPopup(min(helpPopupWidth, MinimumWidth))

@@ -125,11 +125,23 @@ func renderFooterEntries(entries []footerEntry) string {
 }
 
 func renderFooterEntry(entry footerEntry) string {
-	key := headerStyle.Render(SafeSingleLine(entry.key))
+	key := renderFooterKey(entry.key)
 	if entry.label == "" {
 		return key
 	}
 	return key + chromeStyle.Render(" "+SafeSingleLine(entry.label))
+}
+
+func renderFooterKey(key string) string {
+	parts := strings.Split(SafeSingleLine(key), "/")
+	var rendered strings.Builder
+	for index, part := range parts {
+		if index > 0 {
+			rendered.WriteString(chromeStyle.Render("/"))
+		}
+		rendered.WriteString(headerStyle.Render(part))
+	}
+	return rendered.String()
 }
 
 func renderFooterSeparator() string {
