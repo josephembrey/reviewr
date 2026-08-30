@@ -30,6 +30,7 @@ type Geometry struct {
 	Divider            Rect
 	Reader             Rect
 	ReaderTitle        Rect
+	ReaderContextFold  Rect
 	ReaderRows         Rect
 	NotesTitle         Rect
 	NotesProjectScope  Rect
@@ -43,6 +44,10 @@ type Geometry struct {
 // MinimumPaneWidth is the draggable split's preferred lower bound. Geometry
 // only relaxes it for tiny component-test surfaces below the app minimum.
 const MinimumPaneWidth = 16
+
+// readerContextFoldWidth is the terminal-cell width of both global context
+// controls: "▸ all context" and "▾ all context".
+const readerContextFoldWidth = 13
 
 const workspaceSwitcher = "[files | g git | n notes]"
 
@@ -81,6 +86,7 @@ func (g Geometry) SwapPanes() Geometry {
 	}
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
+	g.ReaderContextFold = readerContextFoldRect(g.ReaderTitle)
 	return g
 }
 
@@ -131,6 +137,7 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	g.HeaderNotes = clipTo(g.Header, workspaceSwitcherRect(workspace.Notes))
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
+	g.ReaderContextFold = readerContextFoldRect(g.ReaderTitle)
 	g.NotesTitle, g.NotesRows = surfaceRows(g.Body)
 	g.NotesProjectScope = clipTo(g.NotesTitle, Rect{X: g.NotesTitle.X + 7, Y: g.NotesTitle.Y, Width: 9, Height: 1})
 	g.NotesWorktreeScope = clipTo(g.NotesTitle, Rect{X: g.NotesTitle.X + 16, Y: g.NotesTitle.Y, Width: 10, Height: 1})
@@ -200,6 +207,21 @@ func surfaceRows(surface Rect) (Rect, Rect) {
 		Height: surface.Height - titleHeight,
 	}
 	return title, rows
+}
+
+func readerContextFoldRect(title Rect) Rect {
+	// Keep one cell of title and one separating space at the minimum visible
+	// width. Normal application panes are wider than this; tiny test surfaces
+	// simply omit the optional control.
+	if title.Height == 0 || title.Width < readerContextFoldWidth+2 {
+		return Rect{}
+	}
+	return Rect{
+		X:      title.X + title.Width - readerContextFoldWidth,
+		Y:      title.Y,
+		Width:  readerContextFoldWidth,
+		Height: title.Height,
+	}
 }
 
 func clamp(value, low, high int) int {

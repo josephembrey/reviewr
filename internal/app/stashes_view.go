@@ -19,6 +19,7 @@ func (state stashState) viewModelWithReader(geometry ui.Geometry, now time.Time,
 		NavigatorEmpty: state.navigatorEmpty(len(rows)), Selected: state.place.Selected, Top: state.place.Top,
 		Focus: state.place.Focus, ReaderTitle: state.readerTitle(), ReaderDocument: document,
 		ReaderContextFoldable: contextFoldable,
+		ReaderContextExpanded: state.readerContextExpanded,
 		ReaderEmpty:           state.readerEmpty(), ReaderOffset: state.place.ReaderOffset,
 		ReaderColumn: state.place.ReaderColumn,
 	}

@@ -64,6 +64,7 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 		ReaderTitle:           state.readerTitle(),
 		ReaderDocument:        document,
 		ReaderContextFoldable: contextFoldable,
+		ReaderContextExpanded: state.readerContextExpanded,
 		ReaderEmpty:           state.readerEmpty(),
 		ReaderOffset:          state.place.ReaderOffset,
 		ReaderColumn:          state.place.ReaderColumn,

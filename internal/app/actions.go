@@ -537,6 +537,12 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft && m.geometry.HitReaderContextFold(mouse.X, mouse.Y, true) {
+			viewport, ok := m.activeReaderViewport()
+			if ok && viewport.foldable {
+				return Action{Kind: ToggleReaderContext}, true
+			}
+		}
 		if m.geometry.ReaderRows.Contains(mouse.X, mouse.Y) {
 			readerOffset = m.activeReaderVisualOffset()
 			readerLineCount = m.activeReaderLineCount()

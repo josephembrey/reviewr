@@ -123,6 +123,37 @@ func TestReaderFoldUsesNormalWeightAccent(t *testing.T) {
 	}
 }
 
+func TestReaderHeaderShowsClickableGlobalContextState(t *testing.T) {
+	t.Parallel()
+	geometry := Calculate(80, 12)
+	model := Model{
+		Geometry:              geometry,
+		ReaderTitle:           "main.go  diff",
+		ReaderContextFoldable: true,
+	}
+
+	collapsed := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
+	if !strings.HasPrefix(collapsed, model.ReaderTitle) || !strings.HasSuffix(collapsed, "▸ all context") || lipgloss.Width(collapsed) != geometry.ReaderTitle.Width {
+		t.Fatalf("collapsed reader title = %q", collapsed)
+	}
+	model.ReaderContextExpanded = true
+	expanded := ansi.Strip(renderReaderTitle(model, model.ReaderTitle))
+	if !strings.HasSuffix(expanded, "▾ all context") || lipgloss.Width(expanded) != geometry.ReaderTitle.Width {
+		t.Fatalf("expanded reader title = %q", expanded)
+	}
+
+	target := geometry.ReaderContextFold
+	if !geometry.HitReaderContextFold(target.X, target.Y, true) ||
+		geometry.HitReaderContextFold(target.X-1, target.Y, true) ||
+		geometry.HitReaderContextFold(target.X, target.Y, false) {
+		t.Fatalf("global context hit target disagrees with painted control: %+v", target)
+	}
+	model.ReaderContextFoldable = false
+	if title := ansi.Strip(renderReaderTitle(model, model.ReaderTitle)); strings.Contains(title, "all context") {
+		t.Fatalf("non-foldable reader title exposed a global control: %q", title)
+	}
+}
+
 func TestReaderLayoutHitFoldUsesPaintedRowsAndExcludesScrollbar(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{

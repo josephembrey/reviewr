@@ -66,9 +66,24 @@ func renderReader(model Model) string {
 		g.Reader,
 		g.ReaderTitle,
 		g.ReaderRows,
-		renderTitle(title, model.Focus == navigation.FocusReader),
+		renderReaderTitle(model, title),
 		rows,
 	)
+}
+
+func renderReaderTitle(model Model, title string) string {
+	focused := model.Focus == navigation.FocusReader
+	control := model.Geometry.ReaderContextFold
+	if !model.ReaderContextFoldable || control.Width == 0 {
+		return renderTitle(title, focused)
+	}
+
+	label := "▸ all context"
+	if model.ReaderContextExpanded {
+		label = "▾ all context"
+	}
+	leftWidth := max(0, control.X-model.Geometry.ReaderTitle.X-1)
+	return fit(renderTitle(title, focused), leftWidth) + " " + readerFoldStyle.Render(label)
 }
 
 func readerContent(model Model, rows Rect) ([]Line, ReaderLayout, int, int) {
