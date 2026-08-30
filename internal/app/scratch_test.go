@@ -97,6 +97,38 @@ func TestScratchEscapeRestoresExactUnderlyingPlace(t *testing.T) {
 	}
 }
 
+func TestScratchRestoresIndependentGitSubstates(t *testing.T) {
+	t.Parallel()
+	model := newScratchTestModel(&fakeScratchStore{text: "note"})
+	model.active = workspace.Git
+	model.controls.Git = workspace.GitStashes
+	model.controls.Traversal = workspace.GitFirstParent
+	model.history.place = navigation.State{Items: []string{"log-a", "log-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 4}
+	model.refs.place = navigation.State{Items: []string{"ref-a", "ref-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 5}
+	model.stashes.place = navigation.State{Items: []string{"stash-a", "stash-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 6}
+	model.stashes.readerPlaces["stash-b"] = stashReaderPlace{fileIdentity: "file-b", readerOffset: 7}
+	model.layout.customized = true
+	model.layout.navigatorWidth = 31
+
+	beforeHistory := model.history
+	beforeRefs := model.refs
+	beforeStashes := model.stashes
+	beforeControls := model.controls
+	beforeLayout := model.layout
+
+	model = openScratch(t, model)
+	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	model = next.(Model)
+	if command != nil || model.scratch || model.active != workspace.Git {
+		t.Fatalf("clean close = scratch %v active %v command=%v", model.scratch, model.active, command != nil)
+	}
+	if !reflect.DeepEqual(model.history, beforeHistory) || !reflect.DeepEqual(model.refs, beforeRefs) ||
+		!reflect.DeepEqual(model.stashes, beforeStashes) || model.controls != beforeControls || model.layout != beforeLayout {
+		t.Fatalf("Git substates changed behind Scratch: history=%+v refs=%+v stashes=%+v controls=%+v layout=%+v",
+			model.history, model.refs, model.stashes, model.controls, model.layout)
+	}
+}
+
 func TestScratchPrintablePasteAndBackgroundRefreshIsolation(t *testing.T) {
 	t.Parallel()
 	model := openScratch(t, newScratchTestModel(&fakeScratchStore{}))
@@ -109,9 +141,22 @@ func TestScratchPrintablePasteAndBackgroundRefreshIsolation(t *testing.T) {
 	}
 	cursor := model.note.editor.Cursor()
 	generation := model.note.generation
-	next, _ = model.Update(filesLoadedMsg{generation: model.files.listGeneration, files: []string{"world.go"}})
+	next, _ = model.Update(snapshotLoadedMsg{
+		generation: model.files.listGeneration,
+		snapshot:   repository.NewSnapshot([]repository.Entry{{Path: "world.go"}}),
+	})
 	model = next.(Model)
 	next, _ = model.Update(summaryLoadedMsg{generation: model.summary.generation, summary: repository.ChangeSummary{Files: 9}})
+	model = next.(Model)
+	next, _ = model.Update(refSourcesLoadedMsg{
+		generation: model.refs.sourceGeneration,
+		sources:    []repository.RefSource{repository.AllRefsSource()},
+	})
+	model = next.(Model)
+	next, _ = model.Update(stashesLoadedMsg{
+		generation: model.stashes.listGeneration,
+		stashes:    []repository.Stash{{OID: "stash-world"}},
+	})
 	model = next.(Model)
 	if model.note.editor.Text() != want || model.note.editor.Cursor() != cursor || model.note.generation != generation {
 		t.Fatalf("background refresh disturbed Scratch: %+v", model.note)

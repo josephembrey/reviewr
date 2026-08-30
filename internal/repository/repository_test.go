@@ -141,7 +141,7 @@ func TestReadFileClassifications(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got := repo.ReadFile(test.path)
+			got := repo.ReadFile(Entry{Path: test.path})
 			sizeMismatch := (test.kind == FileReady || test.kind == FileBinary || test.kind == FileTooLarge) && got.Size != test.size
 			if got.Kind != test.kind || got.Content != test.content || sizeMismatch || got.Symlink != test.symlink || (got.Err != nil) != test.wantErr {
 				t.Fatalf("ReadFile(%q) = %+v", test.path, got)
@@ -165,7 +165,7 @@ func TestReadFileUnreadable(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 
 	repo := &Repository{root: root, git: gitadapter.New(), maxBytes: DefaultMaxFileBytes}
-	got := repo.ReadFile("private.txt")
+	got := repo.ReadFile(Entry{Path: "private.txt"})
 	if got.Kind != FileUnreadable || got.Err == nil {
 		t.Fatalf("ReadFile() = %+v, want unreadable error", got)
 	}
@@ -188,25 +188,45 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if commonDir, err := repo.CommonDir(); err != nil || commonDir == "" {
 		t.Fatalf("CommonDir() = %q, %v", commonDir, err)
 	}
-	files, err := repo.ListFiles()
+	snapshot, err := repo.Snapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(files, "tracked.txt") || !slices.Contains(files, "untracked space.txt") || slices.Contains(files, "ignored.txt") {
-		t.Fatalf("ListFiles() = %#v", files)
+	files := snapshot.All()
+	if !slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "tracked.txt" && entry.State == FileUnchanged }) ||
+		!slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "untracked space.txt" && entry.State == FileUntracked }) ||
+		!slices.ContainsFunc(files, func(entry Entry) bool { return entry.Path == "ignored.txt" && entry.State == FileIgnored }) {
+		t.Fatalf("Snapshot().All() = %#v", files)
 	}
-	for _, path := range files {
-		result := repo.ReadFile(path)
+	for _, entry := range files {
+		result := repo.ReadFile(entry)
 		if result.Kind != FileReady {
-			t.Fatalf("ReadFile(%q) = %+v", path, result)
+			t.Fatalf("ReadFile(%q) = %+v", entry.Path, result)
 		}
 	}
-	commits, err := repo.ListCommits()
+	diff := repo.ReadDiff(Entry{Path: "untracked space.txt", State: FileUntracked})
+	if diff.Kind != DiffReady || !strings.Contains(diff.Content, "+untracked") {
+		t.Fatalf("ReadDiff(untracked) = %+v", diff)
+	}
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil || len(commits) != 1 {
 		t.Fatalf("ListCommits() = (%#v, %v)", commits, err)
 	}
 	if _, err := repo.ReadCommit(commits[0].OID); err != nil {
 		t.Fatal(err)
+	}
+	refSources, err := repo.ListRefSources()
+	if err != nil || len(refSources) < 2 {
+		t.Fatalf("ListRefSources() = (%#v, %v)", refSources, err)
+	}
+	for _, source := range refSources {
+		preview, previewErr := repo.ListRefCommits(source)
+		if previewErr != nil || len(preview) != 1 || preview[0].OID != commits[0].OID {
+			t.Fatalf("ListRefCommits(%+v) = (%#v, %v)", source.ID, preview, previewErr)
+		}
+	}
+	if lineage, err := repo.ListCommits(CommitQuery{Traversal: CommitFirstParent, StartOID: commits[0].OID}); err != nil || len(lineage) != 1 {
+		t.Fatalf("first-parent ListCommits() = (%#v, %v)", lineage, err)
 	}
 	summary, err := repo.WorktreeSummary()
 	if err != nil {
@@ -255,6 +275,82 @@ func TestScratchPrivateStateDoesNotWriteRepository(t *testing.T) {
 	}
 }
 
+func TestRefRepositoryBoundaryPreservesTypedSameTipSources(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "root.txt", "root\n")
+	runGit(t, root, "add", "root.txt")
+	runGit(t, root, "commit", "-q", "-m", "root")
+	oid := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
+	runGit(t, root, "branch", "same-tip")
+	runGit(t, root, "tag", "same-tip")
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := repo.ListRefSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := slices.IndexFunc(sources, func(source RefSource) bool {
+		return source.ID == (RefSourceID{Kind: RefSourceLocalBranch, Name: "refs/heads/same-tip"})
+	})
+	tag := slices.IndexFunc(sources, func(source RefSource) bool {
+		return source.ID == (RefSourceID{Kind: RefSourceTag, Name: "refs/tags/same-tip"})
+	})
+	if branch < 0 || tag < 0 || sources[branch].OID != oid || sources[tag].OID != oid || sources[branch].ID == sources[tag].ID {
+		t.Fatalf("same-tip sources lost type identity: %#v", sources)
+	}
+	for _, index := range []int{branch, tag} {
+		preview, previewErr := repo.ListRefCommits(sources[index])
+		if previewErr != nil || len(preview) != 1 || preview[0].OID != oid {
+			t.Fatalf("preview for %+v = (%#v, %v)", sources[index].ID, preview, previewErr)
+		}
+	}
+}
+
+func TestDeletedAndRenamedEntriesReadCoherently(t *testing.T) {
+	root := initRepository(t)
+	writeFile(t, root, "old.go", "package old\n")
+	writeFile(t, root, "gone.go", "package gone\n")
+	runGit(t, root, "add", "old.go", "gone.go")
+	runGit(t, root, "commit", "-q", "-m", "fixture")
+	runGit(t, root, "mv", "old.go", "new.go")
+	if err := os.Remove(filepath.Join(root, "gone.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := repo.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := make(map[string]Entry)
+	for _, entry := range snapshot.Changed() {
+		byPath[entry.Path] = entry
+	}
+	renamed := byPath["new.go"]
+	deleted := byPath["gone.go"]
+	if renamed.State != FileRenamed || renamed.PreviousPath != "old.go" || deleted.State != FileDeleted {
+		t.Fatalf("changed entries = %#v", byPath)
+	}
+	if file := repo.ReadFile(renamed); file.Kind != FileReady || !strings.Contains(file.Content, "package old") {
+		t.Fatalf("renamed file read = %+v", file)
+	}
+	if file := repo.ReadFile(deleted); file.Kind != FileMissing {
+		t.Fatalf("deleted file read = %+v", file)
+	}
+	if diff := repo.ReadDiff(renamed); diff.Kind != DiffReady || !strings.Contains(diff.Content, "old.go") || !strings.Contains(diff.Content, "new.go") {
+		t.Fatalf("renamed diff = %+v", diff)
+	}
+	if diff := repo.ReadDiff(deleted); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-package gone") {
+		t.Fatalf("deleted diff = %+v", diff)
+	}
+}
+
 func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 	root := initRepository(t)
 	writeFile(t, root, "root.txt", "root\n")
@@ -267,6 +363,7 @@ func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 	writeFile(t, root, "feature.txt", "feature\n")
 	runGit(t, root, "add", "feature.txt")
 	runGit(t, root, "commit", "-q", "-m", "feature subject")
+	featureOID := strings.TrimSpace(string(runGitBytes(t, root, "rev-parse", "HEAD")))
 	runGit(t, root, "checkout", "-q", mainBranch)
 	writeFile(t, root, "main.txt", "main\n")
 	runGit(t, root, "add", "main.txt")
@@ -278,15 +375,29 @@ func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err := repo.ListCommits()
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(commits) != 4 || commits[0].OID != mergeOID {
 		t.Fatalf("ListCommits() = %#v", commits)
 	}
+	if !commits[0].Head || !commits[0].Merge || len(commits[0].Parents) != 2 || commits[0].Author != "Reviewr Tests" || commits[0].AuthoredUnix <= 0 {
+		t.Fatalf("merge row metadata = %+v", commits[0])
+	}
+	if !slices.ContainsFunc(commits, func(commit Commit) bool {
+		return commit.OID == featureOID && slices.ContainsFunc(commit.Refs, func(reference CommitRef) bool {
+			return reference.Kind == CommitBranchRef && reference.Name == "feature"
+		})
+	}) {
+		t.Fatalf("history omitted semantic feature ref: %#v", commits)
+	}
 	if !slices.ContainsFunc(commits, func(commit Commit) bool { return commit.OID == rootOID }) {
 		t.Fatalf("history omitted root commit %s: %#v", rootOID, commits)
+	}
+	lineage, err := repo.ListCommits(CommitQuery{Traversal: CommitFirstParent, StartOID: featureOID})
+	if err != nil || len(lineage) != 2 || lineage[0].OID != featureOID || lineage[1].OID != rootOID {
+		t.Fatalf("selected first-parent lineage = (%#v, %v)", lineage, err)
 	}
 
 	rootSummary, err := repo.ReadCommit(rootOID)
@@ -313,7 +424,7 @@ func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commits, err := repo.ListCommits()
+	commits, err := repo.ListCommits(CommitQuery{})
 	if err != nil || len(commits) != 0 {
 		t.Fatalf("unborn ListCommits() = (%#v, %v)", commits, err)
 	}

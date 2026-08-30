@@ -40,7 +40,7 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	}
 	stateHome := t.TempDir()
 
-	first := startPTYReviewr(t, repository, stateHome, 80, 20)
+	first := startPTYReviewr(t, repository, stateHome, 80, 24)
 	t.Cleanup(first.stop)
 	first.waitFor(t, "files")
 	first.resetOutput()
@@ -63,7 +63,7 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	first.write(t, "\x1b[<65;2;4M")
 	first.write(t, "\x1b[<0;80;5M\x1b[<32;80;12M\x1b[<0;80;12m")
 
-	first.resize(t, 64, 15)
+	first.resize(t, 60, 12)
 	first.waitFor(t, "Scratch")
 	first.resetOutput()
 	first.write(t, "\x1b")
@@ -73,7 +73,7 @@ func TestPTYScratchEditingPersistenceAndLocking(t *testing.T) {
 	first.waitFor(t, "Scratch")
 	first.waitFor(t, "wide 界")
 
-	second := startPTYReviewr(t, repository, stateHome, 80, 20)
+	second := startPTYReviewr(t, repository, stateHome, 60, 12)
 	t.Cleanup(second.stop)
 	second.waitFor(t, "files")
 	second.resetOutput()

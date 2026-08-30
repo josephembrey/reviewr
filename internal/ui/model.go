@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/scratch"
 	"github.com/josephembrey/reviewr/internal/workspace"
@@ -13,6 +14,11 @@ const (
 	ToneDefault Tone = iota
 	ToneQuiet
 	ToneError
+	ToneAccent
+	ToneAdded
+	ToneRemoved
+	ToneInfo
+	ToneWarning
 )
 
 // Line is one logical reader or empty-state line.
@@ -21,14 +27,39 @@ type Line struct {
 	Tone Tone
 }
 
+// Segment is one styled, single-line fragment in a compact row.
+type Segment struct {
+	Text string
+	Tone Tone
+}
+
+// NavigatorStatus is semantic repository state. Rendering owns its restrained
+// marker while later icon work can style the same metadata independently.
+type NavigatorStatus uint8
+
+const (
+	StatusNone NavigatorStatus = iota
+	StatusModified
+	StatusAdded
+	StatusDeleted
+	StatusRenamed
+	StatusUntracked
+	StatusIgnored
+)
+
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
 	Identity  string
 	Label     string
+	Prefix    []Segment
+	Suffix    []Segment
+	Commit    *commitrow.Row
 	Tree      bool
 	Depth     int
 	Directory bool
 	Expanded  bool
+	Status    NavigatorStatus
+	Dimmed    bool
 }
 
 // ChangeSummary is the aggregate worktree status shown in the header.
@@ -55,10 +86,11 @@ type Model struct {
 	Top            int
 	Focus          navigation.Focus
 
-	ReaderTitle  string
-	ReaderLines  []Line
-	ReaderEmpty  Line
-	ReaderOffset int
+	ReaderTitle      string
+	ReaderLines      []Line
+	ReaderCommitRows []commitrow.Row
+	ReaderEmpty      Line
+	ReaderOffset     int
 
 	Scratch       scratch.Presentation
 	ScratchStatus string
