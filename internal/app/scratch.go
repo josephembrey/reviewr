@@ -148,6 +148,7 @@ func (state *scratchState) apply(action Action, geometry ui.Geometry) effect {
 	if !changed {
 		return effect{}
 	}
+	state.resize(geometry)
 	state.generation++
 	return effect{kind: effectDebounceScratch, generation: state.generation}
 }
@@ -252,7 +253,12 @@ func (state scratchState) status() (string, bool) {
 }
 
 func (state *scratchState) resize(geometry ui.Geometry) {
-	state.editor.Resize(geometry.ScratchText.Width, geometry.ScratchText.Height)
+	rows := geometry.ScratchRows
+	state.editor.Resize(rows.Width, rows.Height)
+	presentation := state.editor.Presentation()
+	if bar, ok := ui.CalculateScrollbar(rows, len(presentation.Document.Rows), presentation.Top); ok {
+		state.editor.Resize(bar.Content.Width, bar.Content.Height)
+	}
 }
 
 func (state *scratchState) shutdown() error {

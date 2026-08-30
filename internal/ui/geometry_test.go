@@ -65,8 +65,16 @@ func TestCalculatePartitionsScreen(t *testing.T) {
 		assertSurfaceGeometry(t, g.Navigator, g.NavigatorTitle, g.NavigatorRows)
 		assertSurfaceGeometry(t, g.Reader, g.ReaderTitle, g.ReaderRows)
 		assertSurfaceGeometry(t, g.Body, g.ScratchTitle, g.ScratchRows)
-		if g.ScratchText.Width+g.ScratchBar.Width != g.ScratchRows.Width || g.ScratchText.Y != g.ScratchRows.Y {
-			t.Fatalf("Scratch text and bar do not partition rows: %+v", g)
+		if g.ScratchText != g.ScratchRows {
+			t.Fatalf("Scratch fitting text does not use full rows: %+v", g)
+		}
+		if g.ScratchRows.Width > 1 && g.ScratchRows.Height > 0 &&
+			(g.ScratchBar.X != g.ScratchRows.X+g.ScratchRows.Width-1 || g.ScratchBar.Y != g.ScratchRows.Y ||
+				g.ScratchBar.Width != 1 || g.ScratchBar.Height != g.ScratchRows.Height) {
+			t.Fatalf("Scratch candidate scrollbar lane is not the right edge: %+v", g)
+		}
+		if (g.ScratchRows.Width <= 1 || g.ScratchRows.Height <= 0) && g.ScratchBar != (Rect{}) {
+			t.Fatalf("tiny Scratch rows unexpectedly expose a scrollbar lane: %+v", g)
 		}
 	}
 }

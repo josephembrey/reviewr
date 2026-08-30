@@ -118,16 +118,10 @@ func calculate(width, height, requestedNavigatorWidth int, customized bool) Geom
 	g.NavigatorTitle, g.NavigatorRows = surfaceRows(g.Navigator)
 	g.ReaderTitle, g.ReaderRows = surfaceRows(g.Reader)
 	g.ScratchTitle, g.ScratchRows = surfaceRows(g.Body)
+	// Scratch uses the full row width while content fits. ScratchBar is only
+	// the potential lane; CalculateScrollbar decides whether it is reserved.
 	g.ScratchText = g.ScratchRows
-	if g.ScratchRows.Width > 1 {
-		g.ScratchText.Width--
-		g.ScratchBar = Rect{
-			X:      g.ScratchRows.X + g.ScratchRows.Width - 1,
-			Y:      g.ScratchRows.Y,
-			Width:  1,
-			Height: g.ScratchRows.Height,
-		}
-	}
+	g.ScratchBar = scrollbarLane(g.ScratchRows)
 	return g
 }
 

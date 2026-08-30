@@ -473,6 +473,7 @@ func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 		Kind:    repository.FileReady,
 		Content: strings.Repeat("line\n", 100),
 	}
+	model.files.place.Focus = navigation.FocusReader
 
 	update := func(msg tea.Msg) {
 		next, command := model.Update(msg)
@@ -484,7 +485,7 @@ func TestPaneScrollbarsSupportTrackClicksAndDragging(t *testing.T) {
 	navigatorBar, _ := ui.CalculateScrollbar(model.geometry.NavigatorRows, len(model.files.place.Items), model.files.place.Top)
 	navigatorBottom := navigatorBar.Track.Y + navigatorBar.Track.Height - 1
 	update(tea.MouseClickMsg(tea.Mouse{X: navigatorBar.Track.X, Y: navigatorBottom, Button: tea.MouseLeft}))
-	if !model.scrollbar.active || model.scrollbar.pane != navigation.FocusNavigator || model.files.place.Top == 0 {
+	if !model.scrollbar.active || model.scrollbar.pane != navigation.FocusNavigator || model.files.place.Top == 0 || model.files.place.Focus != navigation.FocusNavigator {
 		t.Fatalf("navigator track click = drag %+v place %+v", model.scrollbar, model.files.place)
 	}
 	update(tea.MouseMotionMsg(tea.Mouse{X: navigatorBar.Track.X, Y: navigatorBar.Track.Y, Button: tea.MouseLeft}))

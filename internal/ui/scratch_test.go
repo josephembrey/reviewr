@@ -58,6 +58,58 @@ func TestScratchRenderClipsNarrowUnicodeWithoutControls(t *testing.T) {
 	}
 }
 
+func TestScratchFittingContentUsesLastColumnWithoutScrollbarPaint(t *testing.T) {
+	t.Parallel()
+	g := Calculate(40, 8)
+	editor := scratch.NewEditor()
+	editor.Load(strings.Repeat("x", g.ScratchRows.Width))
+	editor.Resize(g.ScratchRows.Width, g.ScratchRows.Height)
+	frame := Render(Model{Geometry: g, Workspace: workspace.Scratch, Scratch: editor.Presentation()})
+	lines := strings.Split(ansi.Strip(frame), "\n")
+	row := []rune(lines[g.ScratchRows.Y])
+	if got := string(row[g.ScratchRows.X : g.ScratchRows.X+g.ScratchRows.Width]); got != strings.Repeat("x", g.ScratchRows.Width) {
+		t.Fatalf("fitting Scratch row did not use its final column: %q", got)
+	}
+	if strings.ContainsAny(string(row), "▕▐") {
+		t.Fatalf("fitting Scratch row painted scrollbar chrome: %q", string(row))
+	}
+}
+
+func TestScratchOverflowPaintAndHitsUseSharedGeometry(t *testing.T) {
+	t.Parallel()
+	g := Calculate(50, 10)
+	editor := scratch.NewEditor()
+	editor.Load(strings.Repeat("scratch line\n", 30))
+	editor.Resize(g.ScratchRows.Width, g.ScratchRows.Height)
+	presentation := editor.Presentation()
+	bar, ok := CalculateScrollbar(g.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	if !ok {
+		t.Fatal("overflowing Scratch note produced no scrollbar")
+	}
+	editor.Resize(bar.Content.Width, bar.Content.Height)
+	presentation = editor.Presentation()
+	bar, ok = CalculateScrollbar(g.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	if !ok {
+		t.Fatal("reflowed Scratch note produced no scrollbar")
+	}
+	frame := Render(Model{Geometry: g, Workspace: workspace.Scratch, Scratch: presentation})
+	lines := strings.Split(ansi.Strip(frame), "\n")
+	for y := bar.Track.Y; y < bar.Track.Y+bar.Track.Height; y++ {
+		cell := []rune(lines[y])[bar.Track.X]
+		want := '▕'
+		if bar.Thumb.Contains(bar.Thumb.X, y) {
+			want = '▐'
+		}
+		if cell != want {
+			t.Fatalf("Scratch scrollbar cell (%d,%d) = %q, want %q", bar.Track.X, y, cell, want)
+		}
+		hit := g.ScratchHitTest(bar.Track.X, y, len(presentation.Document.Rows), presentation.Top)
+		if hit.Kind != HitScratchScrollbar || hit.GrabOffset != bar.GrabOffset(y) {
+			t.Fatalf("Scratch scrollbar hit (%d,%d) = %+v", bar.Track.X, y, hit)
+		}
+	}
+}
+
 func TestScratchStatusSanitizesTerminalControlsAndRows(t *testing.T) {
 	t.Parallel()
 	g := Calculate(60, 6)

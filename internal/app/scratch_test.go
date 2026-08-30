@@ -302,6 +302,9 @@ func TestScratchMouseSelectionWheelAndScrollbar(t *testing.T) {
 	if !ok {
 		t.Fatal("long note has no scrollbar")
 	}
+	if presentation.Document.Width != bar.Content.Width {
+		t.Fatalf("overflowing Scratch document width = %d, want reserved content width %d", presentation.Document.Width, bar.Content.Width)
+	}
 	bottom := bar.Track.Y + bar.Track.Height - 1
 	update(tea.MouseClickMsg(tea.Mouse{X: bar.Track.X, Y: bottom, Button: tea.MouseLeft}))
 	if !model.note.scrollbarDragging || model.note.editor.ScrollOffset() <= 3 {
@@ -314,6 +317,33 @@ func TestScratchMouseSelectionWheelAndScrollbar(t *testing.T) {
 	update(tea.MouseReleaseMsg(tea.Mouse{X: bar.Track.X, Y: bar.Track.Y, Button: tea.MouseLeft}))
 	if model.note.scrollbarDragging {
 		t.Fatal("release left Scratch scrollbar dragging")
+	}
+}
+
+func TestScratchReservesLaneOnlyAcrossOverflowBoundary(t *testing.T) {
+	t.Parallel()
+	store := &fakeScratchStore{text: "short"}
+	model := openScratch(t, newScratchTestModel(store))
+	if got := model.note.editor.Presentation().Document.Width; got != model.geometry.ScratchRows.Width {
+		t.Fatalf("fitting Scratch width = %d, want full width %d", got, model.geometry.ScratchRows.Width)
+	}
+
+	model.note.editor.Load(strings.Repeat("long line\n", model.geometry.ScratchRows.Height+5))
+	model.note.resize(model.geometry)
+	presentation := model.note.editor.Presentation()
+	bar, ok := ui.CalculateScrollbar(model.geometry.ScratchRows, len(presentation.Document.Rows), presentation.Top)
+	if !ok || presentation.Document.Width != bar.Content.Width {
+		t.Fatalf("overflowing Scratch layout = presentation %+v bar %+v visible %v", presentation, bar, ok)
+	}
+
+	model.note.editor.Load("short again")
+	model.note.resize(model.geometry)
+	presentation = model.note.editor.Presentation()
+	if _, ok := ui.CalculateScrollbar(model.geometry.ScratchRows, len(presentation.Document.Rows), presentation.Top); ok {
+		t.Fatal("fitting Scratch content retained a scrollbar")
+	}
+	if presentation.Document.Width != model.geometry.ScratchRows.Width {
+		t.Fatalf("Scratch width after fitting again = %d, want %d", presentation.Document.Width, model.geometry.ScratchRows.Width)
 	}
 }
 

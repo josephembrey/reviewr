@@ -30,10 +30,15 @@ var (
 	focusedTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	chromeStyle       = lipgloss.NewStyle().Foreground(secondaryColor)
 	mutedStyle        = lipgloss.NewStyle().Foreground(mutedColor)
-	errorStyle        = lipgloss.NewStyle().Foreground(errorColor)
-	addedStyle        = lipgloss.NewStyle().Foreground(addedColor)
-	purpleStyle       = lipgloss.NewStyle().Foreground(purpleColor)
-	yellowStyle       = lipgloss.NewStyle().Foreground(yellowColor)
+	// Scrollbars follow Herdr's restrained three-level hierarchy while staying
+	// within reviewr's terminal ANSI roles.
+	scrollbarTrackStyle          = mutedStyle.Faint(true)
+	scrollbarUnfocusedThumbStyle = mutedStyle
+	scrollbarFocusedThumbStyle   = chromeStyle
+	errorStyle                   = lipgloss.NewStyle().Foreground(errorColor)
+	addedStyle                   = lipgloss.NewStyle().Foreground(addedColor)
+	purpleStyle                  = lipgloss.NewStyle().Foreground(purpleColor)
+	yellowStyle                  = lipgloss.NewStyle().Foreground(yellowColor)
 )
 
 // Render paints one fixed-size frame from the shared Geometry.
@@ -182,21 +187,23 @@ func renderScratch(model Model) string {
 	presentation := model.Scratch
 	document := presentation.Document
 	rows := make([]string, 0, g.ScratchRows.Height)
-	bar := verticalScrollbar(g.ScratchRows.Height, len(document.Rows), presentation.Top, true)
+	bar, overflow := CalculateScrollbar(g.ScratchRows, len(document.Rows), presentation.Top)
+	textRows := g.ScratchRows
+	var scrollbar []string
+	if overflow {
+		textRows = bar.Content
+		scrollbar = verticalScrollbar(bar, true)
+	}
 	cursorRow := document.RowForIndex(presentation.Cursor)
 	for visible := 0; visible < g.ScratchRows.Height; visible++ {
 		rowIndex := presentation.Top + visible
 		line := ""
 		if rowIndex < len(document.Rows) {
-			line = renderScratchRow(document.Rows[rowIndex], rowIndex == cursorRow, presentation, g.ScratchText.Width)
+			line = renderScratchRow(document.Rows[rowIndex], rowIndex == cursorRow, presentation, textRows.Width)
 		}
-		line = fit(line, g.ScratchText.Width)
-		if g.ScratchBar.Width > 0 {
-			lane := " "
-			if bar != nil {
-				lane = bar[visible]
-			}
-			line += lane
+		line = fit(line, textRows.Width)
+		if overflow {
+			line += scrollbar[visible]
 		}
 		rows = append(rows, line)
 	}
@@ -267,10 +274,12 @@ func renderNavigator(model Model) string {
 	rows := make([]string, 0, g.NavigatorRows.Height)
 	title := model.NavigatorTitle
 	visibleRows := g.NavigatorRows.Height
-	scrollbar := verticalScrollbar(visibleRows, len(model.NavigatorRows), model.Top, model.Focus == navigation.FocusNavigator)
+	bar, overflow := CalculateScrollbar(g.NavigatorRows, len(model.NavigatorRows), model.Top)
 	contentWidth := g.NavigatorRows.Width
-	if scrollbar != nil {
-		contentWidth--
+	var scrollbar []string
+	if overflow {
+		contentWidth = bar.Content.Width
+		scrollbar = verticalScrollbar(bar, model.Focus == navigation.FocusNavigator)
 	}
 	commitRows := make([]commitrow.Row, 0, len(model.NavigatorRows))
 	for _, row := range model.NavigatorRows {
@@ -288,7 +297,7 @@ func renderNavigator(model Model) string {
 			} else {
 				rows = append(rows, "")
 			}
-			if scrollbar != nil {
+			if overflow {
 				rows[len(rows)-1] = fit(rows[len(rows)-1], contentWidth) + scrollbar[row]
 			}
 			continue
@@ -301,7 +310,7 @@ func renderNavigator(model Model) string {
 			commitColumns,
 			now,
 		)
-		if scrollbar != nil {
+		if overflow {
 			line += scrollbar[row]
 		}
 		rows = append(rows, line)
@@ -447,10 +456,12 @@ func renderReader(model Model) string {
 	if len(commitRows) != 0 {
 		total = len(commitRows)
 	}
-	scrollbar := verticalScrollbar(g.ReaderRows.Height, total, model.ReaderOffset, model.Focus == navigation.FocusReader)
+	bar, overflow := CalculateScrollbar(g.ReaderRows, total, model.ReaderOffset)
 	contentWidth := g.ReaderRows.Width
-	if scrollbar != nil {
-		contentWidth--
+	var scrollbar []string
+	if overflow {
+		contentWidth = bar.Content.Width
+		scrollbar = verticalScrollbar(bar, model.Focus == navigation.FocusReader)
 	}
 	commitColumns := commitrow.Measure(commitRows, contentWidth)
 	now := time.Now()
@@ -463,13 +474,13 @@ func renderReader(model Model) string {
 			} else {
 				line = fit(renderLine(content[index]), contentWidth)
 			}
-			if scrollbar != nil {
+			if overflow {
 				line += scrollbar[row]
 			}
 			rows = append(rows, line)
 		} else {
 			line := ""
-			if scrollbar != nil {
+			if overflow {
 				line = fit(line, contentWidth) + scrollbar[row]
 			}
 			rows = append(rows, line)
