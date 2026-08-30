@@ -60,14 +60,19 @@ func TestFileScopeAndReaderModeLiveOnTheirPaneHeaders(t *testing.T) {
 	model := Model{
 		Geometry: geometry, Workspace: workspace.Files, Controls: controls,
 		NavigatorTitle: "12 files", ReaderTitle: "src/main.go  [diff]",
+		Changes: ChangeSummary{Files: 12, Additions: 345, Deletions: 67, Ready: true},
 	}
-	frame := ansi.Strip(Render(model))
+	rendered := Render(model)
+	frame := ansi.Strip(rendered)
 	line := strings.Split(frame, "\n")[geometry.Body.Y]
 	cells := []rune(line)
 	navigator := string(cells[geometry.NavigatorTitle.X : geometry.NavigatorTitle.X+geometry.NavigatorTitle.Width])
 	reader := string(cells[geometry.ReaderTitle.X : geometry.ReaderTitle.X+geometry.ReaderTitle.Width])
-	if !strings.HasPrefix(navigator, "12 files") || !strings.HasSuffix(navigator, "1 [changed]") {
+	if !strings.HasPrefix(navigator, "12 changes +345 -67") || !strings.HasSuffix(navigator, "1 [changed]") {
 		t.Fatalf("navigator title = %q", navigator)
+	}
+	if !strings.Contains(rendered, mutedStyle.Render("12 changes")) || !strings.Contains(rendered, addedStyle.Render("+345")) || !strings.Contains(rendered, errorStyle.Render("-67")) {
+		t.Fatalf("navigator change summary lacks semantic colors: %q", rendered)
 	}
 	if !strings.HasPrefix(reader, "src/main.go  [diff]") || !strings.HasSuffix(reader, "2 [diff]") {
 		t.Fatalf("reader title = %q", reader)
@@ -85,6 +90,43 @@ func TestFileScopeAndReaderModeLiveOnTheirPaneHeaders(t *testing.T) {
 		if hit := geometry.HitTest(control.rect.X, control.rect.Y, workspace.Files, controls, 0, 0, 0, 0); hit.Kind != control.hit {
 			t.Fatalf("pane control hit = %v, want %v", hit.Kind, control.hit)
 		}
+	}
+
+	model.Controls.Files = workspace.AllFiles
+	frame = ansi.Strip(Render(model))
+	line = strings.Split(frame, "\n")[geometry.Body.Y]
+	cells = []rune(line)
+	navigator = string(cells[geometry.NavigatorTitle.X : geometry.NavigatorTitle.X+geometry.NavigatorTitle.Width])
+	if !strings.HasPrefix(navigator, "12 files") || !strings.HasSuffix(navigator, "1 [all]") || strings.Contains(navigator, "changes") || strings.Contains(navigator, "+345") || strings.Contains(navigator, "-67") {
+		t.Fatalf("all-files navigator title = %q", navigator)
+	}
+}
+
+func TestChangedFilesPaneOmitsZeroChangeTotals(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		changes ChangeSummary
+		want    string
+		absent  string
+	}{
+		{name: "Additions only", changes: ChangeSummary{Files: 2, Additions: 7, Ready: true}, want: "2 changes +7", absent: "-0"},
+		{name: "Deletions only", changes: ChangeSummary{Files: 2, Deletions: 9, Ready: true}, want: "2 changes -9", absent: "+0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			geometry := Calculate(100, 14)
+			frame := ansi.Strip(Render(Model{
+				Geometry: geometry, Workspace: workspace.Files,
+				Controls: workspace.Controls{Files: workspace.ChangedFiles},
+				Changes:  test.changes,
+			}))
+			line := strings.Split(frame, "\n")[geometry.Body.Y]
+			navigator := string([]rune(line)[geometry.NavigatorTitle.X : geometry.NavigatorTitle.X+geometry.NavigatorTitle.Width])
+			if !strings.HasPrefix(navigator, test.want) || strings.Contains(navigator, test.absent) {
+				t.Fatalf("navigator title = %q, want prefix %q without %q", navigator, test.want, test.absent)
+			}
+		})
 	}
 }
 

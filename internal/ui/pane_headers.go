@@ -19,15 +19,23 @@ type readerPaneTitleLayout struct {
 
 func renderNavigatorTitle(model Model, title string) string {
 	control := layoutPaneHeaderControls(model.Geometry, model.Workspace, model.Controls).navigator
-	return renderPaneTitle(model.Geometry.NavigatorTitle, title, model.Focus == navigation.FocusNavigator, control)
+	content := renderTitle(title, model.Focus == navigation.FocusNavigator)
+	if model.Workspace == workspace.Files && model.Controls.Files == workspace.ChangedFiles && model.Changes.Ready {
+		content = renderNavigatorChangeSummary(model.Changes)
+	}
+	return renderPaneTitleContent(model.Geometry.NavigatorTitle, content, control)
 }
 
 func renderPaneTitle(titleRect Rect, title string, focused bool, control headerControl) string {
+	return renderPaneTitleContent(titleRect, renderTitle(title, focused), control)
+}
+
+func renderPaneTitleContent(titleRect Rect, content string, control headerControl) string {
 	leftWidth := titleRect.Width
 	if control.rect.Width > 0 {
 		leftWidth = max(0, control.rect.X-titleRect.X-1)
 	}
-	left := fit(renderTitle(title, focused), leftWidth)
+	left := fit(content, leftWidth)
 	if control.rect.Width == 0 {
 		return left
 	}

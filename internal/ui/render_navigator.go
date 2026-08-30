@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -78,6 +79,21 @@ func renderNavigator(model Model) string {
 		renderNavigatorTitle(model, title),
 		rows,
 	)
+}
+
+func renderNavigatorChangeSummary(summary ChangeSummary) string {
+	result := mutedStyle.Render(fmt.Sprintf("%d changes", summary.Files))
+	additions, deletions := FormatLineChanges(LineChanges{
+		Additions: summary.Additions,
+		Deletions: summary.Deletions,
+	})
+	if additions != "" {
+		result += " " + addedStyle.Render(additions)
+	}
+	if deletions != "" {
+		result += " " + errorStyle.Render(deletions)
+	}
+	return result
 }
 
 // measureNavigatorCommits avoids scanning large file trees and refs lists.
