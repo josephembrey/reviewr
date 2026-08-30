@@ -64,16 +64,32 @@ func calculateReaderLayout(geometry ReaderGeometry, document ReaderDocument) Rea
 	for index, row := range document.Rows {
 		starts[index] = len(wraps)
 		value := SafeSingleLine(row.Text)
-		if row.Kind == ReaderFold || row.Kind == ReaderFoldEnd {
+		if readerSingleVisualRow(row.Kind) {
 			// Fold controls are painted across the full content row and clipped
 			// there, so they always occupy exactly one visual row.
 			wraps = append(wraps, readerRange{right: ansi.StringWidth(value)})
 		} else {
-			wraps = appendReaderWrapRanges(wraps, value, geometry.Code.Width)
+			width := geometry.Code.Width
+			if row.Kind == ReaderCommentBody {
+				// Card prose wraps inside its borders; using the source-code width
+				// would clip one cell from every segment and lose visible text.
+				width = max(1, geometry.Content.Width-commentCardIndent-4)
+			}
+			wraps = appendReaderWrapRanges(wraps, value, width)
 		}
 	}
 	starts[len(document.Rows)] = len(wraps)
 	return ReaderLayout{Geometry: geometry, Total: len(wraps), document: document, starts: starts, wraps: wraps}
+}
+
+func readerSingleVisualRow(kind ReaderRowKind) bool {
+	switch kind {
+	case ReaderFold, ReaderFoldEnd, ReaderCommentHeader, ReaderCommentEnd,
+		ReaderCommentComposerHeader, ReaderCommentComposerBody, ReaderCommentComposerEnd:
+		return true
+	default:
+		return false
+	}
 }
 
 // VisualOffset maps a logical source row and source-cell column to the
@@ -133,6 +149,23 @@ func (layout ReaderLayout) SourceAt(x, y, visualOffset int) (int, bool) {
 		return 0, false
 	}
 	source, _ := layout.SourceOffset(visual)
+	return source, true
+}
+
+// CommentGutterSourceAt resolves the line-number gutter's [+] affordance.
+// Wrapped continuation rows and every presentation-only reader row are inert.
+func (layout ReaderLayout) CommentGutterSourceAt(x, y, visualOffset int) (int, bool) {
+	if !layout.Geometry.LineNumber.Contains(x, y) || layout.Total == 0 {
+		return 0, false
+	}
+	visual := visualOffset + y - layout.Geometry.Rows.Y
+	if visual < 0 || visual >= layout.Total {
+		return 0, false
+	}
+	source, column := layout.SourceOffset(visual)
+	if column != 0 || visual != layout.starts[source] || !layout.document.Rows[source].Commentable() {
+		return 0, false
+	}
 	return source, true
 }
 

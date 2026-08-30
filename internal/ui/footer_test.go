@@ -58,3 +58,44 @@ func TestNotesFooterKeepsOnlyStatusAndAvailableScope(t *testing.T) {
 		t.Fatalf("Notes footer is not truthful: %q", footer)
 	}
 }
+
+func TestFilesFooterAddsOnlyImmediatelyRelevantCommentActions(t *testing.T) {
+	t.Parallel()
+	plain := func(model Model) string {
+		model.Geometry = Calculate(120, 20)
+		model.Workspace = workspace.Files
+		return ansi.Strip(renderFooter(model))
+	}
+
+	source := plain(Model{ReaderCommentable: true, FileActions: FileFooterActions{Review: true}})
+	for _, expected := range []string{"V select lines", "c comment", "x review"} {
+		if !strings.Contains(source, expected) {
+			t.Errorf("commentable source footer lacks %q: %q", expected, source)
+		}
+	}
+	for _, routine := range []string{"tab", "j/k move", "h/l less", "e edit", "[/]"} {
+		if strings.Contains(source, routine) {
+			t.Errorf("commentable source footer restored routine hint %q: %q", routine, source)
+		}
+	}
+
+	visual := plain(Model{ReaderVisualSelection: true})
+	for _, expected := range []string{"c comment range", "esc cancel selection", "j/k extend"} {
+		if !strings.Contains(visual, expected) {
+			t.Errorf("Visual footer lacks %q: %q", expected, visual)
+		}
+	}
+
+	composer := plain(Model{ReaderComposingComment: true})
+	for _, expected := range []string{"enter save comment", "esc cancel", "alt+enter newline"} {
+		if !strings.Contains(composer, expected) {
+			t.Errorf("composer footer lacks %q: %q", expected, composer)
+		}
+	}
+
+	collapsed := plain(Model{ReaderCommentHeader: true})
+	expanded := plain(Model{ReaderCommentHeader: true, ReaderCommentExpanded: true})
+	if !strings.Contains(collapsed, "l expand comment") || !strings.Contains(expanded, "h collapse comment") {
+		t.Fatalf("comment-card footers = collapsed %q expanded %q", collapsed, expanded)
+	}
+}

@@ -357,11 +357,11 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	model.files.place.ReaderOffset = removed
 	model.files.place.ReaderCursor = removed
 	firstFold := compact.Rows[0].Identity
-	if pending := model.apply(Action{Kind: ExpandReaderContext}); pending.kind != effectNone || model.files.readerContext.target(firstFold) {
+	if pending := model.apply(Action{Kind: ExpandReaderFold}); pending.kind != effectNone || model.files.readerContext.target(firstFold) {
 		t.Fatalf("non-fold selection expanded context: effect=%+v target=%v", pending, model.files.readerContext.target(firstFold))
 	}
 	model.files.place.ReaderCursor = 0
-	pending := model.apply(Action{Kind: ExpandReaderContext})
+	pending := model.apply(Action{Kind: ExpandReaderFold})
 	if model.files.readerContext.target(firstFold) != true || model.files.readerContext.progress(firstFold) != 1 || pending.kind != effectAnimateReaderContext ||
 		model.files.readerRows()[model.files.place.ReaderOffset].Identity != "removed" {
 		t.Fatalf("expand did not start in place: target=%v progress=%d offset=%d rows=%+v", model.files.readerContext.target(firstFold), model.files.readerContext.progress(firstFold), model.files.place.ReaderOffset, model.files.readerRows())
@@ -373,11 +373,11 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 
 	model.files.place.ReaderOffset = readerIdentityIndex(model.files.readerRows(), "context:4")
 	model.files.place.ReaderCursor = model.files.place.ReaderOffset
-	if pending = model.apply(Action{Kind: CollapseReaderContext}); pending.kind != effectNone {
+	if pending = model.apply(Action{Kind: CollapseReaderFold}); pending.kind != effectNone {
 		t.Fatalf("context line selection collapsed a fold: %+v", pending)
 	}
 	model.files.place.ReaderCursor = readerIdentityIndex(model.files.readerRows(), firstFold)
-	pending = model.apply(Action{Kind: CollapseReaderContext})
+	pending = model.apply(Action{Kind: CollapseReaderFold})
 	finishReaderContextAnimation(&model, pending)
 	if model.files.readerContext.target(firstFold) || model.files.readerRows()[model.files.place.ReaderOffset].Identity != "context:8" ||
 		model.files.readerRows()[model.files.place.ReaderCursor].Identity != firstFold {
@@ -385,7 +385,7 @@ func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	}
 
 	model.files.place.ReaderCursor = readerIdentityIndex(model.files.readerRows(), firstFold)
-	pending = model.apply(Action{Kind: ExpandReaderContext})
+	pending = model.apply(Action{Kind: ExpandReaderFold})
 	finishReaderContextAnimation(&model, pending)
 	model.files.contentGeneration = 9
 	model.files = model.files.landDiff(diffLoadedMsg{
@@ -473,7 +473,7 @@ func TestExpandedFoldEndCollapsesFromKeyboardAndMouse(t *testing.T) {
 		t.Fatal("expanded inter-hunk fold has no end marker")
 	}
 	model.files.place.ReaderCursor = marker
-	pending := model.apply(Action{Kind: CollapseReaderContext})
+	pending := model.apply(Action{Kind: CollapseReaderFold})
 	if model.files.readerContext.target(identity) || pending.kind != effectAnimateReaderContext {
 		t.Fatalf("h on fold end = target %v effect %+v", model.files.readerContext.target(identity), pending)
 	}
@@ -522,16 +522,16 @@ func TestReaderHunkNavigationMovesThroughTheContinuousDiff(t *testing.T) {
 	if model.files.place.Focus != navigation.FocusNavigator {
 		t.Fatalf("initial hunk focus = %v, want navigator", model.files.place.Focus)
 	}
-	model.apply(Action{Kind: ExpandReaderContext})
+	model.apply(Action{Kind: ExpandReaderFold})
 	if !model.files.readerContext.target(presented.Rows[targets[0]].Identity) {
 		t.Fatal("right from hunk target did not expand its leading fold")
 	}
 	expandedTargets := model.files.readerDocument().HunkNavigationTargets()
-	model.apply(Action{Kind: SelectNextHunk})
+	model.apply(Action{Kind: SelectNextLandmark})
 	if model.files.place.ReaderCursor != expandedTargets[1] || model.files.place.Focus != navigation.FocusNavigator {
 		t.Fatalf("second hunk = cursor %d focus %v, want %d without focus change", model.files.place.ReaderCursor, model.files.place.Focus, expandedTargets[1])
 	}
-	model.apply(Action{Kind: SelectPreviousHunk})
+	model.apply(Action{Kind: SelectPreviousLandmark})
 	if model.files.place.ReaderCursor != expandedTargets[0] {
 		t.Fatalf("previous hunk cursor = %d, want %d", model.files.place.ReaderCursor, expandedTargets[0])
 	}
@@ -608,7 +608,7 @@ func TestReaderContextAnimationReversesImmediatelyAndRejectsStaleFrames(t *testi
 	model.files.readerPresentation = &document
 	firstFold := model.files.readerDocument().Rows[0].Identity
 
-	pending := model.apply(Action{Kind: ExpandReaderContext})
+	pending := model.apply(Action{Kind: ExpandReaderFold})
 	oldGeneration := pending.generation
 	for range 3 {
 		pending = model.landReaderContextFrame(readerContextFrameMsg{owner: readerContextFiles, generation: oldGeneration})
@@ -617,7 +617,7 @@ func TestReaderContextAnimationReversesImmediatelyAndRejectsStaleFrames(t *testi
 		t.Fatalf("expanded progress = %d, want 4", model.files.readerContext.progress(firstFold))
 	}
 
-	pending = model.apply(Action{Kind: CollapseReaderContext})
+	pending = model.apply(Action{Kind: CollapseReaderFold})
 	if model.files.readerContext.progress(firstFold) != 3 || model.files.readerContext.target(firstFold) || pending.generation == oldGeneration {
 		t.Fatalf("reverse = target %v progress %d generation %d", model.files.readerContext.target(firstFold), model.files.readerContext.progress(firstFold), pending.generation)
 	}
@@ -641,7 +641,7 @@ func TestStashReaderUsesSharedContextAnimation(t *testing.T) {
 	model.stashes.readerPresentation = &document
 	firstFold := model.stashes.readerDocument().Rows[0].Identity
 
-	pending := model.apply(Action{Kind: ExpandReaderContext})
+	pending := model.apply(Action{Kind: ExpandReaderFold})
 	if pending.readerContextOwner != readerContextStashes || model.stashes.readerContext.progress(firstFold) != 1 {
 		t.Fatalf("stash animation = effect %+v progress %d", pending, model.stashes.readerContext.progress(firstFold))
 	}

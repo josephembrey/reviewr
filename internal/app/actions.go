@@ -41,16 +41,22 @@ const (
 	SelectPreviousFile
 	ExpandNavigatorSelection
 	CollapseNavigatorSelection
-	ExpandReaderContext
-	CollapseReaderContext
+	ExpandReaderFold
+	CollapseReaderFold
 	ToggleReaderFold
-	SelectNextHunk
-	SelectPreviousHunk
+	SelectNextLandmark
+	SelectPreviousLandmark
 	MoveReaderSelection
 	MoveReaderPage
 	SelectReaderBoundary
 	SelectReaderViewport
 	SelectReaderLine
+	StartVisualLine
+	CancelVisualLine
+	ComposeComment
+	ComposeCommentAtLine
+	SetCommentHover
+	ClearCommentHover
 	FocusNavigator
 	FocusReader
 	SwapPanes
@@ -87,6 +93,19 @@ const (
 	StartNotesScrollbarDrag
 	DragNotesScrollbar
 	FinishNotesScrollbarDrag
+	CommentInsert
+	CommentBackspace
+	CommentDelete
+	CommentMoveLeft
+	CommentMoveRight
+	CommentMoveUp
+	CommentMoveDown
+	CommentMoveWordLeft
+	CommentMoveWordRight
+	CommentMoveHome
+	CommentMoveEnd
+	CommentSubmit
+	CommentCancel
 )
 
 // Action carries the small amount of data needed by a semantic intent.
@@ -295,6 +314,63 @@ type browserRouteContext struct {
 	readerOffset      int
 	readerLineCount   int
 	navigatorRows     []ui.NavigatorRow
+	visualSelecting   bool
+	readerCommentable bool
+	readerFoldable    bool
+	readerLandmarks   bool
+}
+
+func routeCommentInput(msg tea.Msg) (Action, bool) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		return Action{Kind: Resize, Width: msg.Width, Height: msg.Height}, true
+	case tea.PasteMsg:
+		return Action{Kind: CommentInsert, Text: msg.Content}, true
+	case tea.KeyPressMsg:
+		key := msg.Key()
+		selecting := key.Mod&tea.ModShift != 0
+		if key.Code == tea.KeyEscape {
+			return Action{Kind: CommentCancel}, true
+		}
+		if key.Code == tea.KeyEnter {
+			if key.Mod&(tea.ModAlt|tea.ModShift) != 0 {
+				return Action{Kind: CommentInsert, Text: "\n"}, true
+			}
+			return Action{Kind: CommentSubmit}, true
+		}
+		if key.Mod&tea.ModCtrl != 0 {
+			switch key.Code {
+			case 'j':
+				return Action{Kind: CommentInsert, Text: "\n"}, true
+			case tea.KeyLeft:
+				return Action{Kind: CommentMoveWordLeft, Selecting: selecting}, true
+			case tea.KeyRight:
+				return Action{Kind: CommentMoveWordRight, Selecting: selecting}, true
+			}
+		}
+		switch key.Code {
+		case tea.KeyLeft:
+			return Action{Kind: CommentMoveLeft, Selecting: selecting}, true
+		case tea.KeyRight:
+			return Action{Kind: CommentMoveRight, Selecting: selecting}, true
+		case tea.KeyUp:
+			return Action{Kind: CommentMoveUp, Selecting: selecting}, true
+		case tea.KeyDown:
+			return Action{Kind: CommentMoveDown, Selecting: selecting}, true
+		case tea.KeyHome:
+			return Action{Kind: CommentMoveHome, Selecting: selecting}, true
+		case tea.KeyEnd:
+			return Action{Kind: CommentMoveEnd, Selecting: selecting}, true
+		case tea.KeyBackspace:
+			return Action{Kind: CommentBackspace}, true
+		case tea.KeyDelete:
+			return Action{Kind: CommentDelete}, true
+		}
+		if key.Text != "" && key.Mod&(tea.ModCtrl|tea.ModAlt|tea.ModMeta|tea.ModSuper|tea.ModHyper) == 0 {
+			return Action{Kind: CommentInsert, Text: key.Text}, true
+		}
+	}
+	return Action{}, false
 }
 
 func routeBrowserMessage(msg tea.Msg, context browserRouteContext) (Action, bool) {
@@ -381,7 +457,18 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 		if context.active == workspace.Files {
 			return Action{Kind: OpenEditor}, true
 		}
+	case "V":
+		if context.active == workspace.Files && context.focus == navigation.FocusReader && context.readerCommentable && !context.visualSelecting {
+			return Action{Kind: StartVisualLine}, true
+		}
+	case "c":
+		if context.active == workspace.Files && context.focus == navigation.FocusReader && context.readerCommentable {
+			return Action{Kind: ComposeComment}, true
+		}
 	case "esc":
+		if context.active == workspace.Files && context.visualSelecting {
+			return Action{Kind: CancelVisualLine}, true
+		}
 		if context.active == workspace.Git {
 			return Action{Kind: ShowFiles}, true
 		}
@@ -427,12 +514,12 @@ func routeBrowserNavigationKey(msg tea.KeyPressMsg, context browserRouteContext)
 	case "F":
 		return Action{Kind: SelectPreviousFile}, true
 	case "]":
-		if context.controls.RichDiff {
-			return Action{Kind: SelectNextHunk}, true
+		if context.controls.RichDiff || context.readerLandmarks {
+			return Action{Kind: SelectNextLandmark}, true
 		}
 	case "[":
-		if context.controls.RichDiff {
-			return Action{Kind: SelectPreviousHunk}, true
+		if context.controls.RichDiff || context.readerLandmarks {
+			return Action{Kind: SelectPreviousLandmark}, true
 		}
 	case "j", "down":
 		if context.focus == navigation.FocusNavigator {
@@ -448,15 +535,15 @@ func routeBrowserNavigationKey(msg tea.KeyPressMsg, context browserRouteContext)
 		if context.active == workspace.Files && context.focus == navigation.FocusNavigator {
 			return Action{Kind: ExpandNavigatorSelection}, true
 		}
-		if context.focus == navigation.FocusReader && context.controls.RichDiff {
-			return Action{Kind: ExpandReaderContext}, true
+		if context.focus == navigation.FocusReader && (context.controls.RichDiff || context.readerFoldable) {
+			return Action{Kind: ExpandReaderFold}, true
 		}
 	case "h", "left":
 		if context.active == workspace.Files && context.focus == navigation.FocusNavigator {
 			return Action{Kind: CollapseNavigatorSelection}, true
 		}
-		if context.focus == navigation.FocusReader && context.controls.RichDiff {
-			return Action{Kind: CollapseReaderContext}, true
+		if context.focus == navigation.FocusReader && (context.controls.RichDiff || context.readerFoldable) {
+			return Action{Kind: CollapseReaderFold}, true
 		}
 	default:
 		return Action{}, false
@@ -586,6 +673,9 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	if action, handled := routeModalInput(msg, m.geometry, m.modal, m.active != workspace.Notes); handled {
 		return action, true
 	}
+	if m.files.composingComment() {
+		return routeCommentInput(msg)
+	}
 	if m.active == workspace.Notes {
 		note := m.note.current()
 		presentation := note.presentation()
@@ -602,6 +692,19 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 	readerOffset := place.ReaderOffset
 	readerLineCount := 0
 	switch msg := msg.(type) {
+	case tea.MouseMotionMsg:
+		if m.active == workspace.Files && !m.layout.dragging && !m.scrollbar.active {
+			mouse := msg.Mouse()
+			if layout, ok := m.activeReaderLayout(); ok {
+				if source, hit := layout.CommentGutterSourceAt(mouse.X, mouse.Y, m.activeReaderVisualOffset()); hit {
+					if !m.files.hoveredCommentLine(source) {
+						return Action{Kind: SetCommentHover, Index: source}, true
+					}
+				} else if m.files.commentHover != nil {
+					return Action{Kind: ClearCommentHover}, true
+				}
+			}
+		}
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		if m.geometry.ReaderRows.Contains(mouse.X, mouse.Y) {
@@ -609,8 +712,16 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 			readerLineCount = m.activeReaderLineCount()
 			if mouse.Button == tea.MouseLeft {
 				if layout, ok := m.activeReaderLayout(); ok {
+					if m.active == workspace.Files {
+						if source, hit := layout.CommentGutterSourceAt(mouse.X, mouse.Y, readerOffset); hit {
+							return Action{Kind: ComposeCommentAtLine, Index: source}, true
+						}
+					}
 					if source, hit := layout.SourceAt(mouse.X, mouse.Y, readerOffset); hit {
 						row, _ := layout.Row(readerOffset + mouse.Y - layout.Geometry.Rows.Y)
+						if identity, fold := row.CommentHeaderIdentity(); fold {
+							return Action{Kind: ToggleReaderFold, Identity: identity, Index: source}, true
+						}
 						if identity, fold := row.ContextFoldIdentity(); fold {
 							return Action{Kind: ToggleReaderFold, Identity: identity, Index: source}, true
 						}
@@ -625,6 +736,16 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 			readerOffset = m.activeReaderVisualOffset()
 			readerLineCount = m.activeReaderLineCount()
 		}
+	}
+	document, structured := m.activeReaderDocument()
+	readerCommentable := false
+	readerFoldable := false
+	readerLandmarks := false
+	if structured && len(document.Rows) != 0 {
+		cursor := max(0, min(place.ReaderCursor, len(document.Rows)-1))
+		readerCommentable = m.active == workspace.Files && document.Rows[cursor].Commentable() && !m.files.markdownPreviewActive()
+		_, readerFoldable = document.Rows[cursor].CommentHeaderIdentity()
+		readerLandmarks = len(m.settings.hunkNavigationTargets(readerNavigationLandmarks(document))) != 0
 	}
 	var navigatorRows []ui.NavigatorRow
 	if click, ok := msg.(tea.MouseClickMsg); ok && m.active == workspace.Files {
@@ -645,5 +766,9 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		readerOffset:      readerOffset,
 		readerLineCount:   readerLineCount,
 		navigatorRows:     navigatorRows,
+		visualSelecting:   m.files.visualSelection != nil,
+		readerCommentable: readerCommentable,
+		readerFoldable:    readerFoldable,
+		readerLandmarks:   readerLandmarks,
 	})
 }

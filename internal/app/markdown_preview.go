@@ -38,6 +38,7 @@ func (state *filesState) toggleMarkdownPreview(rows ui.Rect) {
 		return
 	}
 	path := state.readerEntry.Path
+	state.resetReaderInteraction()
 	if state.markdownPreviewPaths[path] {
 		delete(state.markdownPreviewPaths, path)
 	} else {

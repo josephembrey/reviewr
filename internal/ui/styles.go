@@ -26,12 +26,16 @@ var (
 	vividBlueColor   = lipgloss.Color("#61AFEF")
 	vividCyanColor   = lipgloss.Color("#56B6C2")
 
-	headerStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	focusedTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	chromeStyle        = lipgloss.NewStyle().Foreground(secondaryColor)
-	mutedStyle         = lipgloss.NewStyle().Foreground(mutedColor)
-	readerFoldStyle    = lipgloss.NewStyle().Foreground(accentColor)
-	readerFoldEndStyle = readerFoldStyle.Faint(true)
+	headerStyle         = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	focusedTitleStyle   = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	chromeStyle         = lipgloss.NewStyle().Foreground(secondaryColor)
+	mutedStyle          = lipgloss.NewStyle().Foreground(mutedColor)
+	readerFoldStyle     = lipgloss.NewStyle().Foreground(accentColor)
+	readerFoldEndStyle  = readerFoldStyle.Faint(true)
+	commentBorderStyle  = lipgloss.NewStyle().Foreground(mutedColor).Faint(true)
+	commentTitleStyle   = lipgloss.NewStyle().Foreground(warningColor).Bold(true)
+	commentBodyStyle    = lipgloss.NewStyle().Foreground(secondaryColor)
+	composerBorderStyle = lipgloss.NewStyle().Foreground(warningColor)
 	// Scrollbars follow Herdr's restrained three-level hierarchy while staying
 	// within reviewr's terminal ANSI roles.
 	scrollbarTrackStyle          = mutedStyle.Faint(true)

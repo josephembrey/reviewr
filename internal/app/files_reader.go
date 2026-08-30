@@ -11,6 +11,7 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.FileReader {
 		return state
 	}
+	oldDocument := state.rawReaderDocument()
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	oldCursor := state.place.ReaderCursor
@@ -31,6 +32,7 @@ func (state filesState) landFile(msg fileLoadedMsg) filesState {
 	state.rebuildMarkdownPreview(state.markdownRows)
 	state.readerContext.reconcile(state.rawReaderDocument())
 	state.readerLoadedKey = state.readerRequestKey
+	state.reconcileCommentInteraction(oldDocument)
 	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
 	if msg.entry.State != repository.FileIgnored && msg.file.Kind != repository.FileUnreadable && msg.file.Kind != 0 {
@@ -46,6 +48,7 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	if msg.generation != state.contentGeneration || msg.entry.Path != state.readerEntry.Path || state.readerMode != workspace.DiffReader {
 		return state
 	}
+	oldDocument := state.rawReaderDocument()
 	oldLines := state.previousReaderRows()
 	oldOffset := state.place.ReaderOffset
 	oldCursor := state.place.ReaderCursor
@@ -65,6 +68,7 @@ func (state filesState) landDiff(msg diffLoadedMsg) filesState {
 	state.readerPresentation = &presentation
 	state.readerContext.reconcile(presentation)
 	state.readerLoadedKey = state.readerRequestKey
+	state.reconcileCommentInteraction(oldDocument)
 	state.reconcileReaderPlace(oldLines, oldOffset, oldCursor)
 	state.restoredReaderRows = nil
 	if msg.diff.Kind == repository.DiffReady || msg.diff.Kind == repository.DiffTooLarge {
@@ -87,6 +91,7 @@ func (state *filesState) requestReaderQuiet(entry repository.Entry, mode workspa
 func (state *filesState) requestReaderWithLoading(entry repository.Entry, mode workspace.ReaderMode, loading bool) effect {
 	state.contentGeneration++
 	if state.readerEntry.Path != entry.Path || state.readerMode != mode {
+		state.resetReaderInteraction()
 		state.reader = repository.File{}
 		state.diff = repository.Diff{}
 		state.reviewDocument = review.Document{}
@@ -187,6 +192,7 @@ func (state *filesState) requestMode(mode workspace.ReaderMode) effect {
 }
 
 func (state *filesState) clearReader() {
+	state.resetReaderInteraction()
 	state.contentGeneration++
 	state.readerEntry = repository.Entry{}
 	state.reader = repository.File{}
@@ -212,7 +218,7 @@ func (state *filesState) clearReader() {
 }
 
 func (state filesState) readerDocument() ui.ReaderDocument {
-	return state.readerContext.document(state.rawReaderDocument())
+	return state.decorateReaderDocument(state.readerContext.document(state.rawReaderDocument()))
 }
 
 func (state filesState) rawReaderDocument() ui.ReaderDocument {

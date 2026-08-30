@@ -91,12 +91,12 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 		key  tea.Key
 		want ActionKind
 	}{
-		{key: tea.Key{Code: 'l', Text: "l"}, want: ExpandReaderContext},
-		{key: tea.Key{Code: tea.KeyRight}, want: ExpandReaderContext},
-		{key: tea.Key{Code: 'h', Text: "h"}, want: CollapseReaderContext},
-		{key: tea.Key{Code: tea.KeyLeft}, want: CollapseReaderContext},
-		{key: tea.Key{Code: ']', Text: "]"}, want: SelectNextHunk},
-		{key: tea.Key{Code: '[', Text: "["}, want: SelectPreviousHunk},
+		{key: tea.Key{Code: 'l', Text: "l"}, want: ExpandReaderFold},
+		{key: tea.Key{Code: tea.KeyRight}, want: ExpandReaderFold},
+		{key: tea.Key{Code: 'h', Text: "h"}, want: CollapseReaderFold},
+		{key: tea.Key{Code: tea.KeyLeft}, want: CollapseReaderFold},
+		{key: tea.Key{Code: ']', Text: "]"}, want: SelectNextLandmark},
+		{key: tea.Key{Code: '[', Text: "["}, want: SelectPreviousLandmark},
 	} {
 		got, ok := routeMessage(
 			tea.KeyPressMsg(test.key), navigation.FocusReader, ui.Geometry{}, workspace.Git,

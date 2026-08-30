@@ -152,21 +152,47 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	} else if row.Kind == ReaderFoldEnd {
 		line = renderReaderFoldEndPayload(row.Text, width)
+	} else if row.Kind == ReaderCommentHeader {
+		line = renderCommentHeader(row, width)
+	} else if row.Kind == ReaderCommentBody {
+		line = renderCommentBody(row.Text, width, false, -1)
+	} else if row.Kind == ReaderCommentEnd {
+		line = renderCommentEnd(width, false)
+	} else if row.Kind == ReaderCommentComposerHeader {
+		line = renderCommentComposerHeader(row.Text, width)
+	} else if row.Kind == ReaderCommentComposerBody {
+		cursor := -1
+		if row.ComposerCursor {
+			cursor = row.ComposerCursorColumn
+		}
+		line = renderCommentBody(row.Text, width, true, cursor)
+	} else if row.Kind == ReaderCommentComposerEnd {
+		line = renderCommentEnd(width, true)
 	} else if row.Kind == ReaderMarkdown {
 		line = fit(renderReaderPayload(row, nil), width)
 	} else {
 		bar, barStyle = readerChangeBar(row, continuation)
 		freshness = readerReviewFreshnessBar(row, geometry.ReviewBar.Width > 0, continuation)
 		number := readerLineNumber(row, geometry.Digits, continuation)
+		numberStyle := mutedStyle
+		if row.CommentHover && !continuation {
+			numberStyle = commentTitleStyle
+		}
 		changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 		if changed && highlight == workspace.DiffHighlightBackground {
-			line = renderReaderBackgroundRow(row, bar, freshness, number, width)
+			line = renderReaderBackgroundRow(row, bar, freshness, number, width, row.VisualSelected)
 		} else {
 			line = barStyle.Render(bar) + readerReviewFreshnessStyle.Render(freshness) +
-				mutedStyle.Render(number) + renderReaderPayload(row, nil)
+				numberStyle.Render(number) + renderReaderPayload(row, nil)
 			line = fit(line, width)
 		}
 	}
+	if row.VisualSelected && (row.Kind == ReaderInsertion || row.Kind == ReaderDeletion) && highlight == workspace.DiffHighlightBackground {
+		// A background diff already owns the whole row's semantic green/red.
+		// Bold underline supplies the Visual-line treatment without erasing it.
+		return line
+	}
+	selected = selected || row.VisualSelected
 	if !selected {
 		return line
 	}
@@ -264,31 +290,129 @@ func readerReviewFreshnessBar(row ReaderRow, visible, continuation bool) string 
 
 func readerLineNumber(row ReaderRow, digits int, continuation bool) string {
 	number := ""
-	if line := row.DisplayLine(); line > 0 && !continuation {
+	if row.CommentHover && !continuation && row.Commentable() {
+		number = "[+]"
+	} else if line := row.DisplayLine(); line > 0 && !continuation {
 		number = strconv.FormatUint(line, 10)
 	}
 	return fmt.Sprintf("%*s ", digits, number)
 }
 
-func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, width int) string {
+const commentCardIndent = 2
+
+func renderCommentHeader(row ReaderRow, width int) string {
+	boxWidth := max(0, width-commentCardIndent)
+	if boxWidth <= 0 {
+		return ""
+	}
+	state := ""
+	if row.CommentStale {
+		state = " · stale"
+	}
+	label := " ▸ comment · " + SafeSingleLine(row.Text) + state + " "
+	if row.FoldExpanded {
+		label = " ▾ comment · " + SafeSingleLine(row.Text) + state + " "
+	}
+	label = clip(label, max(0, boxWidth-3))
+	fill := strings.Repeat("─", max(0, boxWidth-3-lipgloss.Width(label)))
+	return strings.Repeat(" ", min(commentCardIndent, width)) +
+		commentBorderStyle.Render("╭─") + commentTitleStyle.Render(label) + commentBorderStyle.Render(fill+"╮")
+}
+
+func renderCommentBody(text string, width int, composing bool, cursor int) string {
+	boxWidth := max(0, width-commentCardIndent)
+	if boxWidth <= 0 {
+		return ""
+	}
+	inner := max(0, boxWidth-4)
+	body := fit(SafeSingleLine(text), inner)
+	if cursor >= 0 {
+		plain := ansi.Strip(body)
+		cursor = max(0, min(cursor, lipgloss.Width(plain)))
+		left := ansi.Cut(plain, 0, cursor)
+		right := ansi.Cut(plain, cursor, cursor+1)
+		if right == "" {
+			right = " "
+		}
+		tail := ansi.Cut(plain, cursor+1, inner)
+		body = commentBodyStyle.Render(left) + commentTitleStyle.Reverse(true).Render(right) + commentBodyStyle.Render(tail)
+	} else {
+		body = commentBodyStyle.Render(body)
+	}
+	border := commentBorderStyle
+	if composing {
+		border = composerBorderStyle
+	}
+	return strings.Repeat(" ", min(commentCardIndent, width)) + border.Render("│ ") + body + border.Render(" │")
+}
+
+func renderCommentEnd(width int, composing bool) string {
+	boxWidth := max(0, width-commentCardIndent)
+	if boxWidth <= 0 {
+		return ""
+	}
+	border := commentBorderStyle
+	if composing {
+		border = composerBorderStyle
+	}
+	return strings.Repeat(" ", min(commentCardIndent, width)) + border.Render("╰"+strings.Repeat("─", max(0, boxWidth-2))+"╯")
+}
+
+func renderCommentComposerHeader(text string, width int) string {
+	boxWidth := max(0, width-commentCardIndent)
+	if boxWidth <= 0 {
+		return ""
+	}
+	label := clip(" comment · "+SafeSingleLine(text)+" ", max(0, boxWidth-3))
+	fill := strings.Repeat("─", max(0, boxWidth-3-lipgloss.Width(label)))
+	return strings.Repeat(" ", min(commentCardIndent, width)) +
+		composerBorderStyle.Render("╭─") + commentTitleStyle.Render(label) + composerBorderStyle.Render(fill+"╮")
+}
+
+func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, width int, visualSelected bool) string {
 	backgroundColor := addedColor
 	barColor := lipgloss.BrightGreen
 	if row.Kind == ReaderDeletion {
 		backgroundColor = errorColor
 		barColor = lipgloss.BrightRed
 	}
-	base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black)
+	base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black).
+		Bold(visualSelected).Underline(visualSelected)
 	barStyle := base.Foreground(barColor).Bold(true)
 	freshnessStyle := base
 	if freshness != "" && freshness != " " {
 		freshnessStyle = base.Foreground(accentColor).Bold(true)
 	}
-	line := barStyle.Render(bar) + freshnessStyle.Render(freshness) + base.Render(number) + renderReaderPayload(row, backgroundColor)
+	numberStyle := base
+	if row.CommentHover {
+		// Match the legacy affordance while retaining the changed-row fill.
+		numberStyle = numberStyle.Bold(true).Underline(true)
+	}
+	line := barStyle.Render(bar) + freshnessStyle.Render(freshness) + numberStyle.Render(number) +
+		renderReaderBackgroundPayload(row, backgroundColor, visualSelected)
 	line = clip(line, width)
 	if padding := width - lipgloss.Width(line); padding > 0 {
 		line += base.Render(strings.Repeat(" ", padding))
 	}
 	return line
+}
+
+func renderReaderBackgroundPayload(row ReaderRow, background color.Color, visualSelected bool) string {
+	if len(row.Spans) == 0 {
+		return lipgloss.NewStyle().Background(background).Foreground(lipgloss.Black).
+			Bold(visualSelected).Underline(visualSelected).Render(SafeSingleLine(row.Text))
+	}
+	var rendered strings.Builder
+	for _, span := range row.Spans {
+		style := lipgloss.NewStyle().
+			Background(background).
+			Foreground(lipgloss.Black).
+			Bold(span.Style.Bold || visualSelected).
+			Italic(span.Style.Italic).
+			Underline(span.Style.Underline || visualSelected)
+		rendered.WriteString(style.Render(SafeSingleLine(span.Text)))
+	}
+	return rendered.String()
 }
 
 func renderReaderFoldPayload(text string, width int, expanded bool) string {

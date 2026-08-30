@@ -176,7 +176,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if action.Kind == ActionNone {
 		return m, nil
 	}
-	m.noteRepositoryActivity()
+	if action.Kind != SetCommentHover && action.Kind != ClearCommentHover {
+		m.noteRepositoryActivity()
+	}
 	return m, m.commandAfterAction(m.apply(action))
 }
 

@@ -29,21 +29,20 @@ var helpRows = []helpRow{
 	{
 		section: "Files",
 		entries: []footerEntry{
-			{key: "1", label: "scope"},
-			{key: "2", label: "file"},
-			{key: "3", label: "base"},
-			{key: "4", label: "diff"},
+			{key: "1/2/3/4", label: "views"},
 			{key: "m", label: "render"},
 			{key: "x", label: "review"},
+			{key: "R", label: "bounds"},
+			{key: "X", label: "gap"},
 		},
 	},
 	{
 		entries: []footerEntry{
 			{key: "j/k/↑↓", label: "nav"},
-			{key: "h/l/←→", label: "fold"},
-			{key: hunkNavigationKey, label: "hunks"},
-			{key: "R", label: "bounds"},
-			{key: "X", label: "gap"},
+			{key: "h/l", label: "fold"},
+			{key: hunkNavigationKey, label: "marks"},
+			{key: "V", label: "lines"},
+			{key: "c", label: "comment"},
 		},
 	},
 	{

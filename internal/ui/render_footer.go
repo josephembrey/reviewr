@@ -26,7 +26,7 @@ func renderFooter(model Model) string {
 		case model.Workspace == workspace.Notes:
 			content = renderNotesFooter(model)
 		case model.Workspace == workspace.Files:
-			entries = fileFooterEntries(model.Controls, model.FileActions)
+			entries = fileFooterEntries(model)
 		}
 		if content == "" {
 			content = renderFooterEntries(entries)
@@ -35,7 +35,40 @@ func renderFooter(model Model) string {
 	return renderFooterHelp(content, model.Geometry)
 }
 
-func fileFooterEntries(controls workspace.Controls, actions FileFooterActions) []footerEntry {
+func fileFooterEntries(model Model) []footerEntry {
+	controls := model.Controls
+	if model.ReaderComposingComment {
+		return []footerEntry{
+			{key: "enter", label: "save comment"},
+			{key: "esc", label: "cancel"},
+			{key: "alt+enter", label: "newline"},
+		}
+	}
+	if model.ReaderVisualSelection {
+		entries := []footerEntry{
+			{key: "c", label: "comment range"},
+			{key: "esc", label: "cancel selection"},
+			{key: "j/k", label: "extend"},
+		}
+		return append(entries, availableFileFooterEntries(controls, model.FileActions)...)
+	}
+	entries := make([]footerEntry, 0, 6)
+	if model.ReaderCommentHeader {
+		fold := footerEntry{key: "l", label: "expand comment"}
+		if model.ReaderCommentExpanded {
+			fold = footerEntry{key: "h", label: "collapse comment"}
+		}
+		entries = append(entries, fold)
+	} else if model.ReaderCommentable {
+		entries = append(entries,
+			footerEntry{key: "V", label: "select lines"},
+			footerEntry{key: "c", label: "comment"},
+		)
+	}
+	return append(entries, availableFileFooterEntries(controls, model.FileActions)...)
+}
+
+func availableFileFooterEntries(controls workspace.Controls, actions FileFooterActions) []footerEntry {
 	entries := make([]footerEntry, 0, 4)
 	if controls.MarkdownPreviewEligible {
 		label := "preview"

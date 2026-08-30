@@ -82,23 +82,34 @@ func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.Re
 		readerOffset = 0
 		readerColumn = 0
 	}
+	commentHeader, commentExpanded := false, false
+	if len(document.Rows) != 0 {
+		cursor := max(0, min(state.place.ReaderCursor, len(document.Rows)-1))
+		commentHeader = document.Rows[cursor].Kind == ui.ReaderCommentHeader
+		commentExpanded = commentHeader && document.Rows[cursor].FoldExpanded
+	}
 	return ui.Model{
-		Geometry:              geometry,
-		NavigatorTitle:        navigatorTitle,
-		NavigatorRows:         navigatorRows,
-		NavigatorEmpty:        navigatorEmpty,
-		Selected:              state.place.Selected,
-		Top:                   state.place.Top,
-		Focus:                 state.place.Focus,
-		ReaderTitle:           state.readerTitle(),
-		ReaderDocument:        document,
-		ReaderContextFoldable: contextFoldable,
-		ReaderEmpty:           readerEmpty,
-		ReaderOffset:          readerOffset,
-		ReaderColumn:          readerColumn,
-		ReaderCursor:          state.place.ReaderCursor,
-		FooterWarning:         footerWarning,
-		FileActions:           state.fileFooterActions(),
+		Geometry:               geometry,
+		NavigatorTitle:         navigatorTitle,
+		NavigatorRows:          navigatorRows,
+		NavigatorEmpty:         navigatorEmpty,
+		Selected:               state.place.Selected,
+		Top:                    state.place.Top,
+		Focus:                  state.place.Focus,
+		ReaderTitle:            state.readerTitle(),
+		ReaderDocument:         document,
+		ReaderContextFoldable:  contextFoldable,
+		ReaderEmpty:            readerEmpty,
+		ReaderOffset:           readerOffset,
+		ReaderColumn:           readerColumn,
+		ReaderCursor:           state.place.ReaderCursor,
+		FooterWarning:          footerWarning,
+		FileActions:            state.fileFooterActions(),
+		ReaderVisualSelection:  state.visualSelection != nil,
+		ReaderComposingComment: state.composingComment(),
+		ReaderCommentHeader:    commentHeader,
+		ReaderCommentExpanded:  commentExpanded,
+		ReaderCommentable:      len(document.Rows) != 0 && document.Rows[max(0, min(state.place.ReaderCursor, len(document.Rows)-1))].Commentable(),
 	}
 }
 
