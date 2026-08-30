@@ -104,7 +104,7 @@ func TestBontreeTreeRowsPreserveSelectionAndCompactPaths(t *testing.T) {
 	}
 }
 
-func TestTreeSelectionUsesOneWhiteBarInsteadOfReversingFileColors(t *testing.T) {
+func TestTreeSelectionUsesBlackContentOnOneWhiteBar(t *testing.T) {
 	t.Parallel()
 	icon := treeFileIcon("main.go")
 	styles := resolveTreeRowStyles(
@@ -118,9 +118,9 @@ func TestTreeSelectionUsesOneWhiteBarInsteadOfReversingFileColors(t *testing.T) 
 	if styles.row.GetForeground() != lipgloss.Black || styles.row.GetBackground() != lipgloss.White {
 		t.Fatalf("selection colors = foreground %v background %v, want black on white", styles.row.GetForeground(), styles.row.GetBackground())
 	}
-	assertSameColor(t, styles.marker.GetForeground(), lipgloss.BrightBlue)
+	assertSameColor(t, styles.marker.GetForeground(), lipgloss.Black)
 	assertSameColor(t, styles.icon.GetForeground(), fileTreeIconColor(icon.tone))
-	assertSameColor(t, styles.filename.GetForeground(), lipgloss.BrightBlue)
+	assertSameColor(t, styles.filename.GetForeground(), lipgloss.Black)
 }
 
 func TestBontreeTreeRowsClipAtEveryNarrowWidth(t *testing.T) {

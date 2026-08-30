@@ -8,7 +8,7 @@ import (
 
 // treeRowStyleLayers is the narrow merge seam for later status and ignored metadata. Status owns
 // only the reserved marker and an optional filename accent; it never replaces the filetype icon.
-// Ignored is the stronger outer content layer, while selection remains a terminal background layer.
+// Ignored is the stronger outer content layer, while selection remains the terminal contrast layer.
 type treeRowStyleLayers struct {
 	statusMarker string
 	statusAccent treeStatusAccent
@@ -62,6 +62,8 @@ func resolveTreeRowStyles(item NavigatorRow, icon fileTreeIcon, layers treeRowSt
 		styles.filename = ignoredTreeStyle
 	}
 	if layers.selected {
+		styles.marker = styles.marker.Foreground(lipgloss.Black)
+		styles.filename = styles.filename.Foreground(lipgloss.Black)
 		styles.row = treeSelectionStyle(layers.focused)
 	}
 	return styles
