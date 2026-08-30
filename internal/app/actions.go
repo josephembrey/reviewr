@@ -24,6 +24,8 @@ const (
 	SelectPrevious
 	SelectIndex
 	ActivateNavigatorRow
+	SelectNextFile
+	SelectPreviousFile
 	ExpandDirectory
 	CollapseDirectory
 	FocusNavigator
@@ -74,6 +76,10 @@ func routeMessage(msg tea.Msg, focus navigation.Focus, geometry ui.Geometry, act
 			return Action{Kind: ToggleFocus}, true
 		case "r":
 			return Action{Kind: Reload}, true
+		case "f":
+			return Action{Kind: SelectNextFile}, true
+		case "F":
+			return Action{Kind: SelectPreviousFile}, true
 		case "j", "down":
 			if focus == navigation.FocusNavigator {
 				return Action{Kind: SelectNext}, true

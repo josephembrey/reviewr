@@ -82,7 +82,7 @@ func (state filesState) landContent(msg contentLoadedMsg, visibleRows int) files
 	}
 	state.reader = msg.file
 	state.readerLoading = false
-	state.place.ClampReader(len(fileReaderLines(state.reader)), visibleRows)
+	state.place.ClampReader(len(state.readerLines()), visibleRows)
 	return state
 }
 
@@ -212,37 +212,12 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		Top:            state.place.Top,
 		Focus:          state.place.Focus,
 		ReaderTitle:    readerTitle,
-		ReaderLines:    fileReaderLines(state.reader),
+		ReaderLines:    state.readerLines(),
 		ReaderEmpty:    readerEmpty,
 		ReaderOffset:   state.place.ReaderOffset,
 	}
 }
 
-func fileReaderLines(file repository.File) []ui.Line {
-	switch file.Kind {
-	case repository.FileReady:
-		if file.Symlink {
-			return []ui.Line{{Text: "symlink → " + file.Content}}
-		}
-		rawLines := ui.SafeContentLines(file.Content)
-		lines := make([]ui.Line, len(rawLines))
-		for index, line := range rawLines {
-			lines[index] = ui.Line{Text: line}
-		}
-		return lines
-	case repository.FileMissing:
-		return []ui.Line{{Text: "File is missing from the worktree.", Tone: ui.ToneError}}
-	case repository.FileUnreadable:
-		detail := ""
-		if file.Err != nil {
-			detail = ": " + file.Err.Error()
-		}
-		return []ui.Line{{Text: "File is unreadable" + detail, Tone: ui.ToneError}}
-	case repository.FileBinary:
-		return []ui.Line{{Text: fmt.Sprintf("Binary file (%d bytes); plain reader disabled.", file.Size), Tone: ui.ToneError}}
-	case repository.FileTooLarge:
-		return []ui.Line{{Text: fmt.Sprintf("File is too large (%d bytes; limit %d bytes).", file.Size, repository.DefaultMaxFileBytes), Tone: ui.ToneError}}
-	default:
-		return nil
-	}
+func (state filesState) readerLines() []ui.Line {
+	return (readerDocument{File: state.reader}).lines()
 }

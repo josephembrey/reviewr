@@ -15,15 +15,20 @@ import (
 )
 
 type fakeSource struct {
-	files       []string
-	listErr     error
-	contents    map[string]repository.File
-	summary     repository.ChangeSummary
-	summaryErr  error
-	commits     []repository.Commit
-	commitErr   error
-	summaries   map[string]repository.CommitSummary
-	summaryErrs map[string]error
+	files          []string
+	listErr        error
+	contents       map[string]repository.File
+	summary        repository.ChangeSummary
+	summaryErr     error
+	commits        []repository.Commit
+	commitErr      error
+	summaries      map[string]repository.CommitSummary
+	summaryErrs    map[string]error
+	stashes        []repository.Stash
+	stashErr       error
+	stashFiles     map[string][]repository.ChangedFile
+	stashFileErrs  map[string]error
+	stashDocuments map[string]repository.ChangeDocument
 }
 
 func (s *fakeSource) ListFiles() ([]string, error) {
@@ -53,6 +58,27 @@ func (s *fakeSource) ReadCommit(oid string) (repository.CommitSummary, error) {
 		return summary, nil
 	}
 	return repository.CommitSummary{}, errors.New("missing commit")
+}
+
+func (s *fakeSource) ListStashes() ([]repository.Stash, error) {
+	return append([]repository.Stash(nil), s.stashes...), s.stashErr
+}
+
+func (s *fakeSource) ListStashFiles(source repository.ChangeSource) ([]repository.ChangedFile, error) {
+	if err := s.stashFileErrs[source.OID]; err != nil {
+		return nil, err
+	}
+	return append([]repository.ChangedFile(nil), s.stashFiles[source.OID]...), nil
+}
+
+func (s *fakeSource) ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument {
+	if document, ok := s.stashDocuments[source.OID+"\x00"+file.Identity()]; ok {
+		return document
+	}
+	return repository.ChangeDocument{
+		Change: file,
+		Patch:  repository.File{Path: file.Path, Kind: repository.FileUnreadable, Err: errors.New("missing stash file")},
+	}
 }
 
 func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {

@@ -12,6 +12,9 @@ const (
 	ToneDefault Tone = iota
 	ToneQuiet
 	ToneError
+	ToneAccent
+	ToneAdded
+	ToneRemoved
 )
 
 // Line is one logical reader or empty-state line.
@@ -20,10 +23,18 @@ type Line struct {
 	Tone Tone
 }
 
+// Segment is one styled, single-line fragment in a compact navigator row.
+type Segment struct {
+	Text string
+	Tone Tone
+}
+
 // NavigatorRow separates stable identity from its display label.
 type NavigatorRow struct {
 	Identity  string
 	Label     string
+	Prefix    []Segment
+	Suffix    []Segment
 	Tree      bool
 	Depth     int
 	Directory bool
@@ -58,4 +69,6 @@ type Model struct {
 	ReaderLines  []Line
 	ReaderEmpty  Line
 	ReaderOffset int
+
+	Footer string
 }

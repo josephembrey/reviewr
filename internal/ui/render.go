@@ -53,6 +53,9 @@ func Render(model Model) string {
 		if model.Workspace == workspace.Scratch {
 			footer = "esc close scratch  •  1 files/git  •  q quit"
 		}
+		if model.Footer != "" {
+			footer = model.Footer
+		}
 		blocks = append(blocks, fit(dimStyle.Render(footer), g.Footer.Width))
 	}
 	if len(blocks) == 0 {
@@ -246,6 +249,9 @@ const (
 )
 
 func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focused bool) string {
+	if len(item.Prefix) > 0 || len(item.Suffix) > 0 {
+		return renderCompactNavigatorRow(item, width, selected, focused)
+	}
 	if !item.Tree {
 		return renderNavigatorRow(SafeSingleLine(item.Label), width, selected, focused)
 	}
@@ -268,6 +274,45 @@ func renderNavigatorPresentationRow(item NavigatorRow, width int, selected, focu
 		return row
 	}
 	return selectionStyle(focused).Render(row)
+}
+
+func renderCompactNavigatorRow(item NavigatorRow, width int, selected, focused bool) string {
+	prefix := renderSegments(item.Prefix)
+	suffix := renderSegments(item.Suffix)
+	primary := SafeSingleLine(item.Label)
+	prefixWidth := lipgloss.Width(prefix)
+	available := max(0, width-prefixWidth)
+	minimumPrimary := min(lipgloss.Width(primary), min(12, available))
+	tailWidth := min(lipgloss.Width(suffix), max(0, available-minimumPrimary-1))
+	if tailWidth < 4 {
+		tailWidth = 0
+	}
+	primaryWidth := available
+	separator := 0
+	if tailWidth > 0 {
+		separator = 1
+		primaryWidth = max(0, available-tailWidth-separator)
+	}
+	primary = lipgloss.NewStyle().MaxWidth(primaryWidth).Render(primary)
+	primary += strings.Repeat(" ", max(0, primaryWidth-lipgloss.Width(primary)))
+	row := prefix + primary
+	if tailWidth > 0 {
+		tail := lipgloss.NewStyle().MaxWidth(tailWidth).Render(suffix)
+		row += strings.Repeat(" ", separator) + tail
+	}
+	row = fit(row, width)
+	if !selected {
+		return row
+	}
+	return selectionStyle(focused).Render(row)
+}
+
+func renderSegments(segments []Segment) string {
+	var rendered strings.Builder
+	for _, segment := range segments {
+		rendered.WriteString(renderToneText(SafeSingleLine(segment.Text), segment.Tone))
+	}
+	return rendered.String()
 }
 
 func renderReader(model Model) string {
@@ -310,10 +355,20 @@ func renderReader(model Model) string {
 
 func renderLine(line Line) string {
 	text := SafeSingleLine(line.Text)
-	switch line.Tone {
+	return renderToneText(text, line.Tone)
+}
+
+func renderToneText(text string, tone Tone) string {
+	switch tone {
 	case ToneQuiet:
 		return dimStyle.Render(text)
 	case ToneError:
+		return errorStyle.Render(text)
+	case ToneAccent:
+		return purpleStyle.Render(text)
+	case ToneAdded:
+		return addedStyle.Render(text)
+	case ToneRemoved:
 		return errorStyle.Render(text)
 	default:
 		return text
