@@ -83,19 +83,20 @@ func Wrap(graphemes []string, width int) Document {
 			column = 0
 			continue
 		}
-		cellWidth := displayWidth(value, column, limit)
+		rawWidth := uniseg.StringWidth(value)
+		cellWidth := displayWidth(value, rawWidth, column, limit)
 		if column > 0 && column+cellWidth > limit {
 			appendRow(index, false)
 			row = Row{Start: index}
 			column = 0
-			cellWidth = displayWidth(value, column, limit)
+			cellWidth = displayWidth(value, rawWidth, column, limit)
 		}
 		display := value
 		if value == "\t" {
 			display = strings.Repeat(" ", cellWidth)
-		} else if uniseg.StringWidth(value) <= 0 {
+		} else if rawWidth <= 0 {
 			display = "◌" + value
-		} else if uniseg.StringWidth(value) > limit {
+		} else if rawWidth > limit {
 			display = "�"
 			cellWidth = 1
 		}
@@ -106,16 +107,15 @@ func Wrap(graphemes []string, width int) Document {
 	return document
 }
 
-func displayWidth(value string, column, limit int) int {
+func displayWidth(value string, rawWidth, column, limit int) int {
 	if value == "\t" {
 		width := TabWidth - column%TabWidth
 		return min(max(1, width), max(1, limit))
 	}
-	width := uniseg.StringWidth(value)
-	if width <= 0 {
+	if rawWidth <= 0 {
 		return 1
 	}
-	return width
+	return rawWidth
 }
 
 // RowForIndex finds the visual row for a grapheme boundary. At a soft-wrap

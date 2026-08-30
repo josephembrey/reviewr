@@ -21,7 +21,8 @@ func MarkdownStyles(text string) []highlight.Style {
 		return nil
 	}
 
-	styles := make([]highlight.Style, 0, len(splitGraphemes(text)))
+	graphemes := splitGraphemes(text)
+	styles := make([]highlight.Style, 0, len(graphemes))
 	for lineIndex, line := range highlighted {
 		for _, span := range line {
 			graphemes := uniseg.NewGraphemes(span.Text)
@@ -33,7 +34,7 @@ func MarkdownStyles(text string) []highlight.Style {
 			styles = append(styles, highlight.Style{})
 		}
 	}
-	if len(styles) != len(splitGraphemes(text)) {
+	if len(styles) != len(graphemes) {
 		return nil
 	}
 	return styles
