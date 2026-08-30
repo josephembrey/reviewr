@@ -127,6 +127,24 @@ func TestSelectionStyleUsesTerminalReverseWithoutAccentColor(t *testing.T) {
 	}
 }
 
+func TestStructuralPaletteUsesTerminalANSIRoles(t *testing.T) {
+	t.Parallel()
+	got := []ansi.BasicColor{accentColor, dimColor, errorColor, addedColor, purpleColor, yellowColor}
+	want := []ansi.BasicColor{
+		lipgloss.Blue,
+		lipgloss.BrightBlack,
+		lipgloss.Red,
+		lipgloss.Green,
+		lipgloss.Magenta,
+		lipgloss.Yellow,
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("structural palette[%d] = %v, want terminal ANSI %v", index, got[index], want[index])
+		}
+	}
+}
+
 func TestNavigatorRowsKeepFullWidthAcrossContentAndFocus(t *testing.T) {
 	t.Parallel()
 	const rowWidth = 18

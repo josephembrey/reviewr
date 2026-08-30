@@ -29,8 +29,8 @@ type Line struct {
 	Spans []TextSpan
 }
 
-// TextStyle is a foreground-only token style. Backgrounds deliberately remain
-// owned by selection and diff presentation.
+// TextStyle is a foreground-only token style. Foreground accepts an ANSI slot
+// or truecolor value; backgrounds remain owned by selection and diff presentation.
 type TextStyle struct {
 	Foreground string
 	Bold       bool

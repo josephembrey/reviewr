@@ -251,9 +251,9 @@ func TestStashViewRendersCompactRowsTitleDiffAndSharedGeometry(t *testing.T) {
 			t.Fatalf("stash frame misses %q:\n%s", want, plain)
 		}
 	}
-	if !strings.Contains(frame, uiColorSequenceForTest("38;2;187;154;247")) ||
-		!strings.Contains(frame, uiColorSequenceForTest("38;2;158;206;106")) ||
-		!strings.Contains(frame, uiColorSequenceForTest("38;2;247;118;142")) {
+	if !strings.Contains(frame, "\x1b[35m") ||
+		!strings.Contains(frame, "\x1b[32m") ||
+		!strings.Contains(frame, "\x1b[31m") {
 		t.Fatalf("stash selector/stats lack semantic colors: %q", frame)
 	}
 	rowY := geometry.NavigatorRows.Y
@@ -354,8 +354,4 @@ func stashDocumentFixture(change repository.ChangedFile, patch string) repositor
 		Change: change,
 		Patch:  repository.File{Path: change.Path, Kind: repository.FileReady, Content: patch},
 	}
-}
-
-func uiColorSequenceForTest(code string) string {
-	return "\x1b[" + code + "m"
 }

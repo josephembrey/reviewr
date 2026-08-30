@@ -23,18 +23,18 @@ func TestLinesDetectsLexerAndPreservesSource(t *testing.T) {
 			t.Fatalf("line %d text = %q, want %q", index, text, input[index])
 		}
 	}
-	if got := styleForText(lines[0], "package").Foreground; got != "#7dcfff" {
-		t.Fatalf("package color = %q, want namespace cyan", got)
+	if got := styleForText(lines[0], "package").Foreground; got != "6" {
+		t.Fatalf("package color = %q, want terminal cyan", got)
 	}
 	comment := styleForText(lines[2], "comment")
-	if comment.Foreground != "#737aa2" || !comment.Italic {
+	if comment.Foreground != "8" || !comment.Italic {
 		t.Fatalf("comment style = %+v, want italic comment color", comment)
 	}
-	if got := styleForText(lines[3], "42").Foreground; got != "#ff9e64" {
-		t.Fatalf("number color = %q, want orange", got)
+	if got := styleForText(lines[3], "42").Foreground; got != "3" {
+		t.Fatalf("number color = %q, want terminal yellow", got)
 	}
-	if got := styleForText(lines[4], `"hello"`).Foreground; got != "#9ece6a" {
-		t.Fatalf("string color = %q, want green", got)
+	if got := styleForText(lines[4], `"hello"`).Foreground; got != "2" {
+		t.Fatalf("string color = %q, want terminal green", got)
 	}
 }
 

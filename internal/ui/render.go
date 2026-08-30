@@ -15,12 +15,15 @@ import (
 )
 
 var (
-	accentColor = lipgloss.Color("#7AA2F7")
-	dimColor    = lipgloss.Color("#777777")
-	errorColor  = lipgloss.Color("#F7768E")
-	addedColor  = lipgloss.Color("#9ECE6A")
-	purpleColor = lipgloss.Color("#BB9AF7")
-	yellowColor = lipgloss.Color("#E0AF68")
+	// Structural and semantic roles use the terminal's basic palette. This
+	// keeps reviewr coherent with both generated palettes and conventional
+	// ANSI themes; file-type icons are the deliberate truecolor exception.
+	accentColor = lipgloss.Blue
+	dimColor    = lipgloss.BrightBlack
+	errorColor  = lipgloss.Red
+	addedColor  = lipgloss.Green
+	purpleColor = lipgloss.Magenta
+	yellowColor = lipgloss.Yellow
 
 	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	focusedTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)

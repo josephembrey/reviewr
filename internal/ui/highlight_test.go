@@ -12,7 +12,7 @@ func TestRenderLineUsesLipGlossForSyntaxSpans(t *testing.T) {
 	line := Line{
 		Text: "package main",
 		Spans: []TextSpan{
-			{Text: "package", Style: TextStyle{Foreground: "#BB9AF7", Bold: true}},
+			{Text: "package", Style: TextStyle{Foreground: "4", Bold: true}},
 			{Text: " main"},
 		},
 	}
@@ -31,8 +31,8 @@ func TestRenderLineKeepsSemanticMarkerSeparateFromSyntax(t *testing.T) {
 		Text: "+return 42",
 		Spans: []TextSpan{
 			{Text: "+", Tone: ToneAdded},
-			{Text: "return", Style: TextStyle{Foreground: "#BB9AF7"}},
-			{Text: " 42", Style: TextStyle{Foreground: "#FF9E64"}},
+			{Text: "return", Style: TextStyle{Foreground: "4"}},
+			{Text: " 42", Style: TextStyle{Foreground: "3"}},
 		},
 	}
 	if got := ansi.Strip(renderLine(line)); got != line.Text {

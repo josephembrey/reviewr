@@ -137,14 +137,43 @@ func appendSpan(line *[]Span, span Span) {
 }
 
 func tokenStyle(tokenType chroma.TokenType) Style {
-	entry := reviewrStyle.Get(tokenType)
-	style := Style{
-		Bold:      entry.Bold == chroma.Yes,
-		Italic:    entry.Italic == chroma.Yes,
-		Underline: entry.Underline == chroma.Yes,
-	}
-	if entry.Colour.IsSet() {
-		style.Foreground = entry.Colour.String()
+	// Chroma owns tokenization; presentation uses terminal ANSI roles so code
+	// follows the active palette instead of imposing an unrelated RGB theme.
+	style := Style{}
+	switch {
+	case tokenType == chroma.Error, tokenType == chroma.NameException,
+		tokenType == chroma.NameTag, tokenType == chroma.GenericError,
+		tokenType == chroma.GenericTraceback, tokenType == chroma.GenericDeleted:
+		style.Foreground = "1"
+	case tokenType == chroma.GenericInserted:
+		style.Foreground = "2"
+	case tokenType == chroma.NameConstant, tokenType == chroma.LiteralDate,
+		tokenType.InSubCategory(chroma.LiteralNumber), tokenType == chroma.LiteralStringInterpol:
+		style.Foreground = "3"
+	case tokenType == chroma.KeywordNamespace, tokenType == chroma.NameAttribute,
+		tokenType.InSubCategory(chroma.NameBuiltin), tokenType.InSubCategory(chroma.NameFunction),
+		tokenType == chroma.NameNamespace, tokenType == chroma.LiteralStringEscape:
+		style.Foreground = "6"
+	case tokenType.InSubCategory(chroma.LiteralString):
+		style.Foreground = "2"
+	case tokenType == chroma.KeywordType, tokenType == chroma.NameClass:
+		style.Foreground = "2"
+	case tokenType.InCategory(chroma.Keyword), tokenType == chroma.NameDecorator:
+		style.Foreground = "4"
+	case tokenType.InCategory(chroma.Comment):
+		style.Foreground = "8"
+		style.Italic = true
+	case tokenType.InCategory(chroma.Operator):
+		style.Foreground = "8"
+	case tokenType == chroma.GenericHeading, tokenType == chroma.GenericSubheading:
+		style.Foreground = "4"
+		style.Bold = true
+	case tokenType == chroma.GenericStrong:
+		style.Bold = true
+	case tokenType == chroma.GenericEmph:
+		style.Italic = true
+	case tokenType == chroma.GenericUnderline:
+		style.Underline = true
 	}
 	return style
 }
@@ -175,26 +204,3 @@ func cloneLines(lines [][]Span) [][]Span {
 	}
 	return cloned
 }
-
-var reviewrStyle = chroma.MustNewStyle("reviewr", chroma.StyleEntries{
-	chroma.Error:                 "#F7768E",
-	chroma.Keyword:               "#BB9AF7",
-	chroma.KeywordNamespace:      "#7DCFFF",
-	chroma.KeywordType:           "#2AC3DE",
-	chroma.NameAttribute:         "#7DCFFF",
-	chroma.NameBuiltin:           "#7DCFFF",
-	chroma.NameClass:             "#E0AF68",
-	chroma.NameConstant:          "#FF9E64",
-	chroma.NameDecorator:         "#7AA2F7",
-	chroma.NameException:         "#FF9E64",
-	chroma.NameFunction:          "#7AA2F7",
-	chroma.NameTag:               "#F7768E",
-	chroma.LiteralString:         "#9ECE6A",
-	chroma.LiteralStringEscape:   "#7DCFFF",
-	chroma.LiteralStringInterpol: "#E0AF68",
-	chroma.LiteralNumber:         "#FF9E64",
-	chroma.Operator:              "#89DDFF",
-	chroma.Comment:               "italic #737AA2",
-	chroma.GenericDeleted:        "#F7768E",
-	chroma.GenericInserted:       "#9ECE6A",
-})

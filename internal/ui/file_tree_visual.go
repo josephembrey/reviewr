@@ -195,18 +195,20 @@ func fileIconByExtension(extension string) (fileTreeIcon, bool) {
 }
 
 var (
-	fileIconRedColor       = lipgloss.Color("#E06C75")
-	fileIconGreenColor     = lipgloss.Color("#98C379")
-	fileIconYellowColor    = lipgloss.Color("#E5C07B")
-	fileIconOrangeColor    = lipgloss.Color("#D19A66")
-	fileIconPurpleColor    = lipgloss.Color("#C678DD")
-	fileIconBlueColor      = lipgloss.Color("#61AFEF")
-	fileIconCyanColor      = lipgloss.Color("#56B6C2")
-	nixIconBlueColor       = lipgloss.Color("#7EBAE4")
-	directoryTreeColor     = lipgloss.Color("#7889A8")
-	ignoredTreeColor       = lipgloss.Color("#555B66")
+	fileIconRedColor    = lipgloss.Color("#E06C75")
+	fileIconGreenColor  = lipgloss.Color("#98C379")
+	fileIconYellowColor = lipgloss.Color("#E5C07B")
+	fileIconOrangeColor = lipgloss.Color("#D19A66")
+	fileIconPurpleColor = lipgloss.Color("#C678DD")
+	fileIconBlueColor   = lipgloss.Color("#61AFEF")
+	fileIconCyanColor   = lipgloss.Color("#56B6C2")
+	nixIconBlueColor    = lipgloss.Color("#7EBAE4")
+	// File-type icons above intentionally punch through the terminal palette.
+	// Folders and ignored content remain structural and terminal-owned.
+	directoryTreeColor     = lipgloss.BrightBlack
+	ignoredTreeColor       = lipgloss.BrightBlack
 	directoryTreeNameStyle = lipgloss.NewStyle().Foreground(directoryTreeColor)
-	ignoredTreeStyle       = lipgloss.NewStyle().Foreground(ignoredTreeColor)
+	ignoredTreeStyle       = lipgloss.NewStyle().Foreground(ignoredTreeColor).Faint(true)
 )
 
 // treeRowStyleLayers is the narrow merge seam for later status and ignored metadata. Status owns

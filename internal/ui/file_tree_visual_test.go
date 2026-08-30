@@ -176,6 +176,9 @@ func TestTreeRowStyleLayersStayIndependent(t *testing.T) {
 			if test.filenameHasColor {
 				assertSameColor(t, styles.filename.GetForeground(), test.wantFilename)
 			}
+			if test.layers.ignored && (!styles.marker.GetFaint() || !styles.icon.GetFaint() || !styles.filename.GetFaint()) {
+				t.Fatal("ignored content is not dimmer than ordinary directory content")
+			}
 			if styles.row.GetReverse() || styles.row.GetBold() != test.wantFocusedBold {
 				t.Fatalf("row reverse=%v bold=%v, want reverse=false bold=%v", styles.row.GetReverse(), styles.row.GetBold(), test.wantFocusedBold)
 			}
