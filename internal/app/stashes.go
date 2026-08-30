@@ -375,6 +375,11 @@ func (state stashState) deriveReaderDocument() ui.ReaderDocument {
 }
 
 func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model {
+	document := state.readerDocument()
+	return state.viewModelWithReader(geometry, now, document, document.HasContextFold())
+}
+
+func (state stashState) viewModelWithReader(geometry ui.Geometry, now time.Time, document ui.ReaderDocument, contextFoldable bool) ui.Model {
 	rows := make([]ui.NavigatorRow, len(state.stashes))
 	for index, stash := range state.stashes {
 		prose := stash.Message
@@ -452,8 +457,8 @@ func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model 
 	return ui.Model{
 		Geometry: geometry, NavigatorTitle: title, NavigatorRows: rows,
 		NavigatorEmpty: emptyNavigator, Selected: state.place.Selected, Top: state.place.Top,
-		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: state.readerDocument(),
-		ReaderContextFoldable: state.rawReaderDocument().ContextFoldable(),
+		Focus: state.place.Focus, ReaderTitle: readerTitle, ReaderDocument: document,
+		ReaderContextFoldable: contextFoldable,
 		ReaderEmpty:           readerEmpty, ReaderOffset: state.place.ReaderOffset,
 		ReaderColumn: state.place.ReaderColumn,
 	}

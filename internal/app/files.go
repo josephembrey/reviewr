@@ -439,7 +439,7 @@ func (state filesState) entry(path string) (repository.Entry, bool) {
 	return repository.Entry{}, false
 }
 
-func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
+func (state filesState) navigatorRows() []ui.NavigatorRow {
 	treeRows := state.tree.Rows()
 	rows := make([]ui.NavigatorRow, len(treeRows))
 	for index, row := range treeRows {
@@ -470,6 +470,16 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		}
 		rows[index] = presentation
 	}
+	return rows
+}
+
+func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
+	document := state.readerDocument()
+	return state.viewModelWithReader(geometry, document, document.HasContextFold())
+}
+
+func (state filesState) viewModelWithReader(geometry ui.Geometry, document ui.ReaderDocument, contextFoldable bool) ui.Model {
+	rows := state.navigatorRows()
 
 	emptyNavigator := ui.Line{Text: "No files", Tone: ui.ToneQuiet}
 	if state.listLoading {
@@ -523,8 +533,8 @@ func (state filesState) viewModel(geometry ui.Geometry) ui.Model {
 		Top:                   state.place.Top,
 		Focus:                 state.place.Focus,
 		ReaderTitle:           readerTitle,
-		ReaderDocument:        state.readerDocument(),
-		ReaderContextFoldable: state.rawReaderDocument().ContextFoldable(),
+		ReaderDocument:        document,
+		ReaderContextFoldable: contextFoldable,
 		ReaderEmpty:           readerEmpty,
 		ReaderOffset:          state.place.ReaderOffset,
 		ReaderColumn:          state.place.ReaderColumn,

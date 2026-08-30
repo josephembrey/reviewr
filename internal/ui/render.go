@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/josephembrey/reviewr/internal/commitrow"
@@ -421,7 +422,27 @@ func SafeContentLines(content string) []string {
 
 // SafeSingleLine renders a raw path or error without introducing screen rows.
 func SafeSingleLine(value string) string {
+	if safeSingleLine(value) {
+		return value
+	}
 	return strings.Join(SafeContentLines(value), "↵")
+}
+
+func safeSingleLine(value string) bool {
+	if !utf8.ValidString(value) {
+		return false
+	}
+	for _, char := range value {
+		switch char {
+		case '\n', '\t', '\r', 0x7f:
+			return false
+		default:
+			if char < 0x20 || unicode.IsControl(char) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func renderNavigator(model Model) string {
@@ -616,7 +637,11 @@ func renderReader(model Model) string {
 	readerOffset := model.ReaderOffset
 	readerLayout := ReaderLayout{}
 	if document.Kind != ReaderDocumentNone {
-		readerLayout = CalculateReaderLayout(g.ReaderRows, document)
+		if model.ReaderLayout != nil {
+			readerLayout = *model.ReaderLayout
+		} else {
+			readerLayout = CalculateReaderLayout(g.ReaderRows, document)
+		}
 		total = readerLayout.Total
 		readerOffset = readerLayout.VisualOffset(model.ReaderOffset, model.ReaderColumn)
 	}
@@ -631,9 +656,9 @@ func renderReader(model Model) string {
 		contentWidth = bar.Content.Width
 		scrollbar = verticalScrollbar(bar, model.Focus == navigation.FocusReader)
 	}
-	readerGeometry := CalculateReaderGeometry(g.ReaderRows, document, scrollbar != nil)
-	if document.Kind != ReaderDocumentNone {
-		readerGeometry = readerLayout.Geometry
+	readerGeometry := readerLayout.Geometry
+	if document.Kind == ReaderDocumentNone {
+		readerGeometry = CalculateReaderGeometry(g.ReaderRows, document, scrollbar != nil)
 	}
 	commitColumns := commitrow.Measure(commitRows, contentWidth)
 	highlight := readerDiffHighlight(document, model.Controls.DiffHighlight)

@@ -28,6 +28,18 @@ func (document ReaderDocument) ContextFoldable() bool {
 	return false
 }
 
+// HasContextFold reports whether a presented document contains the inline
+// context control produced by WithContextFolds. Both compact and expanded
+// presentations retain that control, so callers need not rescan the raw diff.
+func (document ReaderDocument) HasContextFold() bool {
+	for _, row := range document.Rows {
+		if row.Kind == ReaderFold {
+			return true
+		}
+	}
+	return false
+}
+
 // WithContextFolds derives compact diff presentation without changing the
 // semantic source document. Expanded documents preserve their original rows.
 func (document ReaderDocument) WithContextFolds(expanded bool) ReaderDocument {

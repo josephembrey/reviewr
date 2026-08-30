@@ -20,10 +20,17 @@ func (m *Model) commandAfterAction(pending effect) tea.Cmd {
 		return primary
 	}
 	m.sessionSave++
-	generation := m.sessionSave
-	return batchCommands(primary, tea.Tick(sessionSaveDebounce, func(time.Time) tea.Msg {
+	if m.sessionPending {
+		return primary
+	}
+	m.sessionPending = true
+	return batchCommands(primary, scheduleSessionSave(m.sessionSave))
+}
+
+func scheduleSessionSave(generation uint64) tea.Cmd {
+	return tea.Tick(sessionSaveDebounce, func(time.Time) tea.Msg {
 		return sessionSaveDueMsg{generation: generation}
-	}))
+	})
 }
 
 func (m Model) sessionState() session.State {

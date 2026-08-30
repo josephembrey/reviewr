@@ -218,6 +218,40 @@ func TestRichReaderScrollTraversesWrappedVisualRows(t *testing.T) {
 	}
 }
 
+func TestReaderViewportLayoutSurvivesScrollAndInvalidatesOnResize(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 24})
+	model.active = workspace.Files
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
+	for line := uint64(1); line <= 200; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Kind: ui.ReaderFile, NewLine: line,
+			Text: "a reader line long enough to exercise the shared wrapped layout",
+		})
+	}
+	model.files.readerPresentation = &document
+	model.files.readerEntry = repository.Entry{Path: "large.go"}
+
+	presented := model.files.readerDocument()
+	model.clampDocumentReader(&model.files.place, presented)
+	before, ok := model.cachedActiveReaderViewport()
+	if !ok {
+		t.Fatal("reader layout was not retained after clamping")
+	}
+	model.apply(Action{Kind: ScrollReader, Amount: 3})
+	after, ok := model.cachedActiveReaderViewport()
+	if !ok || after.key != before.key || model.files.place.ReaderOffset == 0 {
+		t.Fatalf("scroll invalidated viewport: cached=%v offset=%d", ok, model.files.place.ReaderOffset)
+	}
+
+	model.apply(Action{Kind: Resize, Width: 120, Height: 24})
+	resized, ok := model.cachedActiveReaderViewport()
+	if !ok || resized.key == before.key || resized.layout.Geometry.Rows != model.geometry.ReaderRows {
+		t.Fatalf("reader layout was not rebuilt at the new width: cached=%v geometry=%+v", ok, resized.layout.Geometry.Rows)
+	}
+}
+
 func TestDiffContextFoldActionsPreservePlaceAndSurviveRefresh(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})

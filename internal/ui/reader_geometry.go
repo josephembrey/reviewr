@@ -31,7 +31,7 @@ type ReaderLayout struct {
 	Total    int
 	document ReaderDocument
 	starts   []int
-	wraps    [][]readerRange
+	wraps    []readerRange
 }
 
 type readerRange struct {
@@ -43,6 +43,12 @@ type readerRange struct {
 // A scrollbar can only narrow the code region, so one second pass is enough
 // once wrapping makes the document taller than the viewport.
 func CalculateReaderLayout(rows Rect, document ReaderDocument) ReaderLayout {
+	// Every source row occupies at least one visual row. Reserve the scrollbar
+	// immediately when source height already proves overflow, avoiding a full
+	// throwaway wrap pass for ordinary large files.
+	if rows.Width > 1 && rows.Height > 0 && len(document.Rows) > rows.Height {
+		return calculateReaderLayout(CalculateReaderGeometry(rows, document, true), document)
+	}
 	geometry := CalculateReaderGeometry(rows, document, false)
 	layout := calculateReaderLayout(geometry, document)
 	if _, overflow := CalculateScrollbar(rows, layout.Total, 0); overflow {
@@ -53,22 +59,20 @@ func CalculateReaderLayout(rows Rect, document ReaderDocument) ReaderLayout {
 
 func calculateReaderLayout(geometry ReaderGeometry, document ReaderDocument) ReaderLayout {
 	starts := make([]int, len(document.Rows)+1)
-	wraps := make([][]readerRange, len(document.Rows))
-	total := 0
+	wraps := make([]readerRange, 0, len(document.Rows))
 	for index, row := range document.Rows {
-		starts[index] = total
+		starts[index] = len(wraps)
 		value := SafeSingleLine(row.Text)
 		if row.Kind == ReaderFold {
 			// Fold controls are painted across the full content row and clipped
 			// there, so they always occupy exactly one visual row.
-			wraps[index] = []readerRange{{right: ansi.StringWidth(value)}}
+			wraps = append(wraps, readerRange{right: ansi.StringWidth(value)})
 		} else {
-			wraps[index] = readerWrapRanges(value, geometry.Code.Width)
+			wraps = appendReaderWrapRanges(wraps, value, geometry.Code.Width)
 		}
-		total += len(wraps[index])
 	}
-	starts[len(document.Rows)] = total
-	return ReaderLayout{Geometry: geometry, Total: total, document: document, starts: starts, wraps: wraps}
+	starts[len(document.Rows)] = len(wraps)
+	return ReaderLayout{Geometry: geometry, Total: len(wraps), document: document, starts: starts, wraps: wraps}
 }
 
 // VisualOffset maps a logical source row and source-cell column to the
@@ -78,7 +82,7 @@ func (layout ReaderLayout) VisualOffset(source, column int) int {
 		return 0
 	}
 	source = clamp(source, 0, len(layout.document.Rows)-1)
-	ranges := layout.wraps[source]
+	ranges := layout.wraps[layout.starts[source]:layout.starts[source+1]]
 	continuation := sort.Search(len(ranges), func(index int) bool {
 		return ranges[index].right > max(0, column)
 	})
@@ -95,9 +99,7 @@ func (layout ReaderLayout) SourceOffset(visual int) (source, column int) {
 	source = sort.Search(len(layout.document.Rows), func(index int) bool {
 		return layout.starts[index+1] > visual
 	})
-	ranges := layout.wraps[source]
-	continuation := visual - layout.starts[source]
-	return source, ranges[continuation].left
+	return source, layout.wraps[visual].left
 }
 
 // Row returns one wrapped visual segment and whether it continues its source
@@ -108,7 +110,7 @@ func (layout ReaderLayout) Row(visual int) (ReaderRow, bool) {
 		return ReaderRow{}, false
 	}
 	continuation := visual - layout.starts[source]
-	wrapped := layout.wraps[source][continuation]
+	wrapped := layout.wraps[visual]
 	row := sliceReaderRow(layout.document.Rows[source], wrapped.left, wrapped.right)
 	return row, continuation > 0
 }
@@ -130,14 +132,13 @@ func (layout ReaderLayout) HitFold(x, y, visualOffset int) bool {
 // readerWrapRanges prefers whitespace and common code punctuation, then falls
 // back to a hard cell boundary only for a single chunk wider than the pane.
 // Every source cell remains represented exactly once.
-func readerWrapRanges(value string, width int) []readerRange {
+func appendReaderWrapRanges(ranges []readerRange, value string, width int) []readerRange {
 	if width <= 0 {
-		return []readerRange{{}}
+		return append(ranges, readerRange{})
 	}
 	if value == "" {
-		return []readerRange{{}}
+		return append(ranges, readerRange{})
 	}
-	ranges := make([]readerRange, 0, max(1, ansi.StringWidth(value)/width))
 	segmentByte, segmentCell := 0, 0
 	for segmentByte < len(value) {
 		limit := segmentCell + width

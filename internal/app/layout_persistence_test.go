@@ -42,3 +42,28 @@ func TestPaneLayoutLoadsBeforeFirstFrameAndDebouncesEachChange(t *testing.T) {
 		t.Fatalf("saved pane session = generation %d state %+v err %v", store.generation, store.state.Layout, message.err)
 	}
 }
+
+func TestSessionDebounceKeepsOneTimerForAnInputBurst(t *testing.T) {
+	t.Parallel()
+	model := NewWithSession(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), &fakeSessionStore{}, session.State{})
+	if command := model.commandAfterAction(effect{}); command == nil || !model.sessionPending {
+		t.Fatal("first place change did not schedule a session save")
+	}
+	for range 100 {
+		if command := model.commandAfterAction(effect{}); command != nil {
+			t.Fatal("input burst scheduled more than one session timer")
+		}
+	}
+	if model.sessionSave != 101 {
+		t.Fatalf("session generation = %d, want 101", model.sessionSave)
+	}
+	next, retry := model.Update(sessionSaveDueMsg{generation: 1})
+	model = next.(Model)
+	if retry == nil || !model.sessionPending {
+		t.Fatal("stale debounce timer did not reschedule the latest generation")
+	}
+	_, save := model.Update(sessionSaveDueMsg{generation: model.sessionSave})
+	if save == nil {
+		t.Fatal("latest debounce timer did not start persistence")
+	}
+}

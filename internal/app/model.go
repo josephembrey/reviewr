@@ -39,22 +39,24 @@ type SessionStore interface {
 // Model is the Bubble Tea root. Input routing and effects are delegated to
 // semantic actions and workspace-scoped transitions.
 type Model struct {
-	source       Source
-	host         herdr.Context
-	active       workspace.Kind
-	controls     workspace.Controls
-	lab          labState
-	layout       layoutState
-	scrollbar    scrollbarDragState
-	geometry     ui.Geometry
-	files        filesState
-	history      historyState
-	refs         refsState
-	stashes      stashState
-	note         scopedNotesState
-	poll         repositoryPollState
-	sessionStore SessionStore
-	sessionSave  uint64
+	source         Source
+	host           herdr.Context
+	active         workspace.Kind
+	controls       workspace.Controls
+	lab            labState
+	layout         layoutState
+	scrollbar      scrollbarDragState
+	geometry       ui.Geometry
+	files          filesState
+	history        historyState
+	refs           refsState
+	stashes        stashState
+	note           scopedNotesState
+	poll           repositoryPollState
+	readerViewport readerViewport
+	sessionStore   SessionStore
+	sessionSave    uint64
+	sessionPending bool
 
 	reviewStateRoot string
 }
@@ -363,9 +365,14 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case sessionSaveDueMsg:
-		if msg.generation != m.sessionSave || m.sessionStore == nil {
+		if m.sessionStore == nil {
+			m.sessionPending = false
 			return m, nil
 		}
+		if msg.generation != m.sessionSave {
+			return m, scheduleSessionSave(m.sessionSave)
+		}
+		m.sessionPending = false
 		return m, m.command(effect{kind: effectSaveSession, generation: msg.generation, session: m.sessionState()})
 	case sessionSavedMsg:
 		return m, nil
@@ -547,13 +554,23 @@ func (m Model) View() tea.View {
 			NotesHasWorktree:    m.note.hasWorktree(),
 		}
 	} else if m.gitStashesActive() {
-		presentation = m.stashes.viewModel(m.geometry, time.Now())
+		if reader, ok := m.cachedActiveReaderViewport(); ok {
+			presentation = m.stashes.viewModelWithReader(m.geometry, time.Now(), reader.document, reader.foldable)
+			presentation.ReaderLayout = &reader.layout
+		} else {
+			presentation = m.stashes.viewModel(m.geometry, time.Now())
+		}
 	} else if m.gitRefsActive() {
 		presentation = m.refs.viewModel(m.geometry)
 	} else if m.active == workspace.Git {
 		presentation = m.history.viewModel(m.geometry)
 	} else {
-		presentation = m.files.viewModel(m.geometry)
+		if reader, ok := m.cachedActiveReaderViewport(); ok {
+			presentation = m.files.viewModelWithReader(m.geometry, reader.document, reader.foldable)
+			presentation.ReaderLayout = &reader.layout
+		} else {
+			presentation = m.files.viewModel(m.geometry)
+		}
 	}
 	presentation.Workspace = m.active
 	presentation.DividerDragging = m.layout.dragging
@@ -860,12 +877,25 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		return routeNotesMessage(msg, m.geometry, note.presentation(), note.editor.Dragging(), note.scrollbarDragging, m.note.hasWorktree())
 	}
 	place := m.activePlace()
-	if layout, ok := m.activeReaderLayout(); ok {
-		if action, handled := routeReaderFoldMessage(msg, layout, m.activeReaderVisualOffset()); handled {
-			return action, true
+	readerOffset := place.ReaderOffset
+	readerLineCount := 0
+	switch msg.(type) {
+	case tea.MouseClickMsg, tea.MouseWheelMsg:
+		readerOffset = m.activeReaderVisualOffset()
+		readerLineCount = m.activeReaderLineCount()
+		if _, click := msg.(tea.MouseClickMsg); click {
+			if layout, ok := m.activeReaderLayout(); ok {
+				if action, handled := routeReaderFoldMessage(msg, layout, readerOffset); handled {
+					return action, true
+				}
+			}
 		}
 	}
-	return routeMessageWithRows(msg, place.Focus, m.geometry, m.active, m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), m.activeReaderVisualOffset(), m.activeReaderLineCount(), m.activeNavigatorRows())
+	var navigatorRows []ui.NavigatorRow
+	if _, click := msg.(tea.MouseClickMsg); click && m.active == workspace.Files {
+		navigatorRows = m.activeNavigatorRows()
+	}
+	return routeMessageWithRows(msg, place.Focus, m.geometry, m.active, m.presentationControls(), m.layout.dragging, m.scrollbar.active, place.Top, len(place.Items), readerOffset, readerLineCount, navigatorRows)
 }
 
 func (m *Model) activate(next workspace.Kind) effect {
@@ -938,7 +968,7 @@ func (m *Model) finishNotesExit(exit notesExit) effect {
 	}
 }
 
-func (m Model) activeReaderLineCount() int {
+func (m *Model) activeReaderLineCount() int {
 	if layout, ok := m.activeReaderLayout(); ok {
 		return layout.Total
 	}
@@ -954,23 +984,12 @@ func (m Model) activeReaderLineCount() int {
 	return len(m.files.readerRows())
 }
 
-func (m Model) activeReaderLayout() (ui.ReaderLayout, bool) {
-	var document ui.ReaderDocument
-	switch {
-	case m.gitStashesActive():
-		document = m.stashes.readerDocument()
-	case m.active == workspace.Files:
-		document = m.files.readerDocument()
-	default:
-		return ui.ReaderLayout{}, false
-	}
-	if document.Kind == ui.ReaderDocumentNone {
-		return ui.ReaderLayout{}, false
-	}
-	return ui.CalculateReaderLayout(m.geometry.ReaderRows, document), true
+func (m *Model) activeReaderLayout() (ui.ReaderLayout, bool) {
+	viewport, ok := m.activeReaderViewport()
+	return viewport.layout, ok
 }
 
-func (m Model) activeReaderVisualOffset() int {
+func (m *Model) activeReaderVisualOffset() int {
 	place := m.activePlace()
 	if layout, ok := m.activeReaderLayout(); ok {
 		return layout.VisualOffset(place.ReaderOffset, place.ReaderColumn)
@@ -995,7 +1014,7 @@ func (m *Model) scrollActiveReader(delta int) {
 	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
 }
 
-func (m Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
+func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
 	if document.Kind == ui.ReaderDocumentNone {
 		place.ClampReader(0, m.geometry.ReaderRows.Height)
 		return
@@ -1005,13 +1024,14 @@ func (m Model) clampDocumentReader(place *navigation.State, document ui.ReaderDo
 	source, column := layout.SourceOffset(min(layout.VisualOffset(place.ReaderOffset, place.ReaderColumn), maximum))
 	place.ReaderOffset = source
 	place.ReaderColumn = column
+	m.rememberActiveReaderLayout(place, document, layout)
 }
 
 func (m Model) activeNavigatorRows() []ui.NavigatorRow {
 	if m.active != workspace.Files {
 		return nil
 	}
-	return m.files.viewModel(m.geometry).NavigatorRows
+	return m.files.navigatorRows()
 }
 
 func (m Model) selectedHistoryOID() string {

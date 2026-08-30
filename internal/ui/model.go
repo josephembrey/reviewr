@@ -216,8 +216,11 @@ type Model struct {
 	Top            int
 	Focus          navigation.Focus
 
-	ReaderTitle           string
-	ReaderDocument        ReaderDocument
+	ReaderTitle    string
+	ReaderDocument ReaderDocument
+	// ReaderLayout reuses the app's input geometry when the document and pane
+	// width have not changed. Scrolling should never rewrap the whole file.
+	ReaderLayout          *ReaderLayout
 	ReaderContextFoldable bool
 	ReaderLines           []Line
 	ReaderCommitRows      []commitrow.Row

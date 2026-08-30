@@ -308,6 +308,44 @@ func TestRichReaderRenderMatrixAndScrollbarCoexistWithoutPanics(t *testing.T) {
 	}
 }
 
+func BenchmarkReaderLayoutLargeFile(b *testing.B) {
+	document := benchmarkReaderDocument(10_000)
+	rows := Rect{Width: 100, Height: 40}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		_ = CalculateReaderLayout(rows, document)
+	}
+}
+
+func BenchmarkRenderScrolledLargeFile(b *testing.B) {
+	document := benchmarkReaderDocument(10_000)
+	geometry := Calculate(160, 50)
+	layout := CalculateReaderLayout(geometry.ReaderRows, document)
+	model := Model{
+		Geometry: geometry, Workspace: workspace.Files, Focus: navigation.FocusReader,
+		ReaderDocument: document, ReaderLayout: &layout,
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := range b.N {
+		model.ReaderOffset = index % (len(document.Rows) - geometry.ReaderRows.Height)
+		_ = Render(model)
+	}
+}
+
+func benchmarkReaderDocument(lines int) ReaderDocument {
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: make([]ReaderRow, lines)}
+	for index := range document.Rows {
+		document.Rows[index] = ReaderRow{
+			Kind:    ReaderFile,
+			Text:    "func renderOneLargeSourceLine(value string) string { return strings.TrimSpace(value) }",
+			NewLine: uint64(index + 1),
+		}
+	}
+	return document
+}
+
 func assertEveryPrintableHasChangeBackground(t *testing.T, rendered string, kind ReaderRowKind) {
 	t.Helper()
 	want := 42
