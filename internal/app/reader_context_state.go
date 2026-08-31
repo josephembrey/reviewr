@@ -15,11 +15,19 @@ type readerContextFold struct {
 // stable gap. defaultExpanded records the last bulk choice; folds contains
 // only local overrides or gaps still moving toward that default.
 type readerContextState struct {
+	startExpanded   bool
 	defaultExpanded bool
 	folds           map[string]readerContextFold
 	order           []string
 	generation      uint64
 	revision        uint64
+}
+
+// setStartExpanded changes the policy for future reader identities. It does
+// not touch the current document: authored fold state is place state and must
+// move only under a direct fold action.
+func (state *readerContextState) setStartExpanded(expanded bool) {
+	state.startExpanded = expanded
 }
 
 func (state readerContextState) document(source ui.ReaderDocument) ui.ReaderDocument {
@@ -150,7 +158,7 @@ func (state readerContextState) progress(identity string) int {
 }
 
 func (state *readerContextState) reset() {
-	state.defaultExpanded = false
+	state.defaultExpanded = state.startExpanded
 	state.folds = nil
 	state.order = nil
 	state.generation++

@@ -96,6 +96,10 @@ func (m Model) sessionState() session.State {
 			Comparison: m.controls.Comparison.Label(), Git: m.controls.Git.Label(),
 			Traversal: m.controls.Traversal.Label(), DiffHighlight: m.controls.DiffHighlight.Label(),
 		},
+		Settings: session.Settings{
+			ExcludeCommentsFromHunkNavigation: !m.settings.includeCommentsInHunkNavigation,
+			DiffsStartUnfolded:                !m.settings.diffsStartFolded,
+		},
 		Layout: session.Layout{
 			NavigatorWidth: m.layout.navigatorWidth,
 			Customized:     m.layout.customized,
@@ -139,6 +143,9 @@ func (m Model) sessionState() session.State {
 }
 
 func (m *Model) restoreSession(state session.State) {
+	m.settings.includeCommentsInHunkNavigation = !state.Settings.ExcludeCommentsFromHunkNavigation
+	m.settings.diffsStartFolded = !state.Settings.DiffsStartUnfolded
+	m.configureDiffContextDefaults()
 	m.active = parseWorkspace(state.Active)
 	m.controls.Files = parseFileSet(state.Controls.Files)
 	m.controls.Reader = parseReaderMode(state.Controls.Reader)

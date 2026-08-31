@@ -33,7 +33,7 @@ func (m *Model) apply(action Action) effect {
 	case SelectPreviousSetting:
 		m.settings.selectDelta(-1)
 	case ToggleSelectedSetting:
-		m.settings.toggleSelected()
+		m.toggleSelectedSetting()
 	case CommentInsert,
 		CommentBackspace,
 		CommentDelete,

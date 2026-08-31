@@ -45,11 +45,14 @@ func TestSettingsRoutesGlobalShortcutAndModalActions(t *testing.T) {
 	}
 }
 
-func TestSettingsToggleAndListStateAreSessionScoped(t *testing.T) {
+func TestSettingsToggleAndListStateAreWorktreeSessionScoped(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
 	if !model.settings.includeCommentsInHunkNavigation {
 		t.Fatal("include-comments setting did not default on")
+	}
+	if !model.settings.diffsStartFolded {
+		t.Fatal("diffs did not default to starting folded")
 	}
 	if pending := model.apply(Action{Kind: ToggleSettings}); pending.kind != effectNone || model.modal != modalSettings {
 		t.Fatalf("open Settings = effect %+v modal %v", pending, model.modal)
@@ -63,9 +66,18 @@ func TestSettingsToggleAndListStateAreSessionScoped(t *testing.T) {
 	if model.settings.includeCommentsInHunkNavigation {
 		t.Fatal("Space/Enter action did not disable selected setting")
 	}
+	model.apply(Action{Kind: SelectNextSetting})
+	if model.settings.selected != 1 {
+		t.Fatalf("second setting selection = %d, want 1", model.settings.selected)
+	}
+	model.apply(Action{Kind: ToggleSelectedSetting})
+	if model.settings.diffsStartFolded || !model.files.readerContext.startExpanded ||
+		!model.history.inspection.readerContext.startExpanded || !model.stashes.inspection.readerContext.startExpanded {
+		t.Fatalf("start-unfolded setting was not applied to every diff reader: settings=%+v", model.settings)
+	}
 	model.apply(Action{Kind: ToggleSettings})
 	model.apply(Action{Kind: ToggleSettings})
-	if model.modal != modalSettings || model.settings.includeCommentsInHunkNavigation {
+	if model.modal != modalSettings || model.settings.includeCommentsInHunkNavigation || model.settings.diffsStartFolded {
 		t.Fatalf("reopened Settings lost session state: modal=%v settings=%+v", model.modal, model.settings)
 	}
 }
@@ -97,7 +109,8 @@ func TestSettingsModalPrecedencePreservesAllPlaceState(t *testing.T) {
 		}
 	}
 	update(keyPress(','))
-	if model.modal != modalSettings || !strings.Contains(model.View().Content, "include comments in hunk navigation ([/])") {
+	if model.modal != modalSettings || !strings.Contains(model.View().Content, "include comments in hunk navigation ([/])") ||
+		!strings.Contains(model.View().Content, "start diffs folded") {
 		t.Fatalf("global comma did not open rendered Settings: modal=%v", model.modal)
 	}
 	for _, msg := range []tea.Msg{

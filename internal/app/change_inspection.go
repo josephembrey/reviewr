@@ -171,11 +171,10 @@ func (state *changeInspectionState) beginReader(quiet bool) (uint64, repository.
 	if state.readerOwnerID != state.ownerID || state.readerFileID != identity {
 		state.reader = repository.ChangeDocument{}
 		state.readerPresentation = nil
-		// An empty reader identity denotes session restoration. Its saved row
-		// identities and fold policy are the continuity bridge for the first
-		// fresh document, so only an actual reader-to-reader transition clears
-		// them.
-		if state.readerOwnerID != "" || state.readerFileID != "" {
+		// Saved rows denote session restoration. They and the restored fold
+		// policy bridge the first fresh document; a genuinely new reader starts
+		// from the configured default instead.
+		if state.readerOwnerID != "" || state.readerFileID != "" || len(state.restoredReaderRows) == 0 {
 			state.readerContext.reset()
 			state.restoredReaderRows = nil
 		}

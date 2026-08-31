@@ -25,6 +25,7 @@ type Identity struct {
 type State struct {
 	Active   string   `json:"active,omitempty"`
 	Controls Controls `json:"controls,omitempty"`
+	Settings Settings `json:"settings,omitempty"`
 	Layout   Layout   `json:"layout,omitempty"`
 	Files    Files    `json:"files,omitempty"`
 	History  History  `json:"history,omitempty"`
@@ -39,6 +40,13 @@ type Controls struct {
 	Git           string `json:"git,omitempty"`
 	Traversal     string `json:"traversal,omitempty"`
 	DiffHighlight string `json:"diff_highlight,omitempty"`
+}
+
+type Settings struct {
+	// Negative/default-false fields preserve the application's defaults when
+	// reading sessions written before settings were persisted.
+	ExcludeCommentsFromHunkNavigation bool `json:"exclude_comments_from_hunk_navigation,omitempty"`
+	DiffsStartUnfolded                bool `json:"diffs_start_unfolded,omitempty"`
 }
 
 type Layout struct {

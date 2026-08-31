@@ -22,6 +22,7 @@ func TestWorktreeSessionRoundTripsNewestGenerationPrivately(t *testing.T) {
 	want := State{
 		Active:   "git",
 		Controls: Controls{Git: "stashes", DiffHighlight: "background"},
+		Settings: Settings{ExcludeCommentsFromHunkNavigation: true, DiffsStartUnfolded: true},
 		Layout:   Layout{NavigatorWidth: 37, Customized: true, Swapped: true},
 		Files: Files{
 			Place:      Place{Items: []string{"file:a.go", "file:b.go"}, Selected: 1, Focus: "reader", ReaderOffset: 12, ReaderCursor: 17},

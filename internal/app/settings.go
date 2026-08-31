@@ -10,6 +10,7 @@ type settingID uint8
 
 const (
 	settingIncludeCommentsInHunkNavigation settingID = iota
+	settingDiffsStartFolded
 )
 
 type settingDefinition struct {
@@ -19,18 +20,23 @@ type settingDefinition struct {
 
 var settingDefinitions = [...]settingDefinition{
 	{id: settingIncludeCommentsInHunkNavigation, label: "include comments in hunk navigation ([/])"},
+	{id: settingDiffsStartFolded, label: "start diffs folded"},
 }
 
-// settingsState is intentionally session-scoped UI state, not a general
-// configuration system. The definitions slice keeps the small list ready for
-// another concrete entry without coupling rendering to its stored fields.
+// settingsState is intentionally worktree-session-scoped UI state, not a
+// general configuration system. Definitions keep rendering independent from
+// the stored fields.
 type settingsState struct {
 	selected                        int
 	includeCommentsInHunkNavigation bool
+	diffsStartFolded                bool
 }
 
 func newSettingsState() settingsState {
-	return settingsState{includeCommentsInHunkNavigation: true}
+	return settingsState{
+		includeCommentsInHunkNavigation: true,
+		diffsStartFolded:                true,
+	}
 }
 
 func (state *settingsState) selectDelta(delta int) {
@@ -41,23 +47,44 @@ func (state *settingsState) selectDelta(delta int) {
 	state.selected = min(max(state.selected+delta, 0), len(settingDefinitions)-1)
 }
 
-func (state *settingsState) toggleSelected() {
+func (state *settingsState) toggleSelected() (settingID, bool) {
 	if state.selected < 0 || state.selected >= len(settingDefinitions) {
-		return
+		return 0, false
 	}
-	switch settingDefinitions[state.selected].id {
+	id := settingDefinitions[state.selected].id
+	switch id {
 	case settingIncludeCommentsInHunkNavigation:
 		state.includeCommentsInHunkNavigation = !state.includeCommentsInHunkNavigation
+	case settingDiffsStartFolded:
+		state.diffsStartFolded = !state.diffsStartFolded
 	}
+	return id, true
 }
 
 func (state settingsState) enabled(id settingID) bool {
 	switch id {
 	case settingIncludeCommentsInHunkNavigation:
 		return state.includeCommentsInHunkNavigation
+	case settingDiffsStartFolded:
+		return state.diffsStartFolded
 	default:
 		return false
 	}
+}
+
+func (m *Model) toggleSelectedSetting() {
+	id, ok := m.settings.toggleSelected()
+	if !ok || id != settingDiffsStartFolded {
+		return
+	}
+	m.configureDiffContextDefaults()
+}
+
+func (m *Model) configureDiffContextDefaults() {
+	expanded := !m.settings.diffsStartFolded
+	m.files.readerContext.setStartExpanded(expanded)
+	m.history.inspection.readerContext.setStartExpanded(expanded)
+	m.stashes.inspection.readerContext.setStartExpanded(expanded)
 }
 
 func (state settingsState) presentation(open bool) ui.Settings {

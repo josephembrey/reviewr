@@ -72,6 +72,10 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 	t.Parallel()
 	original := NewWithSession(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), nil, session.State{
 		Active: "git",
+		Settings: session.Settings{
+			ExcludeCommentsFromHunkNavigation: true,
+			DiffsStartUnfolded:                true,
+		},
 		Layout: session.Layout{
 			NavigatorWidth: 29, Customized: true, Swapped: true,
 			GitSourceWidth: 27, GitSourceCustom: true,
