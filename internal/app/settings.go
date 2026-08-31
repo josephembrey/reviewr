@@ -78,6 +78,7 @@ const (
 	readerHunkLandmark readerNavigationLandmarkKind = iota
 	readerFoldLandmark
 	readerCommentLandmark
+	readerBoundaryLandmark
 )
 
 // readerNavigationLandmark is the policy boundary between reader features and
@@ -95,7 +96,12 @@ type readerNavigationLandmark struct {
 // when wrapping, folding, or refresh changes rendered row positions.
 func readerNavigationLandmarks(document ui.ReaderDocument) []readerNavigationLandmark {
 	hunks := document.HunkNavigationTargets()
-	landmarks := make([]readerNavigationLandmark, 0, len(hunks))
+	landmarks := make([]readerNavigationLandmark, 0, len(hunks)+2)
+	if len(document.Rows) != 0 {
+		landmarks = append(landmarks, readerNavigationLandmark{
+			row: document.SelectionTarget(0), kind: readerBoundaryLandmark,
+		})
+	}
 	for _, row := range hunks {
 		landmarks = append(landmarks, readerNavigationLandmark{row: row, kind: readerHunkLandmark})
 	}
@@ -111,6 +117,11 @@ func readerNavigationLandmarks(document ui.ReaderDocument) []readerNavigationLan
 			})
 		}
 	}
+	if len(document.Rows) != 0 {
+		landmarks = append(landmarks, readerNavigationLandmark{
+			row: document.SelectionTarget(len(document.Rows) - 1), kind: readerBoundaryLandmark,
+		})
+	}
 	sort.SliceStable(landmarks, func(left, right int) bool {
 		return landmarks[left].row < landmarks[right].row
 	})
@@ -124,7 +135,7 @@ func (state settingsState) hunkNavigationTargets(landmarks []readerNavigationLan
 			continue
 		}
 		switch landmark.kind {
-		case readerHunkLandmark, readerFoldLandmark:
+		case readerHunkLandmark, readerFoldLandmark, readerBoundaryLandmark:
 			targets = append(targets, landmark.row)
 		case readerCommentLandmark:
 			if state.includeCommentsInHunkNavigation {

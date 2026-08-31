@@ -72,6 +72,7 @@ func (m *Model) apply(action Action) effect {
 		SelectNextLandmark,
 		SelectPreviousLandmark,
 		MoveReaderSelection,
+		ScrollReaderWithCursor,
 		MoveReaderPage,
 		SelectReaderBoundary,
 		SelectReaderViewport,
@@ -293,6 +294,8 @@ func (m *Model) applyReaderAction(action Action) effect {
 		m.selectActiveReaderLandmark(-1)
 	case MoveReaderSelection:
 		m.moveActiveReaderSelection(action.Amount)
+	case ScrollReaderWithCursor:
+		m.scrollActiveReaderWithCursor(action.Amount)
 	case MoveReaderPage:
 		m.moveActiveReaderPage(action.Amount)
 	case SelectReaderBoundary:

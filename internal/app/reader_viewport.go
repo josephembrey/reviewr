@@ -1,6 +1,8 @@
 package app
 
 import (
+	"sort"
+
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
@@ -163,6 +165,35 @@ func (m *Model) setActiveReaderVisualOffset(offset int) {
 
 func (m *Model) scrollActiveReader(delta int) {
 	m.setActiveReaderVisualOffset(m.activeReaderVisualOffset() + delta)
+}
+
+// scrollActiveReaderWithCursor mirrors wheel scrolling while keeping the
+// logical cursor at the same screen row whenever the viewport can move.
+func (m *Model) scrollActiveReaderWithCursor(delta int) {
+	if delta == 0 {
+		return
+	}
+	layout, ok := m.activeReaderLayout()
+	rows := m.activeReaderRowsRect()
+	if !ok || layout.Total == 0 || rows.Height <= 0 {
+		m.moveActiveReaderSelection(delta)
+		return
+	}
+	place := m.activePlace()
+	top := m.activeReaderVisualOffset()
+	cursor := layout.VisualOffset(place.ReaderCursor, 0)
+	screenRow := max(0, min(cursor-top, rows.Height-1))
+	m.setActiveReaderVisualOffset(top + delta)
+	newTop := m.activeReaderVisualOffset()
+	if newTop == top {
+		return
+	}
+	targetVisual := max(0, min(newTop+screenRow, layout.Total-1))
+	target, _ := layout.SourceOffset(targetVisual)
+	m.selectActiveReaderLine(target)
+	// Selection reconciliation may make a wrapped source start visible. The
+	// authored wheel position remains authoritative for this combined motion.
+	m.setActiveReaderVisualOffset(newTop)
 }
 
 func (m *Model) moveActiveReaderSelection(delta int) {
@@ -368,7 +399,10 @@ func (m *Model) selectActiveReaderLandmark(delta int) {
 
 func visualHunkTargets(document ui.ReaderDocument) []int {
 	starts := document.HunkStarts()
-	targets := make([]int, 0, len(starts))
+	targets := make([]int, 0, len(starts)+2)
+	if len(document.Rows) != 0 {
+		targets = append(targets, document.SelectionTarget(0))
+	}
 	for index, start := range starts {
 		end := len(document.Rows)
 		if index+1 < len(starts) {
@@ -381,7 +415,11 @@ func visualHunkTargets(document ui.ReaderDocument) []int {
 			}
 		}
 	}
-	return targets
+	if len(document.Rows) != 0 {
+		targets = append(targets, document.SelectionTarget(len(document.Rows)-1))
+	}
+	sort.Ints(targets)
+	return compactSortedInts(targets)
 }
 
 func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {

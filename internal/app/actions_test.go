@@ -147,7 +147,7 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	}
 }
 
-func TestAltMovementRoutesToTheUnfocusedFilesPane(t *testing.T) {
+func TestAltBracketsScrollTheFilesReaderWithoutChangingFocus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
@@ -155,14 +155,8 @@ func TestAltMovementRoutesToTheUnfocusedFilesPane(t *testing.T) {
 		key   tea.Key
 		want  Action
 	}{
-		{name: "tree focus alt j", focus: navigation.FocusNavigator, key: tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}, want: Action{Kind: MoveReaderSelection, Amount: 1}},
-		{name: "tree focus alt up", focus: navigation.FocusNavigator, key: tea.Key{Code: tea.KeyUp, Mod: tea.ModAlt}, want: Action{Kind: MoveReaderSelection, Amount: -1}},
-		{name: "tree focus alt l", focus: navigation.FocusNavigator, key: tea.Key{Code: 'l', Text: "l", Mod: tea.ModAlt}, want: Action{Kind: ExpandReaderFold}},
-		{name: "tree focus alt left", focus: navigation.FocusNavigator, key: tea.Key{Code: tea.KeyLeft, Mod: tea.ModAlt}, want: Action{Kind: CollapseReaderFold}},
-		{name: "reader focus alt down", focus: navigation.FocusReader, key: tea.Key{Code: tea.KeyDown, Mod: tea.ModAlt}, want: Action{Kind: SelectNext}},
-		{name: "reader focus alt k", focus: navigation.FocusReader, key: tea.Key{Code: 'k', Text: "k", Mod: tea.ModAlt}, want: Action{Kind: SelectPrevious}},
-		{name: "reader focus alt right", focus: navigation.FocusReader, key: tea.Key{Code: tea.KeyRight, Mod: tea.ModAlt}, want: Action{Kind: ExpandNavigatorSelection}},
-		{name: "reader focus alt h", focus: navigation.FocusReader, key: tea.Key{Code: 'h', Text: "h", Mod: tea.ModAlt}, want: Action{Kind: CollapseNavigatorSelection}},
+		{name: "alt right bracket scrolls reader", focus: navigation.FocusNavigator, key: tea.Key{Code: ']', Text: "]", Mod: tea.ModAlt}, want: Action{Kind: ScrollReaderWithCursor, Amount: 3}},
+		{name: "alt left bracket scrolls reader", focus: navigation.FocusReader, key: tea.Key{Code: '[', Text: "[", Mod: tea.ModAlt}, want: Action{Kind: ScrollReaderWithCursor, Amount: -3}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -177,18 +171,21 @@ func TestAltMovementRoutesToTheUnfocusedFilesPane(t *testing.T) {
 		})
 	}
 
-	for _, context := range []browserRouteContext{
-		{active: workspace.Git, focus: navigation.FocusNavigator, controls: workspace.Controls{RichDiff: true}},
-		{active: workspace.Files, focus: navigation.FocusNavigator, controls: workspace.Controls{RichDiff: true}, visualSelecting: true},
-	} {
+	for _, context := range []browserRouteContext{{active: workspace.Git}, {active: workspace.Notes}} {
 		if got, ok := routeBrowserKey(
-			tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}), context,
+			tea.KeyPressMsg(tea.Key{Code: ']', Text: "]", Mod: tea.ModAlt}), context,
 		); ok {
-			t.Fatalf("ineligible inactive-pane movement routed as %+v", got)
+			t.Fatalf("non-Files reader scroll routed as %+v", got)
 		}
 	}
 	if got, ok := routeBrowserKey(
-		tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt | tea.ModShift}),
+		tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}),
+		browserRouteContext{active: workspace.Files, focus: navigation.FocusNavigator},
+	); ok {
+		t.Fatalf("retired inactive-pane movement routed as %+v", got)
+	}
+	if got, ok := routeBrowserKey(
+		tea.KeyPressMsg(tea.Key{Code: ']', Text: "]", Mod: tea.ModAlt | tea.ModShift}),
 		browserRouteContext{active: workspace.Files, focus: navigation.FocusNavigator},
 	); ok {
 		t.Fatalf("combined modifier routed as %+v", got)

@@ -301,7 +301,8 @@ func TestSettingsPolicyNavigatesMixedHunkAndCommentLandmarks(t *testing.T) {
 	}}
 	model := commentReaderModel(document, workspace.DiffReader)
 	landmarks := readerNavigationLandmarks(model.files.readerDocument())
-	if len(landmarks) != 4 || landmarks[1].kind != readerCommentLandmark || landmarks[1].identity != "comment:1" {
+	if len(landmarks) != 6 || landmarks[2].kind != readerCommentLandmark || landmarks[2].identity != "comment:1" ||
+		landmarks[0].kind != readerBoundaryLandmark || landmarks[len(landmarks)-1].kind != readerBoundaryLandmark {
 		t.Fatalf("mixed landmark stream = %+v", landmarks)
 	}
 

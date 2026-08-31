@@ -574,6 +574,63 @@ func TestReaderLandmarkNavigationReachesTrailingContextFold(t *testing.T) {
 	}
 }
 
+func TestReaderLandmarksIncludeDocumentBoundaries(t *testing.T) {
+	t.Parallel()
+	document := ui.ReaderDocument{Kind: ui.ReaderDiffDocument, Rows: []ui.ReaderRow{
+		{Identity: "hunk", Kind: ui.ReaderMetadata, Text: "@@ -1 +1 @@"},
+		{Identity: "changed", Kind: ui.ReaderInsertion, Text: "changed", NewLine: 1},
+		{Identity: "tail:2", Kind: ui.ReaderContext, Text: "tail", OldLine: 2, NewLine: 2},
+		{Identity: "tail:3", Kind: ui.ReaderContext, Text: "end", OldLine: 3, NewLine: 3},
+	}}
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 20})
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	model.files.readerPresentation = &document
+	model.files.place.ReaderCursor = 0
+
+	model.apply(Action{Kind: SelectNextLandmark})
+	if model.files.place.ReaderCursor != len(document.Rows)-1 {
+		t.Fatalf("next landmark = %d, want EOF %d", model.files.place.ReaderCursor, len(document.Rows)-1)
+	}
+	model.apply(Action{Kind: SelectPreviousLandmark})
+	if model.files.place.ReaderCursor != 0 {
+		t.Fatalf("previous landmark = %d, want BOF", model.files.place.ReaderCursor)
+	}
+}
+
+func TestAltBracketsWheelScrollReaderAndCarryCursor(t *testing.T) {
+	t.Parallel()
+	model := newTestModel(&fakeSource{})
+	model.apply(Action{Kind: Resize, Width: 80, Height: 12})
+	model.files.readerEntry = repository.Entry{Path: "main.go"}
+	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument}
+	for line := 1; line <= 30; line++ {
+		document.Rows = append(document.Rows, ui.ReaderRow{
+			Identity: fmt.Sprintf("line:%d", line), Kind: ui.ReaderFile,
+			Text: "line", NewLine: uint64(line),
+		})
+	}
+	model.files.readerPresentation = &document
+	model.files.place.Focus = navigation.FocusNavigator
+	model.files.place.ReaderCursor = 2
+
+	press := func(code rune) {
+		next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: code, Text: string(code), Mod: tea.ModAlt}))
+		model = next.(Model)
+		if command != nil {
+			t.Fatalf("Alt+%c scheduled command", code)
+		}
+	}
+	press(']')
+	if top, cursor := model.activeReaderVisualOffset(), model.files.place.ReaderCursor; top != 3 || cursor != 5 || cursor-top != 2 || model.files.place.Focus != navigation.FocusNavigator {
+		t.Fatalf("Alt+] = top %d cursor %d focus %v, want top 3 cursor 5 navigator focus", top, cursor, model.files.place.Focus)
+	}
+	press('[')
+	if top, cursor := model.activeReaderVisualOffset(), model.files.place.ReaderCursor; top != 0 || cursor != 2 {
+		t.Fatalf("Alt+[ = top %d cursor %d, want top 0 cursor 2", top, cursor)
+	}
+}
+
 func TestReaderClickSelectsLogicalLine(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
@@ -609,7 +666,6 @@ func TestNavigatorFileHorizontalKeysChangeDiffDetailWithoutMovingFocus(t *testin
 	model.files.readerMode = workspace.DiffReader
 	document := foldableDiffDocument()
 	model.files.readerPresentation = &document
-
 	press := func(key tea.Key) {
 		next, command := model.Update(tea.KeyPressMsg(key))
 		model = next.(Model)

@@ -47,6 +47,7 @@ const (
 	SelectNextLandmark
 	SelectPreviousLandmark
 	MoveReaderSelection
+	ScrollReaderWithCursor
 	MoveReaderPage
 	SelectReaderBoundary
 	SelectReaderViewport
@@ -403,7 +404,7 @@ func routeBrowserMessage(msg tea.Msg, context browserRouteContext) (Action, bool
 }
 
 func routeBrowserKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {
-	if action, ok := routeInactivePaneNavigationKey(msg, context); ok {
+	if action, ok := routeReaderScrollKey(msg, context); ok {
 		return action, true
 	}
 	if msg.Key().Mod&(tea.ModAlt|tea.ModMeta|tea.ModSuper|tea.ModHyper) != 0 {
@@ -421,11 +422,10 @@ func routeBrowserKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, 
 	return routeBrowserNavigationKey(msg, context)
 }
 
-// routeInactivePaneNavigationKey applies ordinary Files navigation to the
-// other pane without transferring focus. Alt is intentionally exact: adding
-// Shift or another modifier must not steal selection or terminal shortcuts.
-func routeInactivePaneNavigationKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {
-	if context.active != workspace.Files || context.visualSelecting {
+// routeReaderScrollKey mirrors wheel scrolling without changing pane focus.
+// Alt is intentionally exact so other terminal shortcuts remain available.
+func routeReaderScrollKey(msg tea.KeyPressMsg, context browserRouteContext) (Action, bool) {
+	if context.active != workspace.Files {
 		return Action{}, false
 	}
 	key := msg.Key()
@@ -433,30 +433,10 @@ func routeInactivePaneNavigationKey(msg tea.KeyPressMsg, context browserRouteCon
 		return Action{}, false
 	}
 	switch key.Code {
-	case 'j', tea.KeyDown:
-		if context.focus == navigation.FocusNavigator {
-			return Action{Kind: MoveReaderSelection, Amount: 1}, true
-		}
-		return Action{Kind: SelectNext}, true
-	case 'k', tea.KeyUp:
-		if context.focus == navigation.FocusNavigator {
-			return Action{Kind: MoveReaderSelection, Amount: -1}, true
-		}
-		return Action{Kind: SelectPrevious}, true
-	case 'l', tea.KeyRight:
-		if context.focus == navigation.FocusReader {
-			return Action{Kind: ExpandNavigatorSelection}, true
-		}
-		if context.controls.RichDiff || context.readerFoldable {
-			return Action{Kind: ExpandReaderFold}, true
-		}
-	case 'h', tea.KeyLeft:
-		if context.focus == navigation.FocusReader {
-			return Action{Kind: CollapseNavigatorSelection}, true
-		}
-		if context.controls.RichDiff || context.readerFoldable {
-			return Action{Kind: CollapseReaderFold}, true
-		}
+	case ']':
+		return Action{Kind: ScrollReaderWithCursor, Amount: 3}, true
+	case '[':
+		return Action{Kind: ScrollReaderWithCursor, Amount: -3}, true
 	}
 	return Action{}, false
 }

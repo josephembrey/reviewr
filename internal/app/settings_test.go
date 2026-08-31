@@ -132,6 +132,7 @@ func TestSettingsModalPrecedencePreservesAllPlaceState(t *testing.T) {
 func TestSettingsFilterHunkNavigationLandmarks(t *testing.T) {
 	t.Parallel()
 	landmarks := []readerNavigationLandmark{
+		{row: 0, kind: readerBoundaryLandmark},
 		{row: 8, kind: readerCommentLandmark},
 		{row: 2, kind: readerHunkLandmark},
 		{row: 11, kind: readerFoldLandmark},
@@ -139,13 +140,14 @@ func TestSettingsFilterHunkNavigationLandmarks(t *testing.T) {
 		{row: 5, kind: readerHunkLandmark},
 		{row: 5, kind: readerFoldLandmark},
 		{row: -1, kind: readerCommentLandmark},
+		{row: 14, kind: readerBoundaryLandmark},
 	}
 	settings := newSettingsState()
-	if got, want := settings.hunkNavigationTargets(landmarks), []int{2, 5, 8, 11}; !reflect.DeepEqual(got, want) {
+	if got, want := settings.hunkNavigationTargets(landmarks), []int{0, 2, 5, 8, 11, 14}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("enabled landmarks = %v, want %v", got, want)
 	}
 	settings.includeCommentsInHunkNavigation = false
-	if got, want := settings.hunkNavigationTargets(landmarks), []int{2, 5, 11}; !reflect.DeepEqual(got, want) {
+	if got, want := settings.hunkNavigationTargets(landmarks), []int{0, 2, 5, 11, 14}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("disabled landmarks = %v, want %v", got, want)
 	}
 }

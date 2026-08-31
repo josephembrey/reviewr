@@ -67,7 +67,7 @@ func TestHelpPopupShowsEveryHotkeyGroupWithoutResizingFrame(t *testing.T) {
 	for _, expected := range []string{
 		"hotkeys · ?/esc close",
 		"Browser", ", settings", "q/ctrl+c quit", "r refresh",
-		"Files", "1/2/3/4 views", "[/] marks", "V lines", "c comment", "home/end", "H/M/L view", "pgup/dn page", "alt+move other", "m render", "e edit", "x review", "R compare", "X gap",
+		"Files", "1/2/3/4 views", "[/] marks", "V lines", "c comment", "home/end", "H/M/L view", "pgup/dn page", "alt+[/] scroll", "m render", "e edit", "x review", "R compare", "X gap",
 		"Git", "1 history/stashes", "2 graph/parent", "enter/l inspect", "h/esc back/fold",
 		"Notes", "ctrl+z/y undo/redo",
 	} {

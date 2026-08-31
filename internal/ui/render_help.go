@@ -51,7 +51,7 @@ var helpRows = []helpRow{
 			{key: "home/end"},
 			{key: "H/M/L", label: "view"},
 			{key: "pgup/dn", label: "page"},
-			{key: "alt+move", label: "other"},
+			{key: "alt+[/]", label: "scroll"},
 		},
 	},
 	{

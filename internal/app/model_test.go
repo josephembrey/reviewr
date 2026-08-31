@@ -395,41 +395,6 @@ func TestFilesDirectoryFoldingKeysAndMousePreserveReader(t *testing.T) {
 	}
 }
 
-func TestAltMovementSteersTheOtherFilesPaneWithoutMovingFocus(t *testing.T) {
-	t.Parallel()
-	model := newTestModel(&fakeSource{})
-	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
-	model.files, _ = model.files.landSnapshot(snapshotLoadedMsg{
-		generation: model.files.listGeneration,
-		snapshot: snapshotOf(
-			repository.Entry{Path: "a.go"},
-			repository.Entry{Path: "b.go"},
-		),
-	}, workspace.AllFiles, workspace.FileReader, model.geometry.NavigatorRows.Height)
-	model.files.readerEntry = repository.Entry{Path: "a.go"}
-	document := ui.ReaderDocument{Kind: ui.ReaderFileDocument, Rows: []ui.ReaderRow{
-		{Identity: "line:1", Kind: ui.ReaderFile, Text: "one", NewLine: 1},
-		{Identity: "line:2", Kind: ui.ReaderFile, Text: "two", NewLine: 2},
-	}}
-	model.files.readerPresentation = &document
-	model.files.readerLoading = false
-	model.files.place.Focus = navigation.FocusNavigator
-
-	next, command := model.Update(tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}))
-	model = next.(Model)
-	if command != nil || model.files.place.Focus != navigation.FocusNavigator || model.files.place.ReaderCursor != 1 {
-		t.Fatalf("tree-focused alt+j = place %+v command=%v", model.files.place, command != nil)
-	}
-
-	model.files.place.Focus = navigation.FocusReader
-	next, command = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown, Mod: tea.ModAlt}))
-	model = next.(Model)
-	selected, _ := model.files.place.SelectedIdentity()
-	if command == nil || model.files.place.Focus != navigation.FocusReader || selected != filetree.FileIdentity("b.go") {
-		t.Fatalf("reader-focused alt+down = selected %q place %+v command=%v", selected, model.files.place, command != nil)
-	}
-}
-
 func TestMinimumSizeScreenGatesPlaceInputAndRecoversOnResize(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
