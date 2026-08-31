@@ -118,7 +118,8 @@ func renderReaderContentLine(index, width int, model *Model, content []Line, lay
 		wrapped, source, continuation := layout.RowWithSource(index)
 		return renderReaderRowPartSelected(
 			wrapped, geometry, highlight, continuation,
-			source == model.ReaderCursor, model.Focus == navigation.FocusReader,
+			source == model.ReaderCursor && !model.ReaderCharacterSelection,
+			model.Focus == navigation.FocusReader,
 		)
 	}
 	return fit(renderLine(content[index]), width)

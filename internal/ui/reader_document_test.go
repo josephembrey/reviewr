@@ -5,10 +5,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -344,6 +346,36 @@ func TestCharacterSelectionStylesOnlyPayloadCells(t *testing.T) {
 	assertEveryPrintableHasChangeBackground(t, background, ReaderInsertion)
 	if !strings.Contains(background, "[1;4;") && !strings.Contains(background, "[4;1;") {
 		t.Fatalf("background character selection lacks emphasis: %q", background)
+	}
+}
+
+func TestCharacterSelectionSuppressesCursorAcrossWrappedRow(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
+		Kind: ReaderFile, Text: "abcdefghijkl", NewLine: 1,
+		VisualCharacter: true, VisualStart: 1, VisualEnd: 3,
+	}}}
+	layout := CalculateReaderLayout(Rect{Width: 10, Height: 3}, document)
+	if layout.Total < 2 {
+		t.Fatalf("source did not wrap: %+v", layout)
+	}
+	model := Model{
+		ReaderDocument: document, ReaderCursor: 0, ReaderCharacterSelection: true,
+		Focus: navigation.FocusReader,
+	}
+	continued, _, continuation := layout.RowWithSource(1)
+	if continued.VisualCharacter {
+		t.Fatal("test selection unexpectedly reaches the continuation")
+	}
+	got := renderReaderContentLine(
+		1, layout.Geometry.Content.Width, &model, nil, layout, layout.Geometry,
+		commitrow.Columns{}, time.Time{}, workspace.DiffHighlightSidebar,
+	)
+	want := renderReaderRowPartSelected(
+		continued, layout.Geometry, workspace.DiffHighlightSidebar, continuation, false, true,
+	)
+	if got != want {
+		t.Fatalf("wrapped continuation retained full-row cursor: got %q want %q", got, want)
 	}
 }
 
