@@ -72,6 +72,27 @@ func TestBuildDocumentIsExactAndReportsMetadata(t *testing.T) {
 	}
 }
 
+func TestComparisonNoticeUsesUserFacingAddDeleteLabels(t *testing.T) {
+	t.Parallel()
+	regular := Endpoint{Kind: Regular}
+	for _, test := range []struct {
+		name   string
+		bounds Bounds
+		want   string
+	}{
+		{name: "added", bounds: Bounds{Old: Endpoint{Kind: Absent}, New: regular}, want: "file added"},
+		{name: "deleted", bounds: Bounds{Old: regular, New: Endpoint{Kind: Absent}}, want: "file deleted"},
+		{name: "type conversion", bounds: Bounds{Old: regular, New: Endpoint{Kind: Symlink}}, want: "file type regular -> symlink"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line, ok := comparisonNotice(test.bounds)
+			if !ok || line.Text != test.want || line.Kind != NoticeLine {
+				t.Fatalf("notice = (%+v, %v), want %q", line, ok, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildDocumentKeepsDistantEditsAsSeparateHunks(t *testing.T) {
 	oldText, newText := distantReviewContents(600)
 	old := ReadExactContent("a", Regular, 0o100644, strings.NewReader(oldText), int64(len(oldText)+1))
