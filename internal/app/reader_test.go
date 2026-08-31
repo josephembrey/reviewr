@@ -61,7 +61,7 @@ func TestSharedChangeReaderMakesSpecialStashStatesExplicit(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			rows := (readerDocument{Change: &test.document, Mode: workspace.DiffReader}).build().Rows
+			rows := (readerDocument{Change: &test.document, ChangeLabel: "Stash", Mode: workspace.DiffReader}).build().Rows
 			if len(rows) == 0 || !strings.Contains(rows[0].Text, test.want) || rows[0].Tone != test.tone {
 				t.Fatalf("change reader rows = %+v, want %q tone %v", rows, test.want, test.tone)
 			}

@@ -58,7 +58,8 @@ func (m *Model) apply(action Action) effect {
 		DragScrollbar,
 		FinishScrollbarDrag:
 		m.applyLayoutAction(action)
-	case FocusNavigator, FocusReader, SelectNext, SelectPrevious, SelectIndex, ActivateNavigatorRow:
+	case FocusNavigator, FocusReader, FocusGitRegion, EnterGit, BackGit, ActivateGitRow,
+		SelectNext, SelectPrevious, SelectIndex, ActivateNavigatorRow:
 		return m.applyNavigationAction(action)
 	case SelectNextFile,
 		SelectPreviousFile,
@@ -152,13 +153,14 @@ func (m *Model) toggleSecondaryControl() effect {
 		return effect{}
 	}
 	m.scrollbar.finish()
-	m.controls.Git = m.controls.Git.Next()
-	if m.controls.Git == workspace.GitRefs {
-		preferredOID, _ := m.history.place.SelectedIdentity()
-		return m.refs.enter(preferredOID)
-	}
+	m.gitLayout.finish()
+	m.controls.Git = m.controls.Git.Toggle()
+	m.updateGitGeometry()
 	if m.controls.Git == workspace.GitStashes && !m.stashes.loaded && !m.stashes.listLoading {
 		return m.stashes.reload()
+	}
+	if m.controls.Git == workspace.GitHistory && !m.history.sourcesLoaded && !m.history.sourceLoading {
+		return m.history.reload()
 	}
 	return effect{}
 }
@@ -168,9 +170,9 @@ func (m *Model) toggleTertiaryControl() effect {
 		m.controls.Reader = m.controls.Reader.Toggle()
 		return m.files.requestMode(m.controls.Reader)
 	}
-	if m.active == workspace.Git && m.controls.Git == workspace.GitLog {
+	if m.active == workspace.Git && m.controls.Git == workspace.GitHistory {
 		m.controls.Traversal = m.controls.Traversal.Toggle()
-		return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
+		return m.history.requestCommits(m.controls.Traversal, false)
 	}
 	return effect{}
 }
@@ -197,16 +199,16 @@ func (m *Model) reloadActiveWorkspace() effect {
 	if m.gitStashesActive() {
 		return m.stashes.reload()
 	}
-	if m.gitRefsActive() {
-		return m.refs.reload()
-	}
 	if m.active == workspace.Git {
-		return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
+		return m.history.reload()
 	}
 	return m.files.reload(m.controls.Comparison.Label())
 }
 
 func (m *Model) applyNavigationAction(action Action) effect {
+	if m.active == workspace.Git {
+		return m.applyGitNavigationAction(action)
+	}
 	switch action.Kind {
 	case FocusNavigator:
 		m.activePlace().Focus = navigation.FocusNavigator
@@ -228,15 +230,6 @@ func (m *Model) selectNavigationDelta(delta int) effect {
 	if m.active == workspace.Files {
 		return m.files.selectDelta(delta, m.geometry.NavigatorRows.Height, m.controls.Reader)
 	}
-	if m.gitStashesActive() {
-		return m.stashes.selectStashDelta(delta, m.geometry.NavigatorRows.Height)
-	}
-	if m.gitRefsActive() {
-		return m.refs.selectDelta(delta, m.geometry.NavigatorRows.Height)
-	}
-	if m.history.place.SelectDelta(delta, m.geometry.NavigatorRows.Height) {
-		return m.history.requestSelectedSummary()
-	}
 	return effect{}
 }
 
@@ -244,18 +237,6 @@ func (m *Model) selectNavigationIndex(index int) effect {
 	if m.active == workspace.Files {
 		m.files.place.Focus = navigation.FocusNavigator
 		return m.files.selectIndex(index, m.geometry.NavigatorRows.Height, m.controls.Reader)
-	}
-	if m.gitStashesActive() {
-		m.stashes.place.Focus = navigation.FocusNavigator
-		return m.stashes.selectStashIndex(index, m.geometry.NavigatorRows.Height)
-	}
-	if m.gitRefsActive() {
-		m.refs.place.Focus = navigation.FocusNavigator
-		return m.refs.selectIndex(index, m.geometry.NavigatorRows.Height)
-	}
-	m.history.place.Focus = navigation.FocusNavigator
-	if m.history.place.SelectIndex(index, m.geometry.NavigatorRows.Height) {
-		return m.history.requestSelectedSummary()
 	}
 	return effect{}
 }
@@ -267,30 +248,27 @@ func (m *Model) activateNavigatorRow(index int) effect {
 		m.files.toggleSelected(m.geometry.NavigatorRows.Height)
 		return pending
 	}
-	if m.gitStashesActive() {
-		m.stashes.place.Focus = navigation.FocusNavigator
-		return m.stashes.selectStashIndex(index, m.geometry.NavigatorRows.Height)
-	}
-	if m.gitRefsActive() {
-		m.refs.place.Focus = navigation.FocusNavigator
-		return m.refs.selectIndex(index, m.geometry.NavigatorRows.Height)
-	}
-	m.history.place.Focus = navigation.FocusNavigator
-	if m.history.place.SelectIndex(index, m.geometry.NavigatorRows.Height) {
-		return m.history.requestSelectedSummary()
-	}
 	return effect{}
 }
 
 func (m *Model) applyReaderAction(action Action) effect {
+	if m.active == workspace.Git && action.GitFocus != 0 {
+		m.setGitFocus(action.GitFocus)
+	}
 	switch action.Kind {
 	case SelectNextFile:
 		if m.gitStashesActive() {
-			return m.stashes.selectFileDelta(1, m.geometry.ReaderRows.Height)
+			return m.stashes.selectFileDelta(1, m.gitGeometry.FilesRows.Height)
+		}
+		if m.active == workspace.Git && m.history.inspecting && m.history.inspection.selectDelta(1, m.gitGeometry.FilesRows.Height) {
+			return m.history.requestSelectedInspectionFile()
 		}
 	case SelectPreviousFile:
 		if m.gitStashesActive() {
-			return m.stashes.selectFileDelta(-1, m.geometry.ReaderRows.Height)
+			return m.stashes.selectFileDelta(-1, m.gitGeometry.FilesRows.Height)
+		}
+		if m.active == workspace.Git && m.history.inspecting && m.history.inspection.selectDelta(-1, m.gitGeometry.FilesRows.Height) {
+			return m.history.requestSelectedInspectionFile()
 		}
 	case ExpandNavigatorSelection:
 		return m.applyNavigatorExpansion(true)
@@ -342,6 +320,10 @@ func (m *Model) applyReaderAction(action Action) effect {
 }
 
 func (m *Model) applyNavigatorExpansion(expand bool) effect {
+	if m.active == workspace.Git && m.controls.Git == workspace.GitHistory && !m.history.inspecting {
+		m.history.setSourceGroupExpanded(expand, m.gitGeometry.RailRows.Height)
+		return effect{}
+	}
 	if m.active != workspace.Files {
 		return effect{}
 	}

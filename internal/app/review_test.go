@@ -423,8 +423,9 @@ func TestReviewActivityLeavesGitAndNotesPlaceUntouched(t *testing.T) {
 	next, _ = model.Update(readerCommand())
 	model = next.(Model)
 
-	model.history.place = navigation.State{Items: []string{"commit-1", "commit-2"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 7}
-	model.refs.place = navigation.State{Items: []string{"all", "branch"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 5}
+	model.history.timelinePlace = navigation.State{Items: []string{"commit-1", "commit-2"}, Selected: 1, Top: 1, ReaderOffset: 7}
+	model.history.sourcePlace = navigation.State{Items: []string{"all", "branch"}, Selected: 1, Top: 1, ReaderOffset: 5}
+	model.history.focus = workspace.GitTimeline
 	model.stashes.place = navigation.State{Items: []string{"stash-1", "stash-2"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
 	model.note.editor.Load("first\nsecond\nthird")
 	model.note.editor.MoveEnd(false)
@@ -433,8 +434,9 @@ func TestReviewActivityLeavesGitAndNotesPlaceUntouched(t *testing.T) {
 	model.note.loaded = true
 	model.note.generation = 4
 	model.note.savedGeneration = 4
-	historyPlace := model.history.place
-	refsPlace := model.refs.place
+	historyPlace := model.history.timelinePlace
+	sourcePlace := model.history.sourcePlace
+	historyFocus := model.history.focus
 	stashesPlace := model.stashes.place
 	notesPlace := model.note.editor.Presentation()
 	notesGeneration := model.note.generation
@@ -467,8 +469,9 @@ func TestReviewActivityLeavesGitAndNotesPlaceUntouched(t *testing.T) {
 		}
 	}
 
-	if !reflect.DeepEqual(model.history.place, historyPlace) || !reflect.DeepEqual(model.refs.place, refsPlace) || !reflect.DeepEqual(model.stashes.place, stashesPlace) {
-		t.Fatalf("review activity changed Git place: log=%+v refs=%+v stashes=%+v", model.history.place, model.refs.place, model.stashes.place)
+	if !reflect.DeepEqual(model.history.timelinePlace, historyPlace) || !reflect.DeepEqual(model.history.sourcePlace, sourcePlace) ||
+		model.history.focus != historyFocus || !reflect.DeepEqual(model.stashes.place, stashesPlace) {
+		t.Fatalf("review activity changed Git place: history=%+v sources=%+v stashes=%+v", model.history.timelinePlace, model.history.sourcePlace, model.stashes.place)
 	}
 	if !reflect.DeepEqual(model.note.editor.Presentation(), notesPlace) || model.note.generation != notesGeneration {
 		t.Fatalf("review activity changed Notes place: presentation=%+v generation=%d", model.note.editor.Presentation(), model.note.generation)

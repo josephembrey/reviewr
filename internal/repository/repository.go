@@ -33,7 +33,7 @@ type File struct {
 	Err     error
 }
 
-// CommitTraversal selects the Git Log universe.
+// CommitTraversal selects the Git History universe.
 type CommitTraversal uint8
 
 const (
@@ -41,11 +41,13 @@ const (
 	CommitFirstParent
 )
 
-// CommitQuery describes one bounded history load. StartOID applies to the
-// first-parent lineage; graph traversal always uses public refs.
+// CommitQuery describes one bounded history load. SourceOID filters either
+// traversal to one immutable source tip. StartOID applies to the unfiltered
+// first-parent lineage.
 type CommitQuery struct {
 	Traversal CommitTraversal
 	StartOID  string
+	SourceOID string
 }
 
 // CommitRefKind gives a displayed ref its semantic role.
@@ -81,7 +83,7 @@ type Diff struct {
 	Err     error
 }
 
-// Commit is one structured Git Log row.
+// Commit is one structured Git History row.
 type Commit struct {
 	OID          string
 	ShortOID     string
@@ -92,16 +94,6 @@ type Commit struct {
 	Refs         []CommitRef
 	Merge        bool
 	Head         bool
-}
-
-// CommitSummary is bounded metadata and changed-file stat for one commit.
-type CommitSummary struct {
-	OID         string
-	AuthorName  string
-	AuthorEmail string
-	AuthoredAt  string
-	Message     string
-	Stat        string
 }
 
 // ChangeSummary is the aggregate current-worktree diff against HEAD.
@@ -312,6 +304,7 @@ func (r *Repository) ListCommits(query CommitQuery) ([]Commit, error) {
 	commits, err := r.git.ListCommits(r.root, gitadapter.HistoryQuery{
 		Traversal: traversal,
 		StartOID:  query.StartOID,
+		SourceOID: query.SourceOID,
 	})
 	if err != nil {
 		return nil, err
@@ -342,20 +335,4 @@ func (r *Repository) ListCommits(query CommitQuery) ([]Commit, error) {
 		}
 	}
 	return result, nil
-}
-
-// ReadCommit reads one exact full object identity without mutating Git state.
-func (r *Repository) ReadCommit(oid string) (CommitSummary, error) {
-	summary, err := r.git.ReadCommit(r.root, oid, r.maxBytes)
-	if err != nil {
-		return CommitSummary{}, err
-	}
-	return CommitSummary{
-		OID:         summary.OID,
-		AuthorName:  summary.AuthorName,
-		AuthorEmail: summary.AuthorEmail,
-		AuthoredAt:  summary.AuthoredAt,
-		Message:     summary.Message,
-		Stat:        summary.Stat,
-	}, nil
 }

@@ -27,7 +27,7 @@ func layoutHeaderControls(geometry Geometry, active workspace.Kind, controls wor
 		definitions = append(definitions,
 			headerControl{hit: HitSecondaryControl, key: workspace.SecondaryControlKey, value: controls.Git.Label()},
 		)
-		if controls.Git == workspace.GitLog {
+		if controls.Git == workspace.GitHistory {
 			definitions = append(definitions,
 				headerControl{hit: HitTertiaryControl, key: workspace.TertiaryControlKey, value: controls.Traversal.Label()},
 			)

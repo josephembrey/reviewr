@@ -120,42 +120,58 @@ func (m *Model) landFilesResult(msg tea.Msg) (bool, effect) {
 func (m *Model) landGitResult(msg tea.Msg) (bool, effect) {
 	switch msg := msg.(type) {
 	case commitsLoadedMsg:
-		var pending effect
-		m.history, pending = m.history.landCommits(msg, m.geometry.NavigatorRows.Height)
-		if msg.background {
-			pending = tagRepositoryPoll(pending, msg.activity)
+		visibleRows := 0
+		if m.active == workspace.Git && m.controls.Git == workspace.GitHistory && !m.history.inspecting {
+			visibleRows = m.gitGeometry.ContentRows.Height
 		}
-		return true, pending
-	case commitLoadedMsg:
-		m.history = m.history.landSummary(msg, m.geometry.ReaderRows.Height)
+		m.history = m.history.landCommits(msg, visibleRows)
 		return true, effect{}
-	case refSourcesLoadedMsg:
+	case historySourcesLoadedMsg:
 		var pending effect
-		m.refs, pending = m.refs.landSources(msg, m.geometry.NavigatorRows.Height)
+		visibleRows := 0
+		if m.active == workspace.Git && m.controls.Git == workspace.GitHistory && !m.history.inspecting {
+			visibleRows = m.gitGeometry.RailRows.Height
+		}
+		m.history, pending = m.history.landSources(msg, visibleRows)
 		if msg.background {
 			pending = tagRepositoryPoll(pending, msg.activity)
 		}
 		return true, pending
-	case refCommitsLoadedMsg:
-		m.refs = m.refs.landPreview(msg, m.geometry.ReaderRows.Height)
+	case commitFilesLoadedMsg:
+		return true, m.history.landInspectionFiles(msg)
+	case commitFileLoadedMsg:
+		if m.history.inspection.landReader(msg.generation, msg.oid, msg.fileIdentity, msg.document, msg.presentation) {
+			if m.active == workspace.Git && m.controls.Git == workspace.GitHistory && m.history.inspecting {
+				m.clampDocumentReader(&m.history.inspection.place, m.history.inspection.readerDocument())
+			}
+		}
 		return true, effect{}
 	case stashesLoadedMsg:
 		var pending effect
-		m.stashes, pending = m.stashes.landStashes(msg, m.geometry.NavigatorRows.Height)
+		visibleRows := 0
+		if m.gitStashesActive() {
+			visibleRows = m.gitGeometry.RailRows.Height
+		}
+		m.stashes, pending = m.stashes.landStashes(msg, visibleRows)
 		if msg.background {
 			pending = tagRepositoryPoll(pending, msg.activity)
 		}
 		return true, pending
 	case stashFilesLoadedMsg:
 		var pending effect
-		m.stashes, pending = m.stashes.landFiles(msg)
+		pending = m.stashes.landFiles(msg)
+		if m.gitStashesActive() {
+			m.stashes.ensureFileVisible(m.gitGeometry.FilesRows.Height)
+		}
 		if msg.background {
 			pending = tagRepositoryPoll(pending, msg.activity)
 		}
 		return true, pending
 	case stashFileLoadedMsg:
-		m.stashes = m.stashes.landReader(msg)
-		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+		m.stashes.landReader(msg)
+		if m.gitStashesActive() {
+			m.clampDocumentReader(&m.stashes.inspection.place, m.stashes.readerDocument())
+		}
 		return true, effect{}
 	default:
 		return false, effect{}

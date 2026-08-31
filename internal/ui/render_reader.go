@@ -112,7 +112,10 @@ func readerContent(model Model, rows Rect) ([]Line, ReaderLayout, int, int) {
 
 func renderReaderContentLine(index, width int, model *Model, content []Line, layout ReaderLayout, geometry ReaderGeometry, columns commitrow.Columns, now time.Time, highlight workspace.DiffHighlight) string {
 	if len(model.ReaderCommitRows) != 0 {
-		return renderCommitRow(model.ReaderCommitRows[index], columns, width, false, false, now)
+		return renderCommitRow(
+			model.ReaderCommitRows[index], columns, width,
+			index == model.ReaderCursor, model.Focus == navigation.FocusReader, now,
+		)
 	}
 	if model.ReaderDocument.Kind != ReaderDocumentNone {
 		wrapped, source, continuation := layout.RowWithSource(index)

@@ -7,24 +7,39 @@ import (
 	"github.com/josephembrey/reviewr/internal/ui"
 )
 
-func (state stashState) viewModel(geometry ui.Geometry, now time.Time) ui.Model {
+func (state stashState) viewModel(geometry ui.GitGeometry, now time.Time) ui.GitModel {
 	document := state.readerDocument()
-	return state.viewModelWithReader(geometry, now, document, document.HasContextFold())
+	return state.viewModelWithReader(geometry, now, document, document.HasContextFold(), nil)
 }
 
-func (state stashState) viewModelWithReader(geometry ui.Geometry, now time.Time, document ui.ReaderDocument, contextFoldable bool) ui.Model {
-	rows := state.navigatorRows(now)
-	return ui.Model{
-		Geometry: geometry, NavigatorTitle: state.navigatorTitle(len(rows)), NavigatorRows: rows,
-		NavigatorEmpty: state.navigatorEmpty(len(rows)), Selected: state.place.Selected, Top: state.place.Top,
-		Focus: state.place.Focus, ReaderTitle: state.readerTitle(), ReaderDocument: document,
+func (state stashState) viewModelWithReader(geometry ui.GitGeometry, now time.Time, document ui.ReaderDocument, contextFoldable bool, layout *ui.ReaderLayout) ui.GitModel {
+	stashRows := state.stashRows(now)
+	fileRows := changedFileNavigatorRows(state.inspection.files)
+	return ui.GitModel{
+		Geometry:              geometry,
+		Focus:                 state.focus,
+		RailTitle:             state.stashTitle(len(stashRows)),
+		RailRows:              stashRows,
+		RailEmpty:             state.stashEmpty(len(stashRows)),
+		RailSelected:          state.place.Selected,
+		RailTop:               state.place.Top,
+		FilesTitle:            fmt.Sprintf("files · %d", len(fileRows)),
+		FilesRows:             fileRows,
+		FilesEmpty:            state.readerEmpty(),
+		FilesSelected:         state.inspection.place.Selected,
+		FilesTop:              state.inspection.place.Top,
+		ReaderTitle:           state.readerTitle(),
+		ReaderDocument:        document,
+		ReaderLayout:          layout,
 		ReaderContextFoldable: contextFoldable,
-		ReaderEmpty:           state.readerEmpty(), ReaderOffset: state.place.ReaderOffset,
-		ReaderColumn: state.place.ReaderColumn, ReaderCursor: state.place.ReaderCursor,
+		ReaderEmpty:           state.readerEmpty(),
+		ReaderOffset:          state.inspection.place.ReaderOffset,
+		ReaderColumn:          state.inspection.place.ReaderColumn,
+		ReaderCursor:          state.inspection.place.ReaderCursor,
 	}
 }
 
-func (state stashState) navigatorRows(now time.Time) []ui.NavigatorRow {
+func (state stashState) stashRows(now time.Time) []ui.NavigatorRow {
 	rows := make([]ui.NavigatorRow, len(state.stashes))
 	for index, stash := range state.stashes {
 		prose := stash.Message
@@ -34,10 +49,7 @@ func (state stashState) navigatorRows(now time.Time) []ui.NavigatorRow {
 		if prose == "" {
 			prose = "(no message)"
 		}
-		additions, deletions := ui.FormatLineChanges(ui.LineChanges{
-			Additions: stash.Additions,
-			Deletions: stash.Deletions,
-		})
+		additions, deletions := ui.FormatLineChanges(ui.LineChanges{Additions: stash.Additions, Deletions: stash.Deletions})
 		suffix := []ui.Segment{{Text: fmt.Sprintf("  %df", stash.Files), Tone: ui.ToneQuiet}}
 		if additions != "" {
 			suffix = append(suffix, ui.Segment{Text: " " + additions, Tone: ui.ToneAdded})
@@ -56,7 +68,7 @@ func (state stashState) navigatorRows(now time.Time) []ui.NavigatorRow {
 	return rows
 }
 
-func (state stashState) navigatorEmpty(rowCount int) ui.Line {
+func (state stashState) stashEmpty(rowCount int) ui.Line {
 	empty := ui.Line{Text: "No stashes yet.", Tone: ui.ToneQuiet}
 	if state.listLoading && rowCount == 0 {
 		empty.Text = "Loading stashes…"
@@ -66,7 +78,7 @@ func (state stashState) navigatorEmpty(rowCount int) ui.Line {
 	return empty
 }
 
-func (state stashState) navigatorTitle(rowCount int) string {
+func (state stashState) stashTitle(rowCount int) string {
 	title := fmt.Sprintf("stashes · %d", rowCount)
 	if state.listError != nil && rowCount > 0 {
 		title += " · refresh failed"
@@ -75,20 +87,15 @@ func (state stashState) navigatorTitle(rowCount int) string {
 }
 
 func (state stashState) readerTitle() string {
-	title := "No stash selected"
+	title := "stash diff"
 	if stash, ok := state.selectedStash(); ok {
 		title = stash.Selector
-		if len(state.files) > 0 && state.fileSelected >= 0 && state.fileSelected < len(state.files) {
-			change := state.files[state.fileSelected]
-			path := change.Path
-			if change.PreviousPath != "" {
-				path = change.PreviousPath + " → " + change.Path
-			}
-			title = fmt.Sprintf("%s · %d/%d · %s", stash.Selector, state.fileSelected+1, len(state.files), path)
+		if file, selected := state.inspection.selectedFile(); selected {
+			title = fmt.Sprintf("%s › %d/%d · %s", stash.Selector, state.inspection.place.Selected+1, len(state.inspection.files), changedFileLabel(file))
 		}
 	}
-	if state.readerLoading {
-		title += " · loading…"
+	if state.inspection.readerLoading {
+		title += " · loading"
 	}
 	return title
 }
@@ -102,13 +109,13 @@ func (state stashState) readerEmpty() ui.Line {
 		empty = ui.Line{Text: "Stashes are unavailable: " + state.listError.Error(), Tone: ui.ToneError}
 	case len(state.stashes) == 0:
 		empty.Text = "No stashes yet."
-	case state.filesLoading:
+	case state.inspection.filesLoading:
 		empty.Text = "Loading files stored in this stash…"
-	case state.filesError != nil:
-		empty = ui.Line{Text: "Stash is no longer available: " + state.filesError.Error(), Tone: ui.ToneError}
-	case len(state.files) == 0:
+	case state.inspection.filesError != nil:
+		empty = ui.Line{Text: "Stash is no longer available: " + state.inspection.filesError.Error(), Tone: ui.ToneError}
+	case len(state.inspection.files) == 0:
 		empty.Text = "No files stored in this stash."
-	case state.readerLoading:
+	case state.inspection.readerLoading:
 		empty.Text = "Loading stash diff…"
 	}
 	return empty

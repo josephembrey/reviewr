@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -16,28 +17,27 @@ import (
 )
 
 type fakeSource struct {
-	root           string
-	files          []string
-	listErr        error
-	snapshot       repository.Snapshot
-	snapshots      int
-	snapshotScopes []string
-	contents       map[string]repository.File
-	diffs          map[string]repository.Diff
-	commits        []repository.Commit
-	commitErr      error
-	commitQueries  []repository.CommitQuery
-	summaries      map[string]repository.CommitSummary
-	summaryErrs    map[string]error
-	refSources     []repository.RefSource
-	refErr         error
-	refCommits     map[repository.RefSourceID][]repository.RefCommit
-	refCommitErrs  map[repository.RefSourceID]error
-	stashes        []repository.Stash
-	stashErr       error
-	stashFiles     map[string][]repository.ChangedFile
-	stashFileErrs  map[string]error
-	stashDocuments map[string]repository.ChangeDocument
+	root            string
+	files           []string
+	listErr         error
+	snapshot        repository.Snapshot
+	snapshots       int
+	snapshotScopes  []string
+	contents        map[string]repository.File
+	diffs           map[string]repository.Diff
+	commits         []repository.Commit
+	commitErr       error
+	commitQueries   []repository.CommitQuery
+	commitFiles     map[string][]repository.ChangedFile
+	commitFileErrs  map[string]error
+	commitDocuments map[string]repository.ChangeDocument
+	refSources      []repository.RefSource
+	refErr          error
+	stashes         []repository.Stash
+	stashErr        error
+	stashFiles      map[string][]repository.ChangedFile
+	stashFileErrs   map[string]error
+	stashDocuments  map[string]repository.ChangeDocument
 }
 
 func (s *fakeSource) Root() string { return s.root }
@@ -77,25 +77,22 @@ func (s *fakeSource) ListCommits(query repository.CommitQuery) ([]repository.Com
 	return append([]repository.Commit(nil), s.commits...), s.commitErr
 }
 
-func (s *fakeSource) ReadCommit(oid string) (repository.CommitSummary, error) {
-	if err := s.summaryErrs[oid]; err != nil {
-		return repository.CommitSummary{}, err
-	}
-	if summary, ok := s.summaries[oid]; ok {
-		return summary, nil
-	}
-	return repository.CommitSummary{}, errors.New("missing commit")
-}
-
 func (s *fakeSource) ListRefSources() ([]repository.RefSource, error) {
 	return append([]repository.RefSource(nil), s.refSources...), s.refErr
 }
 
-func (s *fakeSource) ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error) {
-	if err := s.refCommitErrs[source.ID]; err != nil {
+func (s *fakeSource) ListCommitFiles(oid string) ([]repository.ChangedFile, error) {
+	if err := s.commitFileErrs[oid]; err != nil {
 		return nil, err
 	}
-	return append([]repository.RefCommit(nil), s.refCommits[source.ID]...), nil
+	return append([]repository.ChangedFile(nil), s.commitFiles[oid]...), nil
+}
+
+func (s *fakeSource) ReadCommitFile(oid string, file repository.ChangedFile) repository.ChangeDocument {
+	if document, ok := s.commitDocuments[oid+"\x00"+file.Identity()]; ok {
+		return document
+	}
+	return repository.ChangeDocument{Change: file, Patch: repository.File{Path: file.Path, Kind: repository.FileUnreadable, Err: errors.New("missing commit file")}}
 }
 
 func (s *fakeSource) ListStashes() ([]repository.Stash, error) {
@@ -143,18 +140,23 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 		t.Fatalf("Init() message = %T, want two-command warmup batch", initial())
 	}
 	var loaded snapshotLoadedMsg
-	var historyLoaded bool
+	var historySources historySourcesLoadedMsg
 	for _, command := range batch {
 		switch message := command().(type) {
 		case snapshotLoadedMsg:
 			loaded = message
-		case commitsLoadedMsg:
-			historyLoaded = true
-			next, _ := model.Update(message)
-			model = next.(Model)
+		case historySourcesLoadedMsg:
+			historySources = message
 		}
 	}
-	if !historyLoaded || !model.history.loaded || model.history.listLoading {
+	next, historyCommand := model.Update(historySources)
+	model = next.(Model)
+	if historyCommand == nil {
+		t.Fatal("source warmup did not request the initial history")
+	}
+	next, _ = model.Update(historyCommand())
+	model = next.(Model)
+	if !model.history.sourcesLoaded || !model.history.loaded || model.history.listLoading {
 		t.Fatalf("initial history was not warmed: %+v", model.history)
 	}
 	next, contentCommand := model.Update(loaded)
@@ -195,16 +197,17 @@ func TestRootFileLoadSelectAndRefreshFlow(t *testing.T) {
 func TestBrowserDestinationLifecycleAndActiveRefresh(t *testing.T) {
 	t.Parallel()
 	model := newTestModel(&fakeSource{})
-	if model.active != workspace.Files || !model.files.listLoading || !model.history.listLoading {
+	if model.active != workspace.Files || !model.files.listLoading || !model.history.sourceLoading {
 		t.Fatalf("initial workspace state = %+v", model)
 	}
 	filesGeneration := model.files.listGeneration
 	gitLoad := model.apply(Action{Kind: ShowGit})
-	if model.active != workspace.Git || gitLoad.kind != effectNone || !model.history.listLoading {
+	if model.active != workspace.Git || gitLoad.kind != effectNone || !model.history.sourceLoading {
 		t.Fatalf("Git activation started a duplicate warmup: active %v effect %+v history %+v", model.active, gitLoad, model.history)
 	}
-	gitGeneration := model.history.listGeneration
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{generation: gitGeneration}, 10)
+	gitGeneration := model.history.sourceGeneration
+	model.history, _ = model.history.landSources(historySourcesLoadedMsg{generation: gitGeneration}, 10)
+	model.history = model.history.landCommits(commitsLoadedMsg{generation: model.history.listGeneration}, 10)
 	if !model.history.loaded || model.history.listLoading {
 		t.Fatalf("empty Git history did not become loaded: %+v", model.history)
 	}
@@ -215,12 +218,12 @@ func TestBrowserDestinationLifecycleAndActiveRefresh(t *testing.T) {
 		t.Fatalf("return to loaded Git reloaded: %+v", effect)
 	}
 	gitRefresh := model.apply(Action{Kind: Reload})
-	if gitRefresh.kind != effectLoadCommits || model.history.listGeneration <= gitGeneration || model.files.listGeneration != filesGeneration {
+	if gitRefresh.kind != effectLoadHistorySources || model.history.sourceGeneration <= gitGeneration || model.files.listGeneration != filesGeneration {
 		t.Fatalf("Git refresh crossed workspace generations: %+v", model)
 	}
 	model.apply(Action{Kind: ShowFiles})
 	filesRefresh := model.apply(Action{Kind: Reload})
-	if filesRefresh.kind != effectLoadSnapshot || model.files.listGeneration <= filesGeneration || model.history.listGeneration != gitRefresh.generation {
+	if filesRefresh.kind != effectLoadSnapshot || model.files.listGeneration <= filesGeneration || model.history.sourceGeneration != gitRefresh.generation {
 		t.Fatalf("Files refresh crossed workspace generations: %+v", model)
 	}
 }
@@ -248,7 +251,8 @@ func TestDirectDestinationSelectionChangesHeaderAndBodyInSameFrame(t *testing.T)
 		t.Fatalf("Git selection = active %v command=%v", model.active, command != nil)
 	}
 	gitFrame := ansi.Strip(model.View().Content)
-	if !strings.HasPrefix(gitFrame, "[files | g git | n notes]") || !strings.Contains(gitFrame, "\ncommits · 0") || strings.Contains(gitFrame, "Navigator") {
+	if !strings.HasPrefix(gitFrame, "[files | g git | n notes]") || !strings.Contains(gitFrame, "history · 0") ||
+		!strings.Contains(gitFrame, "sources · 0") || strings.Contains(gitFrame, "Navigator") {
 		t.Fatalf("Git frame = %q", gitFrame)
 	}
 }
@@ -594,18 +598,17 @@ func TestBrowserLocalHeaderControlsCycleWithoutCrossingWorkspaces(t *testing.T) 
 		t.Fatalf("Git activation = active %v command=%v", model.active, command != nil)
 	}
 	press('1')
-	if model.controls.Git != workspace.GitRefs {
+	if model.controls.Git != workspace.GitStashes {
 		t.Fatalf("Git 1 = %+v", model.controls)
 	}
 	press('2')
 	if model.controls.Traversal != workspace.GitGraph {
-		t.Fatalf("Git Refs exposed a tertiary toggle: %+v", model.controls)
+		t.Fatalf("Git Stashes exposed a tertiary toggle: %+v", model.controls)
 	}
 	press('1')
-	press('1')
 	press('2')
-	if model.controls.Git != workspace.GitLog || model.controls.Traversal != workspace.GitFirstParent {
-		t.Fatalf("Git Log controls = %+v", model.controls)
+	if model.controls.Git != workspace.GitHistory || model.controls.Traversal != workspace.GitFirstParent {
+		t.Fatalf("Git History controls = %+v", model.controls)
 	}
 	comparison := model.controls.Comparison
 	press('3')
@@ -698,156 +701,64 @@ func TestHistoryLatestWinsAndReconcilesByFullOID(t *testing.T) {
 	t.Parallel()
 	const oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	model := newTestModel(&fakeSource{})
-	model.geometry = ui.Calculate(80, 20)
-	first := model.apply(Action{Kind: ShowGit})
-	second := model.apply(Action{Kind: Reload})
-	stale, pending := model.history.landCommits(commitsLoadedMsg{
-		generation: first.generation,
-		commits:    []repository.Commit{{OID: oidA, ShortOID: "aaaaaaa", Subject: "stale"}},
-	}, model.geometry.NavigatorRows.Height)
-	if len(stale.commits) != 0 || pending.kind != effectNone || !stale.listLoading {
-		t.Fatalf("stale history landed: %+v / %+v", stale, pending)
+	state := newHistoryState()
+	state.listGeneration = 2
+	state.listLoading = true
+	stale := state.landCommits(commitsLoadedMsg{generation: 1, commits: []repository.Commit{{OID: oidA}}}, 5)
+	if len(stale.commits) != 0 || !stale.listLoading {
+		t.Fatalf("stale history landed: %+v", stale)
 	}
-
-	model.history, pending = model.history.landCommits(commitsLoadedMsg{
-		generation: second.generation,
-		commits: []repository.Commit{
-			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first"},
-			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidA || pending.identity != oidA {
-		t.Fatalf("history selection/effect = %q / %+v", selected, pending)
-	}
-	loadA := pending
-	model.history.place.SelectIndex(1, model.geometry.NavigatorRows.Height)
-	loadB := model.history.requestSelectedSummary()
-	model.history = model.history.landSummary(commitLoadedMsg{
-		generation: loadA.generation,
-		oid:        oidA,
-		summary:    repository.CommitSummary{OID: oidA, Message: "wrong"},
-	}, model.geometry.ReaderRows.Height)
-	if model.history.summary.OID != "" || model.history.summaryOID != oidB {
-		t.Fatalf("stale summary landed: %+v", model.history)
-	}
-	model.history = model.history.landSummary(commitLoadedMsg{
-		generation: loadB.generation,
-		oid:        oidB,
-		summary:    repository.CommitSummary{OID: oidB, Message: "right"},
-	}, model.geometry.ReaderRows.Height)
-	if model.history.summary.Message != "right" || model.history.summaryLoading {
-		t.Fatalf("current summary did not land: %+v", model.history)
-	}
-
-	model.history.place.Top = 1
-	model.history.place.Focus = navigation.FocusReader
-	model.history.place.ReaderOffset = 3
-	refresh := model.history.reload(workspace.GitGraph, "")
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{
-		generation: refresh.generation,
-		commits: []repository.Commit{
-			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second updated"},
-			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB || model.history.place.Focus != navigation.FocusReader || model.history.place.ReaderOffset != 3 {
-		t.Fatalf("history refresh reset place: selected=%q state=%+v", selected, model.history.place)
+	state = state.landCommits(commitsLoadedMsg{generation: 2, commits: []repository.Commit{{OID: oidA}, {OID: oidB}}}, 5)
+	state.timelinePlace.SelectIndex(1, 5)
+	state.focus = workspace.GitTimeline
+	state.timelinePlace.Top = 1
+	state.listGeneration++
+	state = state.landCommits(commitsLoadedMsg{generation: state.listGeneration, commits: []repository.Commit{{OID: oidB}, {OID: oidA}}}, 5)
+	if selected, _ := state.timelinePlace.SelectedIdentity(); selected != oidB || state.timelinePlace.Top != 0 || state.focus != workspace.GitTimeline {
+		t.Fatalf("history continuity = selected %q place %+v focus %v", selected, state.timelinePlace, state.focus)
 	}
 }
 
 func TestHistoryTraversalSwitchesUniversesAndKeepsFullOID(t *testing.T) {
 	t.Parallel()
-	const (
-		oidHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		oidSide = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-		oidRoot = "cccccccccccccccccccccccccccccccccccccccc"
-	)
-	model := newTestModel(&fakeSource{})
-	model.active = workspace.Git
-	model.geometry = ui.Calculate(80, 20)
-	model.history.listLoading = true
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{
-		generation: model.history.listGeneration,
-		query:      repository.CommitQuery{Traversal: repository.CommitGraph},
-		commits: []repository.Commit{
-			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
-			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
-			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidHead {
-		t.Fatalf("initial graph selection = %q, want HEAD", selected)
+	const oidHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const oidSide = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	state := newHistoryState()
+	all := repository.AllRefsSource()
+	state.sources = []repository.RefSource{all}
+	state.selectedSource = all.ID.Key()
+	state.timelinePlace = navigation.State{Items: []string{oidSide}, Selected: 0}
+	query := state.commitQuery(workspace.GitFirstParent)
+	if query.Traversal != repository.CommitFirstParent || query.StartOID != oidSide || query.SourceOID != "" {
+		t.Fatalf("all-refs first-parent query = %+v", query)
 	}
-	model.history.place.SelectIndex(0, model.geometry.NavigatorRows.Height)
-
-	firstParent := model.apply(Action{Kind: ToggleTertiary})
-	if model.controls.Traversal != workspace.GitFirstParent || firstParent.query != (repository.CommitQuery{Traversal: repository.CommitFirstParent, StartOID: oidSide}) {
-		t.Fatalf("first-parent switch = controls %+v effect %+v", model.controls, firstParent)
-	}
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{
-		generation: firstParent.generation,
-		query:      firstParent.query,
-		commits: []repository.Commit{
-			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
-			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
-		t.Fatalf("first-parent selection = %q", selected)
-	}
-
-	refresh := model.apply(Action{Kind: Reload})
-	if refresh.query.StartOID != oidSide || refresh.query.Traversal != repository.CommitFirstParent {
-		t.Fatalf("first-parent refresh query = %+v", refresh.query)
-	}
-	graph := model.apply(Action{Kind: ToggleTertiary})
-	if graph.query != (repository.CommitQuery{Traversal: repository.CommitGraph}) {
-		t.Fatalf("graph switch query = %+v", graph.query)
-	}
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{
-		generation: graph.generation,
-		query:      graph.query,
-		commits: []repository.Commit{
-			{OID: oidHead, ShortOID: "aaaaaaa", Subject: "head", Parents: []string{oidRoot}, Head: true},
-			{OID: oidSide, ShortOID: "bbbbbbb", Subject: "side", Parents: []string{oidRoot}},
-			{OID: oidRoot, ShortOID: "ccccccc", Subject: "root"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidSide {
-		t.Fatalf("graph return selection = %q", selected)
+	branch := testHistorySource(repository.RefSourceLocalBranch, "topic", oidHead)
+	state.sources = append(state.sources, branch)
+	state.selectedSource = branch.ID.Key()
+	query = state.commitQuery(workspace.GitGraph)
+	if query.Traversal != repository.CommitGraph || query.SourceOID != oidHead {
+		t.Fatalf("filtered graph query = %+v", query)
 	}
 }
 
 func TestHistoryMouseRowsUseSharedNavigatorGeometry(t *testing.T) {
 	t.Parallel()
-	const (
-		oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	)
+	const oidA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const oidB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	model := newTestModel(&fakeSource{})
 	model.active = workspace.Git
-	model.geometry = ui.Calculate(80, 20)
-	model.history, _ = model.history.landCommits(commitsLoadedMsg{
-		generation: model.history.listGeneration,
-		query:      repository.CommitQuery{},
-		commits: []repository.Commit{
-			{OID: oidA, ShortOID: "aaaaaaa", Subject: "first", Head: true},
-			{OID: oidB, ShortOID: "bbbbbbb", Subject: "second"},
-		},
-	}, model.geometry.NavigatorRows.Height)
-	click := tea.MouseClickMsg(tea.Mouse{
-		X:      model.geometry.NavigatorRows.X,
-		Y:      model.geometry.NavigatorRows.Y + 1,
-		Button: tea.MouseLeft,
-	})
+	model.apply(Action{Kind: Resize, Width: 100, Height: 18})
+	model.history.commits = []repository.Commit{{OID: oidA}, {OID: oidB}}
+	model.history.rows = buildCommitRows(model.history.commits, workspace.GitGraph)
+	model.history.timelinePlace = navigation.State{Items: []string{oidA, oidB}}
+	click := tea.MouseClickMsg(tea.Mouse{X: model.gitGeometry.ContentRows.X, Y: model.gitGeometry.ContentRows.Y + 1, Button: tea.MouseLeft})
 	next, command := model.Update(click)
 	model = next.(Model)
-	if command == nil {
-		t.Fatal("commit-row click did not request selected summary")
+	if command != nil {
+		t.Fatal("timeline selection unexpectedly started async summary work")
 	}
-	if selected, _ := model.history.place.SelectedIdentity(); selected != oidB {
-		t.Fatalf("commit-row click selected %q, want %q", selected, oidB)
+	if selected, _ := model.history.timelinePlace.SelectedIdentity(); selected != oidB || model.history.focus != workspace.GitTimeline {
+		t.Fatalf("timeline click = selected %q focus %v", selected, model.history.focus)
 	}
 }
 
@@ -856,60 +767,46 @@ func TestWorkspacesKeepIndependentPlace(t *testing.T) {
 	model := newTestModel(&fakeSource{})
 	model.geometry = ui.Calculate(80, 12)
 	model.files.place = navigation.State{Items: []string{"a", "b", "c"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 4}
-	model.history.place = navigation.State{Items: []string{"oid-1", "oid-2"}, Selected: 0, Focus: navigation.FocusNavigator, ReaderOffset: 2}
+	model.history.timelinePlace = navigation.State{Items: []string{"oid-1", "oid-2"}, Selected: 0}
+	model.history.focus = workspace.GitTimeline
 	model.history.loaded = true
 
 	model.apply(Action{Kind: ShowGit})
 	model.apply(Action{Kind: SelectNext})
-	model.apply(Action{Kind: FocusReader})
+	model.apply(Action{Kind: FocusGitRegion, GitFocus: workspace.GitTimeline})
 	model.apply(Action{Kind: ShowFiles})
 	if model.files.place.Selected != 1 || model.files.place.Top != 1 || model.files.place.Focus != navigation.FocusReader || model.files.place.ReaderOffset != 4 {
 		t.Fatalf("Git input changed Files place: %+v", model.files.place)
 	}
-	if model.history.place.Selected != 1 || model.history.place.Focus != navigation.FocusReader {
-		t.Fatalf("Git place did not retain user input: %+v", model.history.place)
+	if model.history.timelinePlace.Selected != 1 || model.history.focus != workspace.GitTimeline {
+		t.Fatalf("Git place did not retain user input: %+v", model.history.timelinePlace)
 	}
 }
 
 func TestHistoryPresentationCoversLoadingEmptyAndErrors(t *testing.T) {
 	t.Parallel()
-	geometry := ui.Calculate(80, 20)
+	geometry := ui.CalculateGitGeometry(ui.Calculate(80, 20), ui.GitHistoryLayout, ui.GitWidths{})
 	state := newHistoryState()
+	state.sourceLoading = false
+	state.sourcesLoaded = true
+	state.sources = []repository.RefSource{repository.AllRefsSource()}
+	state.selectedSource = repository.AllRefsSource().ID.Key()
+	state.rebuildSourceRows()
 	state.listLoading = true
-	view := state.viewModel(geometry)
-	if view.NavigatorEmpty.Text != "Loading commits…" {
-		t.Fatalf("loading presentation = %+v", view.NavigatorEmpty)
+	view := state.viewModel(geometry, time.Unix(2_000_000_000, 0))
+	if view.TimelineEmpty.Text != "Loading history…" {
+		t.Fatalf("loading presentation = %+v", view.TimelineEmpty)
 	}
 	state.listLoading = false
-	view = state.viewModel(geometry)
-	if view.NavigatorEmpty.Text != "No commits" || view.ReaderEmpty.Text != "Select a commit to inspect its summary." {
-		t.Fatalf("empty presentation = %+v / %+v", view.NavigatorEmpty, view.ReaderEmpty)
-	}
 	state.listError = errors.New("broken\x1b[31m")
-	view = state.viewModel(geometry)
-	if view.NavigatorEmpty.Tone != ui.ToneError || !strings.Contains(view.NavigatorEmpty.Text, "broken") {
-		t.Fatalf("error presentation = %+v", view.NavigatorEmpty)
+	view = state.viewModel(geometry, time.Unix(2_000_000_000, 0))
+	if view.TimelineEmpty.Tone != ui.ToneError || !strings.Contains(view.TimelineEmpty.Text, "broken") {
+		t.Fatalf("error presentation = %+v", view.TimelineEmpty)
 	}
-	state.listError = nil
-	state.summary = repository.CommitSummary{
-		OID:         strings.Repeat("a", 40),
-		AuthorName:  "Author",
-		AuthorEmail: "author@example.invalid",
-		AuthoredAt:  "2026-08-29T12:00:00Z",
-		Message:     "subject\n\nbody",
-		Stat:        " file.go | 2 ++",
-	}
-	lines := commitSummaryLines(state.summary)
-	joined := make([]string, len(lines))
-	for index, line := range lines {
-		joined[index] = line.Text
-	}
-	text := strings.Join(joined, "\n")
-	for _, want := range []string{"commit " + state.summary.OID, "Author: Author <author@example.invalid>", "Date:", "subject", "body", "file.go"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("commit summary %q lacks %q", text, want)
-		}
-	}
+}
+
+func testHistorySource(kind repository.RefSourceKind, name, oid string) repository.RefSource {
+	return repository.RefSource{ID: repository.RefSourceID{Kind: kind, Name: name}, Label: name, OID: oid, Revision: oid}
 }
 
 func TestFileLatestGenerationAndRemovalContinuity(t *testing.T) {

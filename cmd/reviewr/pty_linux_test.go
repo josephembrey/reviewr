@@ -190,7 +190,7 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	// recovers the same reviewed comparison. The narrow frame keeps the badge.
 	first.resetOutput()
 	first.write(t, "g")
-	first.waitFor(t, "commits")
+	first.waitFor(t, "history")
 	first.write(t, "xRX")
 	first.resetOutput()
 	first.write(t, "n")
@@ -201,7 +201,7 @@ func TestPTYReviewLedgerReconciliation(t *testing.T) {
 	first.waitFor(t, "files")
 	first.resetOutput()
 	first.write(t, "g")
-	first.waitFor(t, "commits")
+	first.waitFor(t, "history")
 	first.resetOutput()
 	first.write(t, "\x1b")
 	first.waitFor(t, "[x]")

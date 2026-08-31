@@ -110,52 +110,22 @@ func TestRefSourcesCoverWorktreesBranchesRemotesTagsPackedRefsAndSameTips(t *tes
 	}
 
 	branch := sources[3]
-	commits, err := client.ListRefCommits(root, branch)
+	commits, err := client.ListCommits(root, HistoryQuery{SourceOID: branch.OID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(commits) != 1 || commits[0].OID != rootOID || commits[0].Subject != "root" {
-		t.Fatalf("branch preview = %#v", commits)
+		t.Fatalf("branch history = %#v", commits)
 	}
-	if !slices.ContainsFunc(commits[0].Decorations, func(decoration RefDecoration) bool {
-		return decoration.Kind == RefDecorationTag && decoration.Label == "v1"
+	if !slices.ContainsFunc(commits[0].Refs, func(reference CommitRef) bool {
+		return reference.Kind == TagRef && reference.Name == "v1"
 	}) {
-		t.Fatalf("branch preview decorations = %#v", commits[0].Decorations)
+		t.Fatalf("branch history decorations = %#v", commits[0].Refs)
 	}
 
-	all, err := client.ListRefCommits(root, sources[0])
+	all, err := client.ListCommits(root, HistoryQuery{})
 	if err != nil || len(all) != 2 || all[0].OID != tipOID {
-		t.Fatalf("All refs preview = (%#v, %v)", all, err)
-	}
-}
-
-func TestRefPreviewCarriesAuthoritativeMergeFact(t *testing.T) {
-	root := initGitTestRepository(t)
-	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "root")
-	mainBranch := strings.TrimSpace(runGitTest(t, root, "branch", "--show-current"))
-	runGitTest(t, root, "checkout", "-q", "-b", "side")
-	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "side")
-	runGitTest(t, root, "checkout", "-q", mainBranch)
-	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", "main")
-	runGitTest(t, root, "merge", "-q", "--no-ff", "side", "-m", "merge")
-
-	client := New()
-	sources, err := client.ListRefSources(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current := slices.IndexFunc(sources, func(source RefSource) bool {
-		return source.Kind() == RefSourceCurrentWorktree
-	})
-	if current < 0 {
-		t.Fatalf("current worktree absent from %#v", sources)
-	}
-	commits, err := client.ListRefCommits(root, sources[current])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(commits) == 0 || commits[0].Subject != "merge" || !commits[0].Merge {
-		t.Fatalf("merge preview row = %#v", commits)
+		t.Fatalf("All refs history = (%#v, %v)", all, err)
 	}
 }
 
@@ -170,11 +140,9 @@ func TestRefSourcesHandleDetachedUnbornAndRemovedWorktreesCalmly(t *testing.T) {
 		if len(sources) != 2 || sources[0].Kind() != RefSourceAll || sources[1].Kind() != RefSourceCurrentWorktree || sources[1].OID != "" {
 			t.Fatalf("unborn sources = %#v", sources)
 		}
-		for _, source := range sources {
-			commits, previewErr := client.ListRefCommits(root, source)
-			if previewErr != nil || len(commits) != 0 {
-				t.Fatalf("unborn preview for %+v = (%#v, %v)", source, commits, previewErr)
-			}
+		commits, historyErr := client.ListCommits(root, HistoryQuery{})
+		if historyErr != nil || len(commits) != 0 {
+			t.Fatalf("unborn history = (%#v, %v)", commits, historyErr)
 		}
 	})
 

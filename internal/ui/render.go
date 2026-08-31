@@ -17,6 +17,8 @@ func Render(model Model) string {
 	if g.Body.Height > 0 {
 		if model.Workspace == workspace.Notes {
 			blocks = append(blocks, renderNotes(model))
+		} else if model.Workspace == workspace.Git && model.Git != nil {
+			blocks = append(blocks, renderGit(model))
 		} else {
 			navigator := renderNavigator(model)
 			divider := renderDivider(g.Divider, model.DividerDragging)
@@ -64,6 +66,18 @@ func renderDivider(rect Rect, dragging bool) string {
 		style = headerStyle
 	}
 	line := fit(style.Render("│"), rect.Width)
+	return strings.Repeat(line+"\n", rect.Height-1) + line
+}
+
+func renderHorizontalDivider(rect Rect, dragging bool) string {
+	if rect.Width <= 0 || rect.Height <= 0 {
+		return ""
+	}
+	style := chromeStyle
+	if dragging {
+		style = headerStyle
+	}
+	line := fit(style.Render(strings.Repeat("─", rect.Width)), rect.Width)
 	return strings.Repeat(line+"\n", rect.Height-1) + line
 }
 

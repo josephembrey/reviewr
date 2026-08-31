@@ -11,14 +11,15 @@ import (
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-// readerDocument is the narrow source boundary for Files, Stashes, and review
-// comparisons. build returns the one structured app-to-UI representation.
+// readerDocument is the narrow source boundary for Files, immutable Git
+// changes, and review comparisons. build returns the shared UI document.
 type readerDocument struct {
-	File   repository.File
-	Entry  repository.Entry
-	Diff   repository.Diff
-	Change *repository.ChangeDocument
-	Mode   workspace.ReaderMode
+	File        repository.File
+	Entry       repository.Entry
+	Diff        repository.Diff
+	Change      *repository.ChangeDocument
+	ChangeLabel string
+	Mode        workspace.ReaderMode
 }
 
 func (document readerDocument) build() ui.ReaderDocument {
@@ -26,7 +27,7 @@ func (document readerDocument) build() ui.ReaderDocument {
 		if document.Mode == workspace.FileReader {
 			return changedFileDocument(*document.Change)
 		}
-		return changeDiffDocument(*document.Change)
+		return changeDiffDocument(*document.Change, document.ChangeLabel)
 	}
 	if document.Mode == workspace.DiffReader {
 		return diffReaderDocument(document.Diff)
@@ -74,7 +75,10 @@ func changedFileDocument(document repository.ChangeDocument) ui.ReaderDocument {
 	return fileReaderDocument(document.New, repository.Entry{})
 }
 
-func changeDiffDocument(document repository.ChangeDocument) ui.ReaderDocument {
+func changeDiffDocument(document repository.ChangeDocument, label string) ui.ReaderDocument {
+	if label == "" {
+		label = "Stored"
+	}
 	result := ui.ReaderDocument{Kind: ui.ReaderDiffDocument}
 	if document.Change.Binary || document.Old.Kind == repository.FileBinary || document.New.Kind == repository.FileBinary {
 		result.Rows = noticeRows("Binary file changed; plain diff disabled.", ui.ToneQuiet)
@@ -84,7 +88,7 @@ func changeDiffDocument(document repository.ChangeDocument) ui.ReaderDocument {
 	switch document.Patch.Kind {
 	case repository.FileTooLarge:
 		result.Rows = append(rows, noticeRows(
-			fmt.Sprintf("Stash diff is too large (%d bytes; limit %d bytes).", document.Patch.Size, repository.DefaultMaxFileBytes),
+			fmt.Sprintf("%s diff is too large (%d bytes; limit %d bytes).", label, document.Patch.Size, repository.DefaultMaxFileBytes),
 			ui.ToneError,
 		)...)
 		return result
@@ -93,7 +97,7 @@ func changeDiffDocument(document repository.ChangeDocument) ui.ReaderDocument {
 		if document.Patch.Err != nil {
 			detail = ": " + document.Patch.Err.Error()
 		}
-		result.Rows = append(rows, noticeRows("Stash diff is unavailable"+detail, ui.ToneError)...)
+		result.Rows = append(rows, noticeRows(label+" diff is unavailable"+detail, ui.ToneError)...)
 		return result
 	}
 	if document.Old.Kind == repository.FileTooLarge || document.New.Kind == repository.FileTooLarge {

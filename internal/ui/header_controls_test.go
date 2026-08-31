@@ -26,13 +26,8 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	}
 
 	git := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Changes: changes}))
-	if !strings.HasPrefix(git, "[files | g git | n notes] [log] [graph]") {
-		t.Fatalf("Git Log header = %q", git)
-	}
-	controls.Git = workspace.GitRefs
-	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(git, "[files | g git | n notes] [refs]") || strings.Contains(git, "[graph]") || strings.Contains(git, "changes") {
-		t.Fatalf("Git Refs header = %q", git)
+	if !strings.HasPrefix(git, "[files | g git | n notes] [history] [graph]") {
+		t.Fatalf("Git History header = %q", git)
 	}
 	controls.Git = workspace.GitStashes
 	git = ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Git, Controls: controls, Changes: changes}))
@@ -41,7 +36,7 @@ func TestHeaderControlsFollowActiveWorkspace(t *testing.T) {
 	}
 
 	notes := ansi.Strip(Render(Model{Geometry: geometry, Workspace: workspace.Notes, Controls: controls, Changes: changes}))
-	if !strings.HasPrefix(notes, workspaceSwitcher) || strings.Contains(notes, "[refs]") || strings.Contains(notes, "[changed]") {
+	if !strings.HasPrefix(notes, workspaceSwitcher) || strings.Contains(notes, "[history]") || strings.Contains(notes, "[changed]") {
 		t.Fatalf("Notes header = %q", notes)
 	}
 }
@@ -168,12 +163,12 @@ func TestHeaderControlHitsUsePaintedLayout(t *testing.T) {
 			t.Fatalf("Files header x=%d hit %v, want %v", control.rect.X, got, control.hit)
 		}
 	}
-	controls.Git = workspace.GitRefs
+	controls.Git = workspace.GitStashes
 	if got := len(layoutHeaderControls(geometry, workspace.Git, controls)); got != 1 {
-		t.Fatalf("Git Refs controls = %d, want 1", got)
+		t.Fatalf("Git Stashes controls = %d, want 1", got)
 	}
 	if got := geometry.HitTest(geometry.HeaderSwitcher.Width+11, 0, workspace.Git, controls, 0, 0, 0, 0).Kind; got != HitNone {
-		t.Fatalf("Git Refs claimed absent tertiary control: %v", got)
+		t.Fatalf("Git Stashes claimed absent tertiary control: %v", got)
 	}
 }
 

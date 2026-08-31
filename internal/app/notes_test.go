@@ -111,15 +111,15 @@ func TestNotesPreservesIndependentGitSubstatesAndReturnsFiles(t *testing.T) {
 	model.active = workspace.Git
 	model.controls.Git = workspace.GitStashes
 	model.controls.Traversal = workspace.GitFirstParent
-	model.history.place = navigation.State{Items: []string{"log-a", "log-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 4}
-	model.refs.place = navigation.State{Items: []string{"ref-a", "ref-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 5}
-	model.stashes.place = navigation.State{Items: []string{"stash-a", "stash-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 6, ReaderColumn: 8}
-	model.stashes.readerPlaces["stash-b"] = stashReaderPlace{fileIdentity: "file-b", readerOffset: 7}
+	model.history.timelinePlace = navigation.State{Items: []string{"log-a", "log-b"}, Selected: 1, Top: 1, ReaderOffset: 4}
+	model.history.focus = workspace.GitTimeline
+	model.stashes.place = navigation.State{Items: []string{"stash-a", "stash-b"}, Selected: 1, Top: 1}
+	model.stashes.inspection.place = navigation.State{ReaderOffset: 6, ReaderColumn: 8}
+	model.stashes.inspection.readerPlaces["stash-b"] = changeReaderPlace{fileIdentity: "file-b", readerOffset: 7}
 	model.layout.customized = true
 	model.layout.navigatorWidth = 31
 
 	beforeHistory := model.history
-	beforeRefs := model.refs
 	beforeStashes := model.stashes
 	beforeControls := model.controls
 	beforeLayout := model.layout
@@ -130,10 +130,10 @@ func TestNotesPreservesIndependentGitSubstatesAndReturnsFiles(t *testing.T) {
 	if command != nil || model.active != workspace.Files {
 		t.Fatalf("clean close = active %v command=%v", model.active, command != nil)
 	}
-	if !reflect.DeepEqual(model.history, beforeHistory) || !reflect.DeepEqual(model.refs, beforeRefs) ||
+	if !reflect.DeepEqual(model.history, beforeHistory) ||
 		!reflect.DeepEqual(model.stashes, beforeStashes) || model.controls != beforeControls || model.layout != beforeLayout {
-		t.Fatalf("Git substates changed behind Notes: history=%+v refs=%+v stashes=%+v controls=%+v layout=%+v",
-			model.history, model.refs, model.stashes, model.controls, model.layout)
+		t.Fatalf("Git substates changed behind Notes: history=%+v stashes=%+v controls=%+v layout=%+v",
+			model.history, model.stashes, model.controls, model.layout)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestNotesPrintablePasteAndBackgroundRefreshIsolation(t *testing.T) {
 		snapshot:   repository.NewSnapshot([]repository.Entry{{Path: "world.go"}}),
 	})
 	model = next.(Model)
-	next, _ = model.Update(refSourcesLoadedMsg{
-		generation: model.refs.sourceGeneration,
+	next, _ = model.Update(historySourcesLoadedMsg{
+		generation: model.history.sourceGeneration,
 		sources:    []repository.RefSource{repository.AllRefsSource()},
 	})
 	model = next.(Model)

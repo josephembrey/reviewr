@@ -76,14 +76,16 @@ func TestSettingsModalPrecedencePreservesAllPlaceState(t *testing.T) {
 	model.apply(Action{Kind: Resize, Width: 80, Height: 20})
 	model.active = workspace.Notes
 	model.files.place = navigation.State{Items: []string{"file-a", "file-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 4, ReaderCursor: 5}
-	model.history.place = navigation.State{Items: []string{"commit-a", "commit-b"}, Selected: 1, Top: 1, Focus: navigation.FocusReader, ReaderOffset: 3}
-	model.refs.place = navigation.State{Items: []string{"all", "branch"}, Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 2}
+	model.history.timelinePlace = navigation.State{Items: []string{"commit-a", "commit-b"}, Selected: 1, Top: 1, ReaderOffset: 3}
+	model.history.sourcePlace = navigation.State{Items: []string{"all", "branch"}, Selected: 1, ReaderOffset: 2}
+	model.history.focus = workspace.GitTimeline
 	model.stashes.place = navigation.State{Items: []string{"stash-a", "stash-b"}, Selected: 1, Focus: navigation.FocusReader, ReaderOffset: 1}
 	model.note.current().editor.Load("notes stay put")
 
 	filesPlace := model.files.place
-	historyPlace := model.history.place
-	refsPlace := model.refs.place
+	historyPlace := model.history.timelinePlace
+	sourcePlace := model.history.sourcePlace
+	historyFocus := model.history.focus
 	stashesPlace := model.stashes.place
 	notesPlace := model.note.current().editor.Presentation()
 
@@ -108,12 +110,13 @@ func TestSettingsModalPrecedencePreservesAllPlaceState(t *testing.T) {
 	}
 	if model.active != workspace.Notes ||
 		!reflect.DeepEqual(model.files.place, filesPlace) ||
-		!reflect.DeepEqual(model.history.place, historyPlace) ||
-		!reflect.DeepEqual(model.refs.place, refsPlace) ||
+		!reflect.DeepEqual(model.history.timelinePlace, historyPlace) ||
+		!reflect.DeepEqual(model.history.sourcePlace, sourcePlace) ||
+		model.history.focus != historyFocus ||
 		!reflect.DeepEqual(model.stashes.place, stashesPlace) ||
 		!reflect.DeepEqual(model.note.current().editor.Presentation(), notesPlace) {
-		t.Fatalf("Settings input disturbed Continuity: active=%v files=%+v history=%+v refs=%+v stashes=%+v notes=%+v",
-			model.active, model.files.place, model.history.place, model.refs.place, model.stashes.place, model.note.current().editor.Presentation())
+		t.Fatalf("Settings input disturbed Continuity: active=%v files=%+v history=%+v sources=%+v stashes=%+v notes=%+v",
+			model.active, model.files.place, model.history.timelinePlace, model.history.sourcePlace, model.stashes.place, model.note.current().editor.Presentation())
 	}
 	update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
 	if model.modal != modalNone {

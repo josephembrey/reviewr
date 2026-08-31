@@ -346,6 +346,43 @@ type Settings struct {
 	Entries []SettingEntry
 }
 
+// GitModel is the read-only presentation seam for Git's mode-specific nested
+// regions. It deliberately reuses NavigatorRow, ReaderDocument, ReaderLayout,
+// and commitrow.Row so Git never grows parallel list or diff renderers.
+type GitModel struct {
+	Geometry        GitGeometry
+	Focus           workspace.GitFocus
+	DividerDragging GitDividerKind
+
+	RailTitle    string
+	RailRows     []NavigatorRow
+	RailEmpty    Line
+	RailSelected int
+	RailTop      int
+
+	FilesTitle    string
+	FilesRows     []NavigatorRow
+	FilesEmpty    Line
+	FilesSelected int
+	FilesTop      int
+
+	TimelineTitle    string
+	TimelineRows     []commitrow.Row
+	TimelineEmpty    Line
+	TimelineSelected int
+	TimelineTop      int
+	Status           Line
+
+	ReaderTitle           string
+	ReaderDocument        ReaderDocument
+	ReaderLayout          *ReaderLayout
+	ReaderContextFoldable bool
+	ReaderEmpty           Line
+	ReaderOffset          int
+	ReaderColumn          int
+	ReaderCursor          int
+}
+
 // FileFooterActions describes only workflow actions that are meaningful for
 // the current Files selection. Routine navigation belongs in the help popup.
 type FileFooterActions struct {
@@ -364,6 +401,7 @@ type Model struct {
 	Controls        workspace.Controls
 	FileActions     FileFooterActions
 	Changes         ChangeSummary
+	Git             *GitModel
 
 	NavigatorTitle string
 	NavigatorRows  []NavigatorRow

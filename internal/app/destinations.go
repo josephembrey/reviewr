@@ -20,8 +20,10 @@ func (m *Model) activate(next workspace.Kind) effect {
 		return effect{}
 	}
 	m.layout.finishDrag()
+	m.gitLayout.finish()
 	m.scrollbar.finish()
 	m.active = next
+	m.updateGitGeometry()
 	if next == workspace.Notes {
 		return m.note.open()
 	}
@@ -32,12 +34,8 @@ func (m *Model) activate(next workspace.Kind) effect {
 			}
 			return effect{}
 		}
-		if m.controls.Git == workspace.GitRefs {
-			preferredOID, _ := m.history.place.SelectedIdentity()
-			return m.refs.enter(preferredOID)
-		}
-		if !m.history.loaded && !m.history.listLoading {
-			return m.history.reload(m.controls.Traversal, m.selectedHistoryOID())
+		if !m.history.sourcesLoaded && !m.history.sourceLoading {
+			return m.history.reload()
 		}
 		return effect{}
 	}
@@ -49,13 +47,13 @@ func (m *Model) activate(next workspace.Kind) effect {
 
 func (m *Model) activePlace() *navigation.State {
 	if m.gitStashesActive() {
-		return &m.stashes.place
-	}
-	if m.gitRefsActive() {
-		return &m.refs.place
+		return &m.stashes.inspection.place
 	}
 	if m.active == workspace.Git {
-		return &m.history.place
+		if m.history.inspecting {
+			return &m.history.inspection.place
+		}
+		return &m.history.timelinePlace
 	}
 	return &m.files.place
 }
@@ -82,15 +80,6 @@ func (m *Model) finishNotesExit(exit notesExit) effect {
 	}
 }
 
-func (m Model) selectedHistoryOID() string {
-	oid, _ := m.history.place.SelectedIdentity()
-	return oid
-}
-
-func (m Model) gitRefsActive() bool {
-	return m.active == workspace.Git && m.controls.Git == workspace.GitRefs
-}
-
 func (m Model) gitStashesActive() bool {
 	return m.active == workspace.Git && m.controls.Git == workspace.GitStashes
 }
@@ -103,6 +92,9 @@ func (m Model) diffHighlightEligible() bool {
 	}
 	if m.gitStashesActive() {
 		return m.stashes.readerDocument().DiffEligible()
+	}
+	if m.active == workspace.Git && m.history.inspecting {
+		return m.history.inspection.readerDocument().DiffEligible()
 	}
 	if m.active == workspace.Files && m.controls.Reader == workspace.DiffReader {
 		return m.files.readerDocument().DiffEligible()

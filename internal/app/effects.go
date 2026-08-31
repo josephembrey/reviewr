@@ -20,14 +20,14 @@ const (
 	effectLoadFile
 	effectLoadDiff
 	effectLoadCommits
-	effectLoadCommit
+	effectLoadHistorySources
+	effectLoadCommitFiles
+	effectLoadCommitFile
 	effectLoadReviewState
 	effectLoadReviewDocument
 	effectLoadReviewFile
 	effectVerifyReview
 	effectPersistReview
-	effectLoadRefSources
-	effectLoadRefCommits
 	effectLoadStashes
 	effectLoadStashFiles
 	effectLoadStashFile
@@ -49,7 +49,6 @@ type effect struct {
 	entry              repository.Entry
 	fileComparison     repository.Comparison
 	query              repository.CommitQuery
-	refSource          repository.RefSource
 	stashSource        repository.ChangeSource
 	changedFile        repository.ChangedFile
 	text               string
@@ -167,14 +166,6 @@ type commitsLoadedMsg struct {
 	query      repository.CommitQuery
 }
 
-type commitLoadedMsg struct {
-	repositoryPollResult
-	generation uint64
-	oid        string
-	summary    repository.CommitSummary
-	err        error
-}
-
 type notesLoadedMsg struct {
 	scope      notes.Scope
 	generation uint64
@@ -203,19 +194,28 @@ type sessionSavedMsg struct {
 	err        error
 }
 
-type refSourcesLoadedMsg struct {
+type historySourcesLoadedMsg struct {
 	repositoryPollResult
 	generation uint64
 	sources    []repository.RefSource
 	err        error
 }
 
-type refCommitsLoadedMsg struct {
+type commitFilesLoadedMsg struct {
 	repositoryPollResult
 	generation uint64
-	sourceID   repository.RefSourceID
-	commits    []repository.RefCommit
+	oid        string
+	files      []repository.ChangedFile
 	err        error
+}
+
+type commitFileLoadedMsg struct {
+	repositoryPollResult
+	generation   uint64
+	oid          string
+	fileIdentity string
+	document     repository.ChangeDocument
+	presentation ui.ReaderDocument
 }
 
 type stashesLoadedMsg struct {
@@ -259,9 +259,9 @@ func (m Model) command(pending effect) tea.Cmd {
 		effectPersistReview:
 		return m.reviewCommand(pending)
 	case effectLoadCommits,
-		effectLoadCommit,
-		effectLoadRefSources,
-		effectLoadRefCommits,
+		effectLoadHistorySources,
+		effectLoadCommitFiles,
+		effectLoadCommitFile,
 		effectLoadStashes,
 		effectLoadStashFiles,
 		effectLoadStashFile:
@@ -437,31 +437,32 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 				generation:           generation, commits: commits, err: err, query: query,
 			}
 		}
-	case effectLoadCommit:
-		generation, oid := pending.generation, pending.identity
-		return func() tea.Msg {
-			summary, err := source.ReadCommit(oid)
-			return commitLoadedMsg{
-				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
-				generation:           generation, oid: oid, summary: summary, err: err,
-			}
-		}
-	case effectLoadRefSources:
+	case effectLoadHistorySources:
 		generation := pending.generation
 		return func() tea.Msg {
 			sources, err := source.ListRefSources()
-			return refSourcesLoadedMsg{
+			return historySourcesLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, sources: sources, err: err,
 			}
 		}
-	case effectLoadRefCommits:
-		generation, refSource := pending.generation, pending.refSource
+	case effectLoadCommitFiles:
+		generation, oid := pending.generation, pending.identity
 		return func() tea.Msg {
-			commits, err := source.ListRefCommits(refSource)
-			return refCommitsLoadedMsg{
+			files, err := source.ListCommitFiles(oid)
+			return commitFilesLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
-				generation:           generation, sourceID: refSource.ID, commits: commits, err: err,
+				generation:           generation, oid: oid, files: files, err: err,
+			}
+		}
+	case effectLoadCommitFile:
+		generation, oid, file := pending.generation, pending.identity, pending.changedFile
+		return func() tea.Msg {
+			document := source.ReadCommitFile(oid, file)
+			return commitFileLoadedMsg{
+				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
+				generation:           generation, oid: oid, fileIdentity: file.Identity(),
+				document: document, presentation: changeDiffDocument(document, "Commit"),
 			}
 		}
 	case effectLoadStashes:
@@ -490,7 +491,7 @@ func (m Model) gitCommand(pending effect) tea.Cmd {
 			return stashFileLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, oid: oid, fileIdentity: file.Identity(),
-				document: document, presentation: changeDiffDocument(document),
+				document: document, presentation: changeDiffDocument(document, "Stash"),
 			}
 		}
 	default:

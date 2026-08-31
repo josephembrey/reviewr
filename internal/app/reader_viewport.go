@@ -27,12 +27,29 @@ type readerViewport struct {
 	foldable bool
 }
 
+func (m Model) activeReaderRowsRect() ui.Rect {
+	if m.active == workspace.Git && m.gitDiffVisible() {
+		return m.gitGeometry.ContentRows
+	}
+	return m.geometry.ReaderRows
+}
+
+func (m *Model) readerRowsForPlace(place *navigation.State) ui.Rect {
+	if place == &m.history.inspection.place || place == &m.stashes.inspection.place {
+		return m.gitGeometry.ContentRows
+	}
+	return m.geometry.ReaderRows
+}
+
 func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
-	key := readerViewportKey{workspace: m.active, rows: m.geometry.ReaderRows}
+	key := readerViewportKey{workspace: m.active, rows: m.activeReaderRowsRect()}
 	switch {
+	case m.active == workspace.Git && m.controls.Git == workspace.GitHistory && m.history.inspecting:
+		key.source = m.history.inspection.readerPresentation
+		key.contextRevision = m.history.inspection.readerContext.revision
 	case m.gitStashesActive():
-		key.source = m.stashes.readerPresentation
-		key.contextRevision = m.stashes.readerContext.revision
+		key.source = m.stashes.inspection.readerPresentation
+		key.contextRevision = m.stashes.inspection.readerContext.revision
 	case m.active == workspace.Files:
 		key.source = m.files.activeReaderPresentation()
 		key.contextRevision = m.files.readerContext.revision
@@ -47,6 +64,8 @@ func (m Model) activeReaderViewportKey() (readerViewportKey, bool) {
 
 func (m Model) activeReaderDocument() (ui.ReaderDocument, bool) {
 	switch {
+	case m.active == workspace.Git && m.controls.Git == workspace.GitHistory && m.history.inspecting:
+		return m.history.inspection.readerDocument(), true
 	case m.gitStashesActive():
 		return m.stashes.readerDocument(), true
 	case m.active == workspace.Files:
@@ -74,7 +93,7 @@ func (m *Model) activeReaderViewport() (readerViewport, bool) {
 	}
 	viewport := readerViewport{
 		document: document,
-		layout:   ui.CalculateReaderLayout(m.geometry.ReaderRows, document),
+		layout:   ui.CalculateReaderLayout(m.activeReaderRowsRect(), document),
 		foldable: document.HasContextFold(),
 	}
 	if key, cacheable := m.activeReaderViewportKey(); cacheable {
@@ -106,11 +125,11 @@ func (m *Model) activeReaderLineCount() int {
 	if m.gitStashesActive() {
 		return len(m.stashes.readerRows())
 	}
-	if m.gitRefsActive() {
-		return len(m.refs.commits)
+	if m.active == workspace.Git && m.history.inspecting {
+		return len(m.history.inspection.readerRows())
 	}
 	if m.active == workspace.Git {
-		return len(commitSummaryLines(m.history.summary))
+		return 0
 	}
 	return len(m.files.readerRows())
 }
@@ -130,14 +149,15 @@ func (m *Model) activeReaderVisualOffset() int {
 
 func (m *Model) setActiveReaderVisualOffset(offset int) {
 	place := m.activePlace()
+	rows := m.activeReaderRowsRect()
 	if layout, ok := m.activeReaderLayout(); ok {
-		maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+		maximum := max(0, layout.Total-rows.Height)
 		source, column := layout.SourceOffset(min(max(offset, 0), maximum))
 		place.ReaderOffset = source
 		place.ReaderColumn = column
 		return
 	}
-	place.ReaderOffset = min(max(offset, 0), max(0, m.activeReaderLineCount()-m.geometry.ReaderRows.Height))
+	place.ReaderOffset = min(max(offset, 0), max(0, m.activeReaderLineCount()-rows.Height))
 	place.ReaderColumn = 0
 }
 
@@ -184,12 +204,13 @@ func (m *Model) selectActiveReaderBoundary(end bool) {
 }
 
 func (m *Model) selectActiveReaderViewport(position int) {
+	rows := m.activeReaderRowsRect()
 	layout, ok := m.activeReaderLayout()
-	if !ok || layout.Total == 0 || m.geometry.ReaderRows.Height <= 0 {
+	if !ok || layout.Total == 0 || rows.Height <= 0 {
 		return
 	}
 	top := m.activeReaderVisualOffset()
-	bottom := min(layout.Total-1, top+m.geometry.ReaderRows.Height-1)
+	bottom := min(layout.Total-1, top+rows.Height-1)
 	targetVisual := top + (bottom-top)/2
 	if position < 0 {
 		targetVisual = top
@@ -294,18 +315,19 @@ func (m *Model) selectFilesVisualLine(document ui.ReaderDocument, target int) {
 }
 
 func (m *Model) ensureActiveReaderSelectionVisible() {
+	rows := m.activeReaderRowsRect()
 	layout, ok := m.activeReaderLayout()
-	if !ok || layout.Total == 0 || m.geometry.ReaderRows.Height <= 0 {
+	if !ok || layout.Total == 0 || rows.Height <= 0 {
 		return
 	}
 	cursor := layout.VisualOffset(m.activePlace().ReaderCursor, 0)
 	top := m.activeReaderVisualOffset()
-	bottom := top + m.geometry.ReaderRows.Height
+	bottom := top + rows.Height
 	switch {
 	case cursor < top:
 		m.setActiveReaderVisualOffset(cursor)
 	case cursor >= bottom:
-		m.setActiveReaderVisualOffset(cursor - m.geometry.ReaderRows.Height + 1)
+		m.setActiveReaderVisualOffset(cursor - rows.Height + 1)
 	}
 }
 
@@ -363,13 +385,14 @@ func visualHunkTargets(document ui.ReaderDocument) []int {
 }
 
 func (m *Model) clampDocumentReader(place *navigation.State, document ui.ReaderDocument) {
+	rows := m.readerRowsForPlace(place)
 	if document.Kind == ui.ReaderDocumentNone {
-		place.ClampReader(0, m.geometry.ReaderRows.Height)
+		place.ClampReader(0, rows.Height)
 		return
 	}
 	place.ClampReaderSource(len(document.Rows))
-	layout := ui.CalculateReaderLayout(m.geometry.ReaderRows, document)
-	maximum := max(0, layout.Total-m.geometry.ReaderRows.Height)
+	layout := ui.CalculateReaderLayout(rows, document)
+	maximum := max(0, layout.Total-rows.Height)
 	source, column := layout.SourceOffset(min(layout.VisualOffset(place.ReaderOffset, place.ReaderColumn), maximum))
 	place.ReaderOffset = source
 	place.ReaderColumn = column
