@@ -86,6 +86,23 @@ func TestCoverageIsExplicitCumulativeAndExactRevertIsReviewed(t *testing.T) {
 	}
 }
 
+func TestReviewedEndpointPromotedToComparisonBaseStartsFresh(t *testing.T) {
+	a := endpoint("a.go", "a")
+	b := endpoint("a.go", "b")
+	c := endpoint("a.go", "c")
+	previous := comparison("uncommitted", a, b)
+	current := comparison("uncommitted", b, c)
+	current.Identity.Basis = "committed-b"
+
+	var ledger Ledger
+	markFull(t, &ledger, previous, retained("b"))
+
+	got := ledger.Assess(current)
+	if got.State != Unreviewed || got.Frontier != nil || got.Retained != nil {
+		t.Fatalf("assessment = %+v, want fresh unreviewed comparison", got)
+	}
+}
+
 func TestNarrowAndDisjointCoverageNeverChecksBroaderComparison(t *testing.T) {
 	a := endpoint("a.go", "a")
 	b := endpoint("a.go", "b")

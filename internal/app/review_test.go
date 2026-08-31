@@ -205,6 +205,36 @@ func TestUpdatedReaderBoundsToggleAndNarrowMark(t *testing.T) {
 	}
 }
 
+func TestReviewedEndpointAtGitBaseHasNoIncrementalBounds(t *testing.T) {
+	current := testComparison("a.go", "head-2", "reviewed", "current")
+	previous := testComparison("a.go", "head-1", "original", "reviewed")
+	retained := "reviewed\n"
+	state := loadedFilesState(t, repository.Entry{Path: "a.go", State: repository.FileModified})
+	state.readerEntry = repository.Entry{Path: "a.go", State: repository.FileModified}
+	state.readerMode = workspace.DiffReader
+	state.reviewSnapshot = reviewdomain.Snapshot{
+		Scope:       "uncommitted",
+		Comparisons: map[string]reviewdomain.FileComparison{"a.go": current},
+	}
+	if !state.ledger.Mark(previous, reviewdomain.Bounds{Old: previous.Old, New: previous.New}, &retained) {
+		t.Fatal("failed to seed reviewed endpoint")
+	}
+	state.rederiveReviews()
+	bounds := reviewdomain.Bounds{Old: current.Old, New: current.New}
+	state.displayedComparison = &current
+	state.displayedBounds = &bounds
+
+	if got := state.reviewAssessment("a.go", current).State; got != reviewdomain.Unreviewed {
+		t.Fatalf("assessment = %v, want unreviewed", got)
+	}
+	if state.canToggleReviewBounds(workspace.DiffReader) {
+		t.Fatal("identical incremental and full bounds remained toggleable")
+	}
+	if title := state.reviewBoundsTitle(); title != "" {
+		t.Fatalf("review bounds title = %q, want none", title)
+	}
+}
+
 func TestPartialAndBasisChangedReadersExplainFullBounds(t *testing.T) {
 	for _, test := range []struct {
 		name  string

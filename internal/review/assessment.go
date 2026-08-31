@@ -12,6 +12,12 @@ func (l Ledger) Assess(comparison FileComparison) Assessment {
 		return Assessment{State: Reviewed}
 	}
 	if frontier := l.newestFrontier(reachable, comparison); frontier != nil {
+		// Once the reviewed endpoint becomes the active Git base, the full
+		// comparison already contains only work that arrived after the review.
+		// Present it as fresh work instead of offering two identical bounds.
+		if frontier.New == comparison.Old {
+			return Assessment{State: Unreviewed}
+		}
 		return frontierAssessment(*frontier)
 	}
 	return uncoveredAssessment(comparison, related)
