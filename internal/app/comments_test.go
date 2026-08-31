@@ -391,6 +391,18 @@ func TestGutterHoverAndClickUseSharedGeometryWithoutMovingPlace(t *testing.T) {
 	}
 }
 
+func TestFilesRequestsUnpressedMouseMotionForCommentHover(t *testing.T) {
+	t.Parallel()
+	model := commentReaderModel(fileCommentDocument("hover me"), workspace.FileReader)
+	if got := model.View().MouseMode; got != tea.MouseModeAllMotion {
+		t.Fatalf("Files mouse mode = %v, want all motion for gutter hover", got)
+	}
+	model.active = workspace.Git
+	if got := model.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Fatalf("Git mouse mode = %v, want cell motion without hover tracking", got)
+	}
+}
+
 func TestCommentKeyRoutesThroughSemanticActionsAndComposerOwnsEscape(t *testing.T) {
 	t.Parallel()
 	context := browserRouteContext{

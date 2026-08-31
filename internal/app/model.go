@@ -244,6 +244,11 @@ func (m Model) View() tea.View {
 	view := tea.NewView(content)
 	view.AltScreen = true
 	view.MouseMode = tea.MouseModeCellMotion
+	if m.active == workspace.Files {
+		// The line-number comment affordance follows an unpressed pointer.
+		// Cell motion only reports drags, so Files must request all motion.
+		view.MouseMode = tea.MouseModeAllMotion
+	}
 	view.WindowTitle = "reviewr"
 	return view
 }
