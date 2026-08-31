@@ -48,10 +48,10 @@ var helpRows = []helpRow{
 	},
 	{
 		entries: []footerEntry{
-			{key: "y", label: "copy"},
-			{key: "home/end", label: "ends"},
+			{key: "home/end"},
 			{key: "H/M/L", label: "view"},
 			{key: "pgup/dn", label: "page"},
+			{key: "alt+move", label: "other"},
 		},
 	},
 	{

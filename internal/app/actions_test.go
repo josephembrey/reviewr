@@ -147,6 +147,54 @@ func TestKeyRoutingProducesSemanticActions(t *testing.T) {
 	}
 }
 
+func TestAltMovementRoutesToTheUnfocusedFilesPane(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		focus navigation.Focus
+		key   tea.Key
+		want  Action
+	}{
+		{name: "tree focus alt j", focus: navigation.FocusNavigator, key: tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}, want: Action{Kind: MoveReaderSelection, Amount: 1}},
+		{name: "tree focus alt up", focus: navigation.FocusNavigator, key: tea.Key{Code: tea.KeyUp, Mod: tea.ModAlt}, want: Action{Kind: MoveReaderSelection, Amount: -1}},
+		{name: "tree focus alt l", focus: navigation.FocusNavigator, key: tea.Key{Code: 'l', Text: "l", Mod: tea.ModAlt}, want: Action{Kind: ExpandReaderFold}},
+		{name: "tree focus alt left", focus: navigation.FocusNavigator, key: tea.Key{Code: tea.KeyLeft, Mod: tea.ModAlt}, want: Action{Kind: CollapseReaderFold}},
+		{name: "reader focus alt down", focus: navigation.FocusReader, key: tea.Key{Code: tea.KeyDown, Mod: tea.ModAlt}, want: Action{Kind: SelectNext}},
+		{name: "reader focus alt k", focus: navigation.FocusReader, key: tea.Key{Code: 'k', Text: "k", Mod: tea.ModAlt}, want: Action{Kind: SelectPrevious}},
+		{name: "reader focus alt right", focus: navigation.FocusReader, key: tea.Key{Code: tea.KeyRight, Mod: tea.ModAlt}, want: Action{Kind: ExpandNavigatorSelection}},
+		{name: "reader focus alt h", focus: navigation.FocusReader, key: tea.Key{Code: 'h', Text: "h", Mod: tea.ModAlt}, want: Action{Kind: CollapseNavigatorSelection}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := routeBrowserKey(tea.KeyPressMsg(test.key), browserRouteContext{
+				active: workspace.Files, focus: test.focus,
+				controls: workspace.Controls{RichDiff: true},
+			})
+			if !ok || !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("routeBrowserKey() = (%+v, %v), want (%+v, true)", got, ok, test.want)
+			}
+		})
+	}
+
+	for _, context := range []browserRouteContext{
+		{active: workspace.Git, focus: navigation.FocusNavigator, controls: workspace.Controls{RichDiff: true}},
+		{active: workspace.Files, focus: navigation.FocusNavigator, controls: workspace.Controls{RichDiff: true}, visualSelecting: true},
+	} {
+		if got, ok := routeBrowserKey(
+			tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt}), context,
+		); ok {
+			t.Fatalf("ineligible inactive-pane movement routed as %+v", got)
+		}
+	}
+	if got, ok := routeBrowserKey(
+		tea.KeyPressMsg(tea.Key{Code: 'j', Text: "j", Mod: tea.ModAlt | tea.ModShift}),
+		browserRouteContext{active: workspace.Files, focus: navigation.FocusNavigator},
+	); ok {
+		t.Fatalf("combined modifier routed as %+v", got)
+	}
+}
+
 func TestNotesRoutingIsModelessAndSemantic(t *testing.T) {
 	t.Parallel()
 	g := ui.Calculate(80, 12)
