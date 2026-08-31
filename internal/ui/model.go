@@ -96,6 +96,12 @@ type ReaderRow struct {
 	// VisualSelected is semantic linewise selection authored by the app. It is
 	// independent from the keyboard cursor and survives wrapping unchanged.
 	VisualSelected bool
+	// VisualCharacter selects a half-open terminal-cell range in Text. Unlike
+	// VisualSelected it leaves the gutter and the rest of the source row alone.
+	// ReaderLayout projects the source range onto each wrapped segment.
+	VisualCharacter bool
+	VisualStart     int
+	VisualEnd       int
 	// CommentHover replaces this source row's line number with the gutter [+]
 	// affordance. Only the first wrapped segment paints it.
 	CommentHover bool
@@ -424,13 +430,14 @@ type Model struct {
 	// ReaderOffset's stable logical row.
 	ReaderColumn int
 	// ReaderCursor is the selected logical row in a structured file reader.
-	ReaderCursor           int
-	FooterWarning          string
-	ReaderVisualSelection  bool
-	ReaderComposingComment bool
-	ReaderCommentHeader    bool
-	ReaderCommentExpanded  bool
-	ReaderCommentable      bool
+	ReaderCursor             int
+	FooterWarning            string
+	ReaderVisualSelection    bool
+	ReaderCharacterSelection bool
+	ReaderComposingComment   bool
+	ReaderCommentHeader      bool
+	ReaderCommentExpanded    bool
+	ReaderCommentable        bool
 
 	Notes       notes.Presentation
 	NotesStatus string

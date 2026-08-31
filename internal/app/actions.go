@@ -52,7 +52,11 @@ const (
 	SelectReaderViewport
 	SelectReaderLine
 	StartVisualLine
+	StartCharacterSelection
+	DragCharacterSelection
+	FinishCharacterSelection
 	CancelVisualLine
+	CopyVisualSelection
 	ComposeComment
 	ComposeCommentAtLine
 	SetCommentHover
@@ -471,6 +475,10 @@ func routeBrowserCommandKey(msg tea.KeyPressMsg, context browserRouteContext) (A
 		if context.active == workspace.Files && context.focus == navigation.FocusReader && context.readerCommentable {
 			return Action{Kind: ComposeComment}, true
 		}
+	case "y":
+		if context.active == workspace.Files && context.visualSelecting {
+			return Action{Kind: CopyVisualSelection}, true
+		}
 	case "esc":
 		if context.active == workspace.Files && context.visualSelecting {
 			return Action{Kind: CancelVisualLine}, true
@@ -705,6 +713,11 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		if m.active == workspace.Files && !m.layout.dragging && !m.scrollbar.active {
 			mouse := msg.Mouse()
 			if layout, ok := m.activeReaderLayout(); ok {
+				if m.files.readerSelectionDragging && mouse.Button == tea.MouseLeft {
+					if point, hit := layout.ClampedCodePointAt(mouse.X, mouse.Y, m.activeReaderVisualOffset()); hit {
+						return Action{Kind: DragCharacterSelection, Index: point.Source, Position: point.Column}, true
+					}
+				}
 				if source, hit := layout.CommentGutterSourceAt(mouse.X, mouse.Y, m.activeReaderVisualOffset()); hit {
 					if !m.files.hoveredCommentLine(source) {
 						return Action{Kind: SetCommentHover, Index: source}, true
@@ -734,10 +747,19 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 						if identity, fold := row.ContextFoldIdentity(); fold {
 							return Action{Kind: ToggleReaderFold, Identity: identity, Index: source}, true
 						}
+						if m.active == workspace.Files {
+							if point, code := layout.CodePointAt(mouse.X, mouse.Y, readerOffset); code && documentRowCommentable(layout, point.Source) {
+								return Action{Kind: StartCharacterSelection, Index: point.Source, Position: point.Column}, true
+							}
+						}
 						return Action{Kind: SelectReaderLine, Index: source}, true
 					}
 				}
 			}
+		}
+	case tea.MouseReleaseMsg:
+		if m.active == workspace.Files && m.files.readerSelectionDragging {
+			return Action{Kind: FinishCharacterSelection}, true
 		}
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
@@ -780,4 +802,9 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 		readerFoldable:    readerFoldable,
 		readerLandmarks:   readerLandmarks,
 	})
+}
+
+func documentRowCommentable(layout ui.ReaderLayout, source int) bool {
+	row, rowSource, _ := layout.RowWithSource(layout.VisualOffset(source, 0))
+	return rowSource == source && row.Commentable()
 }

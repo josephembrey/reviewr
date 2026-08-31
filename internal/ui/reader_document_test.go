@@ -5,10 +5,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -298,6 +300,82 @@ func TestReaderLayoutMapsWrappedVisualScrollToLogicalPlace(t *testing.T) {
 		if source == 0 && continued && row.NewLine != 10 {
 			t.Fatalf("continuation lost source identity: %+v", row)
 		}
+	}
+}
+
+func TestReaderLayoutMapsCodeCellsAcrossWrappingAndClampsDrag(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{
+		{Kind: ReaderFile, Text: "abcdefghij", NewLine: 1},
+		{Kind: ReaderFile, Text: "tail", NewLine: 2},
+	}}
+	layout := CalculateReaderLayout(Rect{X: 10, Y: 4, Width: 10, Height: 3}, document)
+	if layout.Total != 3 {
+		t.Fatalf("wrapped layout total = %d, want 3", layout.Total)
+	}
+	point, ok := layout.CodePointAt(layout.Geometry.Code.X+2, layout.Geometry.Code.Y+1, 0)
+	if !ok || point != (ReaderPoint{Source: 0, Column: 7}) {
+		t.Fatalf("wrapped code point = (%+v,%v), want source 0 column 7", point, ok)
+	}
+	point, ok = layout.ClampedCodePointAt(layout.Geometry.Code.X-50, layout.Geometry.Code.Y+50, 0)
+	if !ok || point != (ReaderPoint{Source: 1, Column: 0}) {
+		t.Fatalf("clamped code point = (%+v,%v), want final row column 0", point, ok)
+	}
+	if _, ok := layout.CodePointAt(layout.Geometry.LineNumber.X, layout.Geometry.Code.Y, 0); ok {
+		t.Fatal("line-number gutter was accepted as source code")
+	}
+}
+
+func TestCharacterSelectionStylesOnlyPayloadCells(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{{
+		Kind: ReaderInsertion, Text: "abcdef", NewLine: 2,
+		Spans:           []TextSpan{{Text: "abc", Style: TextStyle{Foreground: "4"}}, {Text: "def", Style: TextStyle{Foreground: "3"}}},
+		VisualCharacter: true, VisualStart: 2, VisualEnd: 5,
+	}}}
+	geometry := CalculateReaderGeometry(Rect{Width: 24, Height: 1}, document, false)
+	rendered := renderReaderRowPartSelected(document.Rows[0], geometry, workspace.DiffHighlightSidebar, false, true, true)
+	if !strings.Contains(rendered, selectionStyle(true).Render("c")) || !strings.Contains(rendered, selectionStyle(true).Render("de")) {
+		t.Fatalf("character selection is not isolated to cde: %q", rendered)
+	}
+	if strings.HasPrefix(rendered, selectionStyle(true).Render("▌")) || ansi.Strip(rendered) != ansi.Strip(renderReaderRow(document.Rows[0], geometry, workspace.DiffHighlightSidebar)) {
+		t.Fatalf("character selection changed gutter or content: %q", rendered)
+	}
+
+	background := renderReaderRowPartSelected(document.Rows[0], geometry, workspace.DiffHighlightBackground, false, true, true)
+	assertEveryPrintableHasChangeBackground(t, background, ReaderInsertion)
+	if !strings.Contains(background, "[1;4;") && !strings.Contains(background, "[4;1;") {
+		t.Fatalf("background character selection lacks emphasis: %q", background)
+	}
+}
+
+func TestCharacterSelectionSuppressesCursorAcrossWrappedRow(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{{
+		Kind: ReaderFile, Text: "abcdefghijkl", NewLine: 1,
+		VisualCharacter: true, VisualStart: 1, VisualEnd: 3,
+	}}}
+	layout := CalculateReaderLayout(Rect{Width: 10, Height: 3}, document)
+	if layout.Total < 2 {
+		t.Fatalf("source did not wrap: %+v", layout)
+	}
+	model := Model{
+		ReaderDocument: document, ReaderCursor: 0, ReaderCharacterSelection: true,
+		Focus: navigation.FocusReader,
+	}
+	continued, _, continuation := layout.RowWithSource(1)
+	if continued.VisualCharacter {
+		t.Fatal("test selection unexpectedly reaches the continuation")
+	}
+	got := renderReaderContentLine(
+		1, layout.Geometry.Content.Width, &model, nil, layout, layout.Geometry,
+		commitrow.Columns{}, time.Time{}, workspace.DiffHighlightSidebar,
+	)
+	want := renderReaderRowPartSelected(
+		continued, layout.Geometry, workspace.DiffHighlightSidebar, continuation, false, true,
+	)
+	if got != want {
+		t.Fatalf("wrapped continuation retained full-row cursor: got %q want %q", got, want)
 	}
 }
 

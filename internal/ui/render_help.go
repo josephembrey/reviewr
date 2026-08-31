@@ -22,8 +22,9 @@ var helpRows = []helpRow{
 			{key: "g", label: "git"},
 			{key: "n", label: "notes"},
 			{key: "esc", label: "files"},
-			{key: "tab", label: "focus"},
+			{key: "tab", label: "pane"},
 			{key: "z", label: "swap"},
+			{key: "e", label: "edit"},
 		},
 	},
 	{
@@ -47,10 +48,10 @@ var helpRows = []helpRow{
 	},
 	{
 		entries: []footerEntry{
+			{key: "y", label: "copy"},
 			{key: "home/end", label: "ends"},
 			{key: "H/M/L", label: "view"},
 			{key: "pgup/dn", label: "page"},
-			{key: "e", label: "edit"},
 		},
 	},
 	{

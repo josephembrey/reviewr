@@ -36,6 +36,7 @@ const (
 	effectSaveNotes
 	effectSaveSession
 	effectAnimateReaderContext
+	effectSetClipboard
 	effectOpenEditor
 	effectQuit
 )
@@ -268,7 +269,7 @@ func (m Model) command(pending effect) tea.Cmd {
 		return m.gitCommand(pending)
 	case effectLoadNotes, effectDebounceNotes, effectSaveNotes:
 		return m.notesCommand(pending)
-	case effectSaveSession, effectAnimateReaderContext, effectOpenEditor, effectQuit:
+	case effectSaveSession, effectAnimateReaderContext, effectSetClipboard, effectOpenEditor, effectQuit:
 		return m.rootCommand(pending)
 	default:
 		return nil
@@ -540,6 +541,8 @@ func (m Model) rootCommand(pending effect) tea.Cmd {
 		return tea.Tick(readerContextFrameDelay, func(time.Time) tea.Msg {
 			return readerContextFrameMsg{owner: owner, generation: generation}
 		})
+	case effectSetClipboard:
+		return tea.SetClipboard(pending.text)
 	case effectOpenEditor:
 		return m.editorCommand(pending)
 	case effectQuit:

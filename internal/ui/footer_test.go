@@ -80,10 +80,14 @@ func TestFilesFooterAddsOnlyImmediatelyRelevantCommentActions(t *testing.T) {
 	}
 
 	visual := plain(Model{ReaderVisualSelection: true})
-	for _, expected := range []string{"c comment range", "esc cancel selection", "j/k extend"} {
+	for _, expected := range []string{"c comment range", "y copy", "esc cancel selection", "j/k extend"} {
 		if !strings.Contains(visual, expected) {
 			t.Errorf("Visual footer lacks %q: %q", expected, visual)
 		}
+	}
+	character := plain(Model{ReaderVisualSelection: true, ReaderCharacterSelection: true})
+	if !strings.Contains(character, "y copy") || strings.Contains(character, "j/k extend") {
+		t.Fatalf("character-selection footer = %q", character)
 	}
 
 	composer := plain(Model{ReaderComposingComment: true})

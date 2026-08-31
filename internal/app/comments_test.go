@@ -391,6 +391,72 @@ func TestGutterHoverAndClickUseSharedGeometryWithoutMovingPlace(t *testing.T) {
 	}
 }
 
+func TestFilesRequestsUnpressedMouseMotionForCommentHover(t *testing.T) {
+	t.Parallel()
+	model := commentReaderModel(fileCommentDocument("hover me"), workspace.FileReader)
+	if got := model.View().MouseMode; got != tea.MouseModeAllMotion {
+		t.Fatalf("Files mouse mode = %v, want all motion for gutter hover", got)
+	}
+	model.active = workspace.Git
+	if got := model.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Fatalf("Git mouse mode = %v, want cell motion without hover tracking", got)
+	}
+}
+
+func TestMouseDragSelectsCharactersCopiesTextAndCommentsWholeLines(t *testing.T) {
+	t.Parallel()
+	model := commentReaderModel(fileCommentDocument("abcdef", "ghijkl", "mnopqr"), workspace.FileReader)
+	layout, ok := model.activeReaderLayout()
+	if !ok {
+		t.Fatal("reader has no layout")
+	}
+	update := func(msg tea.Msg) {
+		next, _ := model.Update(msg)
+		model = next.(Model)
+	}
+	update(tea.MouseClickMsg(tea.Mouse{
+		X: layout.Geometry.Code.X + 2, Y: layout.Geometry.Code.Y, Button: tea.MouseLeft,
+	}))
+	update(tea.MouseMotionMsg(tea.Mouse{
+		X: layout.Geometry.Code.X + 3, Y: layout.Geometry.Code.Y + 1, Button: tea.MouseLeft,
+	}))
+	update(tea.MouseReleaseMsg(tea.Mouse{Button: tea.MouseLeft}))
+
+	selection := model.files.visualSelection
+	if selection == nil || selection.Kind != visualSelectionCharacter || selection.Anchor.Number != 1 || selection.Active.Number != 2 ||
+		selection.AnchorColumn != 2 || selection.ActiveColumn != 3 || !selection.MouseMoved || model.files.readerSelectionDragging {
+		t.Fatalf("mouse character selection = %+v dragging=%v", selection, model.files.readerSelectionDragging)
+	}
+	rows := model.files.readerDocument().Rows
+	if !rows[0].VisualCharacter || rows[0].VisualStart != 2 || rows[0].VisualEnd != 6 ||
+		!rows[1].VisualCharacter || rows[1].VisualStart != 0 || rows[1].VisualEnd != 4 || rows[2].VisualCharacter {
+		t.Fatalf("painted character ranges = %+v / %+v / %+v", rows[0], rows[1], rows[2])
+	}
+	pending := model.apply(Action{Kind: CopyVisualSelection})
+	if pending.kind != effectSetClipboard || pending.text != "cdef\nghij" {
+		t.Fatalf("copy effect = kind %v text %q", pending.kind, pending.text)
+	}
+	model.apply(Action{Kind: ComposeComment})
+	if draft := model.files.commentDraft; draft == nil || draft.Range.Start.Number != 1 || draft.Range.End.Number != 2 {
+		t.Fatalf("character selection comment did not normalize to lines: %+v", draft)
+	}
+}
+
+func TestMouseClickWithoutDragKeepsLineCursorWithoutSelection(t *testing.T) {
+	t.Parallel()
+	model := commentReaderModel(fileCommentDocument("first", "second"), workspace.FileReader)
+	layout, _ := model.activeReaderLayout()
+	next, _ := model.Update(tea.MouseClickMsg(tea.Mouse{
+		X: layout.Geometry.Code.X + 1, Y: layout.Geometry.Code.Y + 1, Button: tea.MouseLeft,
+	}))
+	model = next.(Model)
+	next, _ = model.Update(tea.MouseReleaseMsg(tea.Mouse{Button: tea.MouseLeft}))
+	model = next.(Model)
+	if model.files.visualSelection != nil || model.files.place.ReaderCursor != 1 || model.files.place.Focus != navigation.FocusReader {
+		t.Fatalf("plain reader click = selection %+v place %+v", model.files.visualSelection, model.files.place)
+	}
+}
+
 func TestCommentKeyRoutesThroughSemanticActionsAndComposerOwnsEscape(t *testing.T) {
 	t.Parallel()
 	context := browserRouteContext{
@@ -403,6 +469,9 @@ func TestCommentKeyRoutesThroughSemanticActionsAndComposerOwnsEscape(t *testing.
 		}
 	}
 	context.visualSelecting = true
+	if action, ok := routeBrowserMessage(tea.KeyPressMsg(tea.Key{Code: 'y', Text: "y"}), context); !ok || action.Kind != CopyVisualSelection {
+		t.Fatalf("Visual y = (%+v, %v)", action, ok)
+	}
 	if action, ok := routeBrowserMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}), context); !ok || action.Kind != CancelVisualLine {
 		t.Fatalf("Visual Escape = (%+v, %v)", action, ok)
 	}
