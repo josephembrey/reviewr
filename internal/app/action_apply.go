@@ -4,6 +4,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/filetree"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/notes"
+	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
@@ -75,7 +76,11 @@ func (m *Model) apply(action Action) effect {
 		SelectReaderViewport,
 		SelectReaderLine,
 		StartVisualLine,
+		StartCharacterSelection,
+		DragCharacterSelection,
+		FinishCharacterSelection,
 		CancelVisualLine,
+		CopyVisualSelection,
 		ComposeComment,
 		ComposeCommentAtLine,
 		SetCommentHover,
@@ -321,8 +326,18 @@ func (m *Model) applyReaderAction(action Action) effect {
 		m.selectActiveReaderLine(action.Index)
 	case StartVisualLine:
 		m.files.startVisualSelection(m.files.place.ReaderCursor)
+	case StartCharacterSelection:
+		m.beginFilesCharacterSelection(ui.ReaderPoint{Source: action.Index, Column: action.Position})
+	case DragCharacterSelection:
+		m.dragFilesCharacterSelection(ui.ReaderPoint{Source: action.Index, Column: action.Position})
+	case FinishCharacterSelection:
+		m.files.finishCharacterSelection()
 	case CancelVisualLine:
 		m.cancelFilesVisualSelection()
+	case CopyVisualSelection:
+		if text, ok := m.files.visualSelectionText(); ok {
+			return effect{kind: effectSetClipboard, text: text}
+		}
 	case ComposeComment:
 		m.files.beginComment(m.files.place.ReaderCursor, false, m.geometry)
 		m.ensureCommentComposerVisible()

@@ -40,6 +40,13 @@ type readerRange struct {
 	right int
 }
 
+// ReaderPoint is a stable logical source row and a terminal-cell position in
+// that row's payload. Columns are independent of wrapping and pane position.
+type ReaderPoint struct {
+	Source int
+	Column int
+}
+
 // CalculateReaderLayout derives wrapping and scrollbar reservation together.
 // A scrollbar can only narrow the code region, so one second pass is enough
 // once wrapping makes the document taller than the viewport.
@@ -152,6 +159,40 @@ func (layout ReaderLayout) SourceAt(x, y, visualOffset int) (int, bool) {
 	return source, true
 }
 
+// CodePointAt maps a painted source-code cell to stable logical place. It is
+// intentionally limited to Code so line-number comments and fold controls can
+// retain higher mouse precedence.
+func (layout ReaderLayout) CodePointAt(x, y, visualOffset int) (ReaderPoint, bool) {
+	if !layout.Geometry.Code.Contains(x, y) {
+		return ReaderPoint{}, false
+	}
+	return layout.codePoint(x, y, visualOffset, false)
+}
+
+// ClampedCodePointAt extends a drag to the nearest visible code cell after the
+// pointer leaves the reader. It does not scroll; the viewport edge is a stable
+// and predictable endpoint for one drag gesture.
+func (layout ReaderLayout) ClampedCodePointAt(x, y, visualOffset int) (ReaderPoint, bool) {
+	return layout.codePoint(x, y, visualOffset, true)
+}
+
+func (layout ReaderLayout) codePoint(x, y, visualOffset int, clamped bool) (ReaderPoint, bool) {
+	code := layout.Geometry.Code
+	if layout.Total == 0 || code.Width <= 0 || code.Height <= 0 {
+		return ReaderPoint{}, false
+	}
+	if !clamped && !code.Contains(x, y) {
+		return ReaderPoint{}, false
+	}
+	x = clamp(x, code.X, code.X+code.Width-1)
+	y = clamp(y, code.Y, code.Y+code.Height-1)
+	visual := clamp(visualOffset+y-layout.Geometry.Rows.Y, 0, layout.Total-1)
+	source, _ := layout.SourceOffset(visual)
+	wrapped := layout.wraps[visual]
+	column := min(wrapped.right, wrapped.left+x-code.X)
+	return ReaderPoint{Source: source, Column: max(0, column)}, true
+}
+
 // CommentGutterSourceAt resolves the line-number gutter's [+] affordance.
 // Wrapped continuation rows and every presentation-only reader row are inert.
 func (layout ReaderLayout) CommentGutterSourceAt(x, y, visualOffset int) (int, bool) {
@@ -231,6 +272,13 @@ func readerBreakAfter(cluster string) bool {
 }
 
 func sliceReaderRow(row ReaderRow, left, right int) ReaderRow {
+	if row.VisualCharacter {
+		start := max(left, row.VisualStart)
+		end := min(right, row.VisualEnd)
+		row.VisualCharacter = start < end
+		row.VisualStart = max(0, start-left)
+		row.VisualEnd = max(0, end-left)
+	}
 	if right <= left {
 		row.Text = ""
 		row.Spans = nil

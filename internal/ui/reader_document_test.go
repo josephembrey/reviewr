@@ -301,6 +301,52 @@ func TestReaderLayoutMapsWrappedVisualScrollToLogicalPlace(t *testing.T) {
 	}
 }
 
+func TestReaderLayoutMapsCodeCellsAcrossWrappingAndClampsDrag(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{
+		{Kind: ReaderFile, Text: "abcdefghij", NewLine: 1},
+		{Kind: ReaderFile, Text: "tail", NewLine: 2},
+	}}
+	layout := CalculateReaderLayout(Rect{X: 10, Y: 4, Width: 10, Height: 3}, document)
+	if layout.Total != 3 {
+		t.Fatalf("wrapped layout total = %d, want 3", layout.Total)
+	}
+	point, ok := layout.CodePointAt(layout.Geometry.Code.X+2, layout.Geometry.Code.Y+1, 0)
+	if !ok || point != (ReaderPoint{Source: 0, Column: 7}) {
+		t.Fatalf("wrapped code point = (%+v,%v), want source 0 column 7", point, ok)
+	}
+	point, ok = layout.ClampedCodePointAt(layout.Geometry.Code.X-50, layout.Geometry.Code.Y+50, 0)
+	if !ok || point != (ReaderPoint{Source: 1, Column: 0}) {
+		t.Fatalf("clamped code point = (%+v,%v), want final row column 0", point, ok)
+	}
+	if _, ok := layout.CodePointAt(layout.Geometry.LineNumber.X, layout.Geometry.Code.Y, 0); ok {
+		t.Fatal("line-number gutter was accepted as source code")
+	}
+}
+
+func TestCharacterSelectionStylesOnlyPayloadCells(t *testing.T) {
+	t.Parallel()
+	document := ReaderDocument{Kind: ReaderDiffDocument, Rows: []ReaderRow{{
+		Kind: ReaderInsertion, Text: "abcdef", NewLine: 2,
+		Spans:           []TextSpan{{Text: "abc", Style: TextStyle{Foreground: "4"}}, {Text: "def", Style: TextStyle{Foreground: "3"}}},
+		VisualCharacter: true, VisualStart: 2, VisualEnd: 5,
+	}}}
+	geometry := CalculateReaderGeometry(Rect{Width: 24, Height: 1}, document, false)
+	rendered := renderReaderRowPartSelected(document.Rows[0], geometry, workspace.DiffHighlightSidebar, false, true, true)
+	if !strings.Contains(rendered, selectionStyle(true).Render("c")) || !strings.Contains(rendered, selectionStyle(true).Render("de")) {
+		t.Fatalf("character selection is not isolated to cde: %q", rendered)
+	}
+	if strings.HasPrefix(rendered, selectionStyle(true).Render("▌")) || ansi.Strip(rendered) != ansi.Strip(renderReaderRow(document.Rows[0], geometry, workspace.DiffHighlightSidebar)) {
+		t.Fatalf("character selection changed gutter or content: %q", rendered)
+	}
+
+	background := renderReaderRowPartSelected(document.Rows[0], geometry, workspace.DiffHighlightBackground, false, true, true)
+	assertEveryPrintableHasChangeBackground(t, background, ReaderInsertion)
+	if !strings.Contains(background, "[1;4;") && !strings.Contains(background, "[4;1;") {
+		t.Fatalf("background character selection lacks emphasis: %q", background)
+	}
+}
+
 func TestCommentGutterHoverRendersAndHitsOnlyFirstCommentableSegment(t *testing.T) {
 	t.Parallel()
 	document := ReaderDocument{Kind: ReaderFileDocument, Rows: []ReaderRow{

@@ -5,20 +5,33 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/josephembrey/reviewr/internal/comments"
 	"github.com/josephembrey/reviewr/internal/filetree"
+	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/notes"
 	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
 type visualLineSelection struct {
-	File    string
-	Context string
-	Side    comments.Side
-	Anchor  comments.SourceLine
-	Active  comments.SourceLine
+	File         string
+	Context      string
+	Side         comments.Side
+	Anchor       comments.SourceLine
+	Active       comments.SourceLine
+	Kind         visualSelectionKind
+	AnchorColumn int
+	ActiveColumn int
+	MouseMoved   bool
 }
+
+type visualSelectionKind uint8
+
+const (
+	visualSelectionLine visualSelectionKind = iota
+	visualSelectionCharacter
+)
 
 type commentDraft struct {
 	Identity       string
@@ -222,13 +235,16 @@ func (state *filesState) reconcileCommentInteraction(oldDocument ui.ReaderDocume
 	if selection := state.visualSelection; selection != nil {
 		if selection.File != state.readerEntry.Path || selection.Context != context {
 			state.visualSelection = nil
+			state.readerSelectionDragging = false
 		} else {
 			anchor, anchorOK := reconcileSourceLine(oldDocument, current, selection.Side, selection.Anchor)
 			active, activeOK := reconcileSourceLine(oldDocument, current, selection.Side, selection.Active)
 			if !anchorOK || !activeOK {
 				state.visualSelection = nil
+				state.readerSelectionDragging = false
 			} else {
 				selection.Anchor, selection.Active = anchor, active
+				clampVisualSelectionColumns(current, selection)
 			}
 		}
 	}
@@ -251,8 +267,21 @@ func (state *filesState) reconcileCommentInteraction(oldDocument ui.ReaderDocume
 	state.readerRevision++
 }
 
+func clampVisualSelectionColumns(document ui.ReaderDocument, selection *visualLineSelection) {
+	if selection == nil || selection.Kind != visualSelectionCharacter {
+		return
+	}
+	if index, ok := findReaderSource(document, selection.Side, selection.Anchor); ok {
+		selection.AnchorColumn = min(max(0, selection.AnchorColumn), ansi.StringWidth(ui.SafeSingleLine(document.Rows[index].Text)))
+	}
+	if index, ok := findReaderSource(document, selection.Side, selection.Active); ok {
+		selection.ActiveColumn = min(max(0, selection.ActiveColumn), ansi.StringWidth(ui.SafeSingleLine(document.Rows[index].Text)))
+	}
+}
+
 func (state *filesState) resetReaderInteraction() {
 	state.visualSelection = nil
+	state.readerSelectionDragging = false
 	state.commentDraft = nil
 	state.commentHover = nil
 	state.readerRevision++
@@ -273,8 +302,123 @@ func (state *filesState) startVisualSelection(index int) bool {
 	return true
 }
 
+func (state *filesState) startCharacterSelection(point ui.ReaderPoint) bool {
+	document := state.readerDocument()
+	side, line, ok := readerSourceAt(document, point.Source, nil)
+	if !ok || state.readerEntry.Path == "" || state.markdownPreviewActive() {
+		return false
+	}
+	column := max(0, point.Column)
+	state.visualSelection = &visualLineSelection{
+		File: state.readerEntry.Path, Context: state.commentContext(), Side: side,
+		Anchor: line, Active: line, Kind: visualSelectionCharacter,
+		AnchorColumn: column, ActiveColumn: column,
+	}
+	state.readerSelectionDragging = true
+	state.commentHover = nil
+	state.readerRevision++
+	return true
+}
+
+func (state *filesState) finishCharacterSelection() bool {
+	if !state.readerSelectionDragging {
+		return false
+	}
+	state.readerSelectionDragging = false
+	if state.visualSelection != nil && state.visualSelection.Kind == visualSelectionCharacter && !state.visualSelection.MouseMoved {
+		state.visualSelection = nil
+	}
+	state.readerRevision++
+	return true
+}
+
+func (m *Model) beginFilesCharacterSelection(point ui.ReaderPoint) {
+	document := m.files.readerDocument()
+	if point.Source < 0 || point.Source >= len(document.Rows) || !document.Rows[point.Source].Commentable() {
+		return
+	}
+	m.files.place.Focus = navigation.FocusReader
+	m.files.place.ReaderCursor = point.Source
+	if m.files.startCharacterSelection(point) {
+		m.ensureActiveReaderSelectionVisible()
+	}
+}
+
+func (m *Model) dragFilesCharacterSelection(point ui.ReaderPoint) {
+	selection := m.files.visualSelection
+	if !m.files.readerSelectionDragging || selection == nil || selection.Kind != visualSelectionCharacter {
+		return
+	}
+	document := m.files.readerDocument()
+	previousLine, previousColumn := selection.Active, selection.ActiveColumn
+	m.selectFilesVisualLine(document, point.Source)
+	activeIndex, ok := findReaderSource(document, selection.Side, selection.Active)
+	if ok {
+		width := ansi.StringWidth(ui.SafeSingleLine(document.Rows[activeIndex].Text))
+		if activeIndex == point.Source {
+			selection.ActiveColumn = max(0, min(point.Column, width))
+		} else if point.Source < activeIndex {
+			selection.ActiveColumn = 0
+		} else {
+			selection.ActiveColumn = width
+		}
+	}
+	selection.MouseMoved = selection.MouseMoved || selection.Active != selection.Anchor || selection.ActiveColumn != selection.AnchorColumn
+	if selection.Active != previousLine || selection.ActiveColumn != previousColumn {
+		m.files.readerRevision++
+	}
+}
+
+func (state filesState) visualSelectionText() (string, bool) {
+	selection := state.visualSelection
+	if selection == nil || selection.File != state.readerEntry.Path || selection.Context != state.commentContext() {
+		return "", false
+	}
+	document := state.readerDocument()
+	anchor, anchorOK := findReaderSource(document, selection.Side, selection.Anchor)
+	active, activeOK := findReaderSource(document, selection.Side, selection.Active)
+	if !anchorOK || !activeOK {
+		return "", false
+	}
+	first, last := anchor, active
+	firstColumn, lastColumn := selection.AnchorColumn, selection.ActiveColumn
+	if first > last {
+		first, last = last, first
+		firstColumn, lastColumn = lastColumn, firstColumn
+	}
+	lines := make([]string, 0, last-first+1)
+	for index := first; index <= last; index++ {
+		if _, ok := sourceNumber(document.Rows[index], selection.Side); !ok {
+			continue
+		}
+		text := ui.SafeSingleLine(document.Rows[index].Text)
+		if selection.Kind == visualSelectionCharacter {
+			width := ansi.StringWidth(text)
+			start, end := 0, width
+			switch {
+			case first == last:
+				start = min(firstColumn, lastColumn)
+				end = max(firstColumn, lastColumn) + 1
+			case index == first:
+				start = firstColumn
+			case index == last:
+				end = lastColumn + 1
+			}
+			start = max(0, min(start, width))
+			end = max(start, min(end, width))
+			text = ansi.Cut(text, start, end)
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n"), len(lines) != 0
+}
+
 func (state filesState) visualActive() bool {
 	return state.visualSelection != nil && state.commentDraft == nil
+}
+
+func (state filesState) characterSelectionActive() bool {
+	return state.visualActive() && state.visualSelection.Kind == visualSelectionCharacter
 }
 
 func (state filesState) composingComment() bool { return state.commentDraft != nil }
@@ -341,6 +485,7 @@ func (state *filesState) beginComment(index int, single bool, geometry ui.Geomet
 		active = anchor
 		if single {
 			state.visualSelection = nil
+			state.readerSelectionDragging = false
 		}
 	}
 	rangeValue := comments.Range{Side: side, Start: anchor, End: active}.Normalize()
@@ -433,6 +578,7 @@ func (state *filesState) submitComment() (comments.Comment, bool) {
 	})
 	state.commentDraft = nil
 	state.visualSelection = nil
+	state.readerSelectionDragging = false
 	state.commentEditor.Load("")
 	state.readerRevision++
 	return comment, true
@@ -476,15 +622,7 @@ func (state filesState) decorateReaderDocument(source ui.ReaderDocument) ui.Read
 	}
 	rows := append([]ui.ReaderRow(nil), source.Rows...)
 	if selection := state.visualSelection; selection != nil && selection.File == state.readerEntry.Path && selection.Context == state.commentContext() {
-		low, high := selection.Anchor.Number, selection.Active.Number
-		if low > high {
-			low, high = high, low
-		}
-		for index := range rows {
-			if number, ok := sourceNumber(rows[index], selection.Side); ok && number >= low && number <= high {
-				rows[index].VisualSelected = true
-			}
-		}
+		decorateVisualSelection(rows, selection)
 	}
 	if hover := state.commentHover; hover != nil && hover.File == state.readerEntry.Path && hover.Context == state.commentContext() {
 		if index, ok := findReaderSource(source, hover.Side, hover.Line); ok {
@@ -514,6 +652,43 @@ func (state filesState) decorateReaderDocument(source ui.ReaderDocument) ui.Read
 	}
 	source.Rows = decorated
 	return source
+}
+
+func decorateVisualSelection(rows []ui.ReaderRow, selection *visualLineSelection) {
+	low, high := selection.Anchor.Number, selection.Active.Number
+	lowColumn, highColumn := selection.AnchorColumn, selection.ActiveColumn
+	if low > high {
+		low, high = high, low
+		lowColumn, highColumn = highColumn, lowColumn
+	}
+	for index := range rows {
+		number, ok := sourceNumber(rows[index], selection.Side)
+		if !ok || number < low || number > high {
+			continue
+		}
+		if selection.Kind == visualSelectionLine {
+			rows[index].VisualSelected = true
+			continue
+		}
+		width := ansi.StringWidth(ui.SafeSingleLine(rows[index].Text))
+		start, end := 0, width
+		switch {
+		case low == high:
+			start = min(lowColumn, highColumn)
+			end = max(lowColumn, highColumn) + 1
+		case number == low:
+			start = lowColumn
+		case number == high:
+			end = highColumn + 1
+		}
+		start = max(0, min(start, width))
+		end = max(start, min(end, width))
+		if start < end {
+			rows[index].VisualCharacter = true
+			rows[index].VisualStart = start
+			rows[index].VisualEnd = end
+		}
+	}
 }
 
 func (state filesState) commentRows(comment comments.Comment) []ui.ReaderRow {
@@ -641,6 +816,7 @@ func (m *Model) cancelFilesVisualSelection() {
 	document := m.files.readerDocument()
 	anchor, ok := findReaderSource(document, selection.Side, selection.Anchor)
 	m.files.visualSelection = nil
+	m.files.readerSelectionDragging = false
 	m.files.readerRevision++
 	if ok {
 		m.files.place.ReaderCursor = document.SelectionTarget(anchor)

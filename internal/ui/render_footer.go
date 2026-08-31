@@ -47,8 +47,11 @@ func fileFooterEntries(model Model) []footerEntry {
 	if model.ReaderVisualSelection {
 		entries := []footerEntry{
 			{key: "c", label: "comment range"},
+			{key: "y", label: "copy"},
 			{key: "esc", label: "cancel selection"},
-			{key: "j/k", label: "extend"},
+		}
+		if !model.ReaderCharacterSelection {
+			entries = append(entries, footerEntry{key: "j/k", label: "extend"})
 		}
 		return append(entries, availableFileFooterEntries(controls, model.FileActions)...)
 	}

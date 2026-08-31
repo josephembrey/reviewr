@@ -183,9 +183,14 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 			line = renderReaderBackgroundRow(row, bar, freshness, number, width, row.VisualSelected)
 		} else {
 			line = barStyle.Render(bar) + readerReviewFreshnessStyle.Render(freshness) +
-				numberStyle.Render(number) + renderReaderPayload(row, nil)
+				numberStyle.Render(number) + renderReaderPayloadSelection(row, nil, focused)
 			line = fit(line, width)
 		}
+	}
+	if row.VisualCharacter {
+		// Character selection owns payload cells only. The logical line cursor
+		// must not turn it back into a full-row selection.
+		return line
 	}
 	if row.VisualSelected && (row.Kind == ReaderInsertion || row.Kind == ReaderDeletion) && highlight == workspace.DiffHighlightBackground {
 		// A background diff already owns the whole row's semantic green/red.
@@ -388,8 +393,11 @@ func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, wid
 		// Match the legacy affordance while retaining the changed-row fill.
 		numberStyle = numberStyle.Bold(true).Underline(true)
 	}
-	line := barStyle.Render(bar) + freshnessStyle.Render(freshness) + numberStyle.Render(number) +
-		renderReaderBackgroundPayload(row, backgroundColor, visualSelected)
+	payload := renderReaderPayloadSelection(row, backgroundColor, true)
+	if visualSelected && !row.VisualCharacter {
+		payload = renderReaderBackgroundPayload(row, backgroundColor, true)
+	}
+	line := barStyle.Render(bar) + freshnessStyle.Render(freshness) + numberStyle.Render(number) + payload
 	line = clip(line, width)
 	if padding := width - lipgloss.Width(line); padding > 0 {
 		line += base.Render(strings.Repeat(" ", padding))
@@ -478,4 +486,71 @@ func renderReaderPayload(row ReaderRow, background color.Color) string {
 		}
 	}
 	return rendered.String()
+}
+
+// renderReaderPayloadSelection preserves syntax outside a mouse-authored
+// character range. On ordinary rows selected cells use the terminal's native
+// reverse-video selection; background diff rows retain their red/green fill
+// and add bold underline, matching Visual-line semantics.
+func renderReaderPayloadSelection(row ReaderRow, background color.Color, focused bool) string {
+	if !row.VisualCharacter {
+		return renderReaderPayload(row, background)
+	}
+	if len(row.Spans) == 0 {
+		return renderReaderPayloadSelectionPiece(
+			SafeSingleLine(row.Text), row.Tone, TextStyle{}, background,
+			row.VisualStart, row.VisualEnd, focused,
+		)
+	}
+	var rendered strings.Builder
+	position := 0
+	for _, span := range row.Spans {
+		text := SafeSingleLine(span.Text)
+		width := ansi.StringWidth(text)
+		start := max(0, row.VisualStart-position)
+		end := min(width, row.VisualEnd-position)
+		tone := span.Tone
+		if tone == ToneDefault {
+			tone = row.Tone
+		}
+		rendered.WriteString(renderReaderPayloadSelectionPiece(text, tone, span.Style, background, start, end, focused))
+		position += width
+	}
+	return rendered.String()
+}
+
+func renderReaderPayloadSelectionPiece(
+	text string,
+	tone Tone,
+	textStyle TextStyle,
+	background color.Color,
+	start, end int,
+	focused bool,
+) string {
+	width := ansi.StringWidth(text)
+	start = max(0, min(start, width))
+	end = max(start, min(end, width))
+	render := func(value string, selected bool) string {
+		if value == "" {
+			return ""
+		}
+		if selected {
+			if background != nil {
+				return lipgloss.NewStyle().Background(background).Foreground(lipgloss.Black).
+					Bold(true).Underline(true).Render(value)
+			}
+			return selectionStyle(focused).Render(value)
+		}
+		if background != nil {
+			return lipgloss.NewStyle().Background(background).Foreground(lipgloss.Black).
+				Bold(textStyle.Bold).Italic(textStyle.Italic).Underline(textStyle.Underline).Render(value)
+		}
+		if tone != ToneDefault {
+			return renderToneText(value, tone)
+		}
+		return renderTextStyle(value, textStyle)
+	}
+	return render(ansi.Cut(text, 0, start), false) +
+		render(ansi.Cut(text, start, end), true) +
+		render(ansi.Cut(text, end, width), false)
 }
