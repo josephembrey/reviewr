@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +97,7 @@ func TestSnapshotIncludesAllStatesAndIgnoredFiles(t *testing.T) {
 	runGitTest(t, root, "add", "added.go")
 	write("untracked.go", "untracked\n")
 	write("ignored/nested.txt", "ignored\n")
+	write("ignored/packages/dependency/index.js", "ignored dependency\n")
 
 	entries, err := New().Snapshot(root)
 	if err != nil {
@@ -106,19 +108,24 @@ func TestSnapshotIncludesAllStatesAndIgnoredFiles(t *testing.T) {
 		states[entry.Path] = entry
 	}
 	want := map[string]FileState{
-		".gitignore":         FileUnchanged,
-		"added.go":           FileAdded,
-		"deleted.go":         FileDeleted,
-		"ignored/nested.txt": FileIgnored,
-		"modified.go":        FileModified,
-		"renamed.go":         FileRenamed,
-		"unchanged.go":       FileUnchanged,
-		"untracked.go":       FileUntracked,
+		".gitignore":   FileUnchanged,
+		"added.go":     FileAdded,
+		"deleted.go":   FileDeleted,
+		"ignored/":     FileIgnored,
+		"modified.go":  FileModified,
+		"renamed.go":   FileRenamed,
+		"unchanged.go": FileUnchanged,
+		"untracked.go": FileUntracked,
 	}
 	for path, state := range want {
 		entry, ok := states[path]
 		if !ok || entry.State != state {
 			t.Fatalf("Snapshot()[%q] = %+v, %v; want state %v; all=%#v", path, entry, ok, state, entries)
+		}
+	}
+	for path := range states {
+		if strings.HasPrefix(path, "ignored/") && path != "ignored/" {
+			t.Fatalf("Snapshot recursively inventoried ignored descendant %q", path)
 		}
 	}
 	if states["renamed.go"].PreviousPath != "old.go" {

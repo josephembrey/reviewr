@@ -30,8 +30,8 @@ type FileEntry struct {
 	Binary       bool
 }
 
-// Snapshot reads all tracked, untracked, and ignored file identities, then
-// overlays porcelain-v2 state and per-file line statistics into one result.
+// Snapshot reads all tracked and untracked file identities plus opaque ignored
+// directories, then overlays porcelain-v2 state and per-file line statistics.
 func (client Client) Snapshot(root string) ([]FileEntry, error) {
 	entries, err := client.Inventory(root)
 	if err != nil {
@@ -59,8 +59,9 @@ func (client Client) Snapshot(root string) ([]FileEntry, error) {
 	return entries, nil
 }
 
-// Inventory reads all tracked, untracked, and ignored identities without
-// calculating comparison-specific line statistics.
+// Inventory reads tracked and untracked identities without calculating
+// comparison-specific line statistics. Ignored trees are represented by their
+// topmost directory instead of recursively enumerating their contents.
 func (client Client) Inventory(root string) ([]FileEntry, error) {
 	trackedOutput, err := run(root, "ls-files", "-z", "--cached")
 	if err != nil {
@@ -72,7 +73,6 @@ func (client Client) Inventory(root string) ([]FileEntry, error) {
 		"--porcelain=v2",
 		"-z",
 		"--untracked-files=all",
-		"--ignored=traditional",
 		"--renames",
 	)
 	if err != nil {
@@ -81,6 +81,21 @@ func (client Client) Inventory(root string) ([]FileEntry, error) {
 	status, err := ParsePorcelainV2(statusOutput)
 	if err != nil {
 		return nil, err
+	}
+	ignoredOutput, err := run(
+		root,
+		"ls-files",
+		"-z",
+		"--others",
+		"--ignored",
+		"--exclude-standard",
+		"--directory",
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range ParseNUL(ignoredOutput) {
+		status = append(status, FileEntry{Path: path, State: FileIgnored})
 	}
 	return MergeFileEntries(ParseNUL(trackedOutput), status), nil
 }

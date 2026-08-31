@@ -11,6 +11,10 @@ func build(paths []string) *directory {
 		if path == "" {
 			continue
 		}
+		directoryOnly := strings.HasSuffix(path, "/")
+		if directoryOnly {
+			path = strings.TrimSuffix(path, "/")
+		}
 		segments := strings.Split(path, "/")
 		valid := true
 		for _, segment := range segments {
@@ -23,13 +27,20 @@ func build(paths []string) *directory {
 			continue
 		}
 		current := root
-		for _, segment := range segments[:len(segments)-1] {
+		directories := segments[:len(segments)-1]
+		if directoryOnly {
+			directories = segments
+		}
+		for _, segment := range directories {
 			next := current.dirs[segment]
 			if next == nil {
 				next = newDirectory()
 				current.dirs[segment] = next
 			}
 			current = next
+		}
+		if directoryOnly {
+			continue
 		}
 		// Repeated paths overwrite the same leaf, so they need no separate
 		// deduplication map.

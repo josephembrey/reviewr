@@ -88,7 +88,7 @@ func NewComparisonSnapshot(entries []Entry, comparison Comparison) Snapshot {
 	return Snapshot{entries: result, summary: summary, comparison: comparison}
 }
 
-// All returns tracked, untracked, and ignored entries.
+// All returns tracked and untracked files plus collapsed ignored entries.
 func (snapshot Snapshot) All() []Entry {
 	return append([]Entry(nil), snapshot.entries...)
 }

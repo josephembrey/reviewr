@@ -50,6 +50,24 @@ func TestTreeCompactsUnaryChainsAndHandlesEdgeInputs(t *testing.T) {
 	}
 }
 
+func TestTreeRepresentsOpaqueDirectoryPathsWithoutInventingFiles(t *testing.T) {
+	t.Parallel()
+	tree := New([]string{"node_modules/", "vendor/cache/"})
+	want := []Row{
+		{Identity: DirectoryIdentity("node_modules"), Path: "node_modules", Name: "node_modules", Kind: Directory, Expanded: true},
+		{Identity: DirectoryIdentity("vendor/cache"), Path: "vendor/cache", Name: "vendor/cache", Kind: Directory, Expanded: true},
+	}
+	if got := tree.Rows(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Rows() = %#v, want opaque directories %#v", got, want)
+	}
+	if tree.FileCount() != 0 || len(tree.Files()) != 0 {
+		t.Fatalf("opaque directories became files: count=%d files=%#v", tree.FileCount(), tree.Files())
+	}
+	if !tree.Collapse(DirectoryIdentity("node_modules")) || !tree.Expand(DirectoryIdentity("node_modules")) {
+		t.Fatal("opaque directory did not retain normal fold behavior")
+	}
+}
+
 func TestTreeCollapseExpandToggleAndRebuild(t *testing.T) {
 	t.Parallel()
 	tree := New([]string{"src/a.go", "src/b.go", "test/x.go", "test/y.go"})

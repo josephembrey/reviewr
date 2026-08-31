@@ -594,10 +594,10 @@ func TestLastTurnComparisonUsesPersistedWorktreeSnapshot(t *testing.T) {
 			t.Fatalf("last-turn changes omit %q: %#v", path, changed)
 		}
 	}
-	if _, ok := changed["ignored/cache.txt"]; ok {
-		t.Fatalf("last-turn included ignored file: %#v", changed)
+	if _, ok := changed["ignored/"]; ok {
+		t.Fatalf("last-turn included ignored directory: %#v", changed)
 	}
-	if entry := entriesByPath(snapshot.All())["ignored/cache.txt"]; entry.State != FileIgnored {
+	if entry := entriesByPath(snapshot.All())["ignored/"]; entry.State != FileIgnored {
 		t.Fatalf("ignored all-files entry = %+v", entry)
 	}
 	if diff := repo.ReadDiff(snapshot.Comparison(), changed["existing-untracked.txt"]); diff.Kind != DiffReady || !strings.Contains(diff.Content, "-before loose") || !strings.Contains(diff.Content, "+after loose") {

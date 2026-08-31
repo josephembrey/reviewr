@@ -183,8 +183,8 @@ func (state *filesState) project(scope workspace.FileSet, mode workspace.ReaderM
 	state.treeScopeReady = true
 	state.folds[scope] = state.tree.Folds()
 	state.reconcileCursor(oldRows)
+	state.directoryIgnored = ignoredDirectories(entries)
 	state.entries, state.entriesByPath = orderEntries(entries, state.tree.Files())
-	state.directoryIgnored = ignoredDirectories(state.entries)
 	if firstLoad && !hadSelection {
 		state.selectFirstVisibleFile()
 	}
