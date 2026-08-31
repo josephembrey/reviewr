@@ -12,7 +12,7 @@ import (
 	"github.com/josephembrey/reviewr/internal/appstate"
 )
 
-const version = 1
+const version = 2
 
 // Identity names one checkout without exposing its paths in the state filename.
 type Identity struct {
@@ -27,8 +27,7 @@ type State struct {
 	Controls Controls `json:"controls,omitempty"`
 	Layout   Layout   `json:"layout,omitempty"`
 	Files    Files    `json:"files,omitempty"`
-	History  Place    `json:"history,omitempty"`
-	Refs     Refs     `json:"refs,omitempty"`
+	History  History  `json:"history,omitempty"`
 	Stashes  Stashes  `json:"stashes,omitempty"`
 	Notes    Notes    `json:"notes,omitempty"`
 }
@@ -43,9 +42,15 @@ type Controls struct {
 }
 
 type Layout struct {
-	NavigatorWidth int  `json:"navigator_width,omitempty"`
-	Customized     bool `json:"customized,omitempty"`
-	Swapped        bool `json:"swapped,omitempty"`
+	NavigatorWidth  int  `json:"navigator_width,omitempty"`
+	Customized      bool `json:"customized,omitempty"`
+	Swapped         bool `json:"swapped,omitempty"`
+	GitSourceWidth  int  `json:"git_source_width,omitempty"`
+	GitSourceCustom bool `json:"git_source_custom,omitempty"`
+	GitStashWidth   int  `json:"git_stash_width,omitempty"`
+	GitStashCustom  bool `json:"git_stash_custom,omitempty"`
+	GitFilesSize    int  `json:"git_files_size,omitempty"`
+	GitFilesCustom  bool `json:"git_files_custom,omitempty"`
 }
 
 // Place retains the old identity sequence as well as its indices so startup
@@ -76,24 +81,37 @@ type Files struct {
 	MarkdownPreviews     []string         `json:"markdown_previews,omitempty"`
 }
 
-type Refs struct {
-	Place       Place    `json:"place,omitempty"`
-	PreviewRows []string `json:"preview_rows,omitempty"`
+type History struct {
+	SourcePlace    Place            `json:"source_place,omitempty"`
+	TimelinePlace  Place            `json:"timeline_place,omitempty"`
+	SelectedSource string           `json:"selected_source,omitempty"`
+	SourceFolds    map[string]bool  `json:"source_folds,omitempty"`
+	Focus          string           `json:"focus,omitempty"`
+	Inspecting     bool             `json:"inspecting,omitempty"`
+	InspectionOID  string           `json:"inspection_oid,omitempty"`
+	Inspection     ChangeInspection `json:"inspection,omitempty"`
 }
 
-type StashReaderPlace struct {
+type ChangeReaderPlace struct {
 	FileIdentity string `json:"file_identity,omitempty"`
+	FileTop      int    `json:"file_top,omitempty"`
 	ReaderOffset int    `json:"reader_offset,omitempty"`
 	ReaderColumn int    `json:"reader_column,omitempty"`
 	ReaderCursor int    `json:"reader_cursor,omitempty"`
 }
 
+type ChangeInspection struct {
+	Place                Place                        `json:"place,omitempty"`
+	ReaderRows           []string                     `json:"reader_rows,omitempty"`
+	ContextExpanded      bool                         `json:"context_expanded,omitempty"`
+	ContextFoldOverrides map[string]bool              `json:"context_fold_overrides,omitempty"`
+	ReaderPlaces         map[string]ChangeReaderPlace `json:"reader_places,omitempty"`
+}
+
 type Stashes struct {
-	Place                Place                       `json:"place,omitempty"`
-	ReaderRows           []string                    `json:"reader_rows,omitempty"`
-	ContextExpanded      bool                        `json:"context_expanded,omitempty"`
-	ContextFoldOverrides map[string]bool             `json:"context_fold_overrides,omitempty"`
-	ReaderPlaces         map[string]StashReaderPlace `json:"reader_places,omitempty"`
+	Place      Place            `json:"place,omitempty"`
+	Focus      string           `json:"focus,omitempty"`
+	Inspection ChangeInspection `json:"inspection,omitempty"`
 }
 
 type Notes struct {

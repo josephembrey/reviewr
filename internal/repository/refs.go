@@ -2,7 +2,7 @@ package repository
 
 import gitadapter "github.com/josephembrey/reviewr/internal/git"
 
-// RefSourceKind classifies one source in the read-only refs browser.
+// RefSourceKind classifies one source in the read-only History rail.
 type RefSourceKind uint8
 
 const (
@@ -40,38 +40,12 @@ type RefSource struct {
 	UnixTime int64
 }
 
-// RefDecorationKind classifies a public ref decorating a commit preview row.
-type RefDecorationKind uint8
-
-const (
-	RefDecorationBranch RefDecorationKind = iota + 1
-	RefDecorationRemote
-	RefDecorationTag
-)
-
-// RefDecoration is a typed public ref pointing at a commit.
-type RefDecoration struct {
-	Kind  RefDecorationKind
-	Label string
-}
-
-// RefCommit is one compact log-style preview row.
-type RefCommit struct {
-	OID          string
-	ShortOID     string
-	Subject      string
-	Author       string
-	AuthoredUnix int64
-	Decorations  []RefDecoration
-	Merge        bool
-}
-
 // AllRefsSource returns the synthetic complete public-ref source.
 func AllRefsSource() RefSource {
 	return RefSource{ID: RefSourceID{Kind: RefSourceAll}, Label: "All refs"}
 }
 
-// ListRefSources discovers every public refs-browser source without mutation.
+// ListRefSources discovers every History source without mutation.
 func (r *Repository) ListRefSources() ([]RefSource, error) {
 	sources, err := r.git.ListRefSources(r.root)
 	if err != nil {
@@ -84,56 +58,10 @@ func (r *Repository) ListRefSources() ([]RefSource, error) {
 	return result, nil
 }
 
-// ListRefCommits returns a bounded history for one exact typed source.
-func (r *Repository) ListRefCommits(source RefSource) ([]RefCommit, error) {
-	commits, err := r.git.ListRefCommits(r.root, refSourceToGit(source))
-	if err != nil {
-		return nil, err
-	}
-	result := make([]RefCommit, len(commits))
-	for index, commit := range commits {
-		decorations := make([]RefDecoration, len(commit.Decorations))
-		for decorationIndex, decoration := range commit.Decorations {
-			decorations[decorationIndex] = RefDecoration{
-				Kind:  RefDecorationKind(decoration.Kind),
-				Label: decoration.Label,
-			}
-		}
-		result[index] = RefCommit{
-			OID:          commit.OID,
-			ShortOID:     commit.ShortOID,
-			Subject:      commit.Subject,
-			Author:       commit.Author,
-			AuthoredUnix: commit.AuthoredUnix,
-			Decorations:  decorations,
-			Merge:        commit.Merge,
-		}
-	}
-	return result, nil
-}
-
 func refSourceFromGit(source gitadapter.RefSource) RefSource {
 	return RefSource{
 		ID: RefSourceID{
 			Kind: RefSourceKind(source.ID.Kind),
-			Name: source.ID.Name,
-		},
-		Label:    source.Label,
-		Revision: source.Revision,
-		OID:      source.OID,
-		Path:     source.Path,
-		Branch:   source.Branch,
-		Upstream: source.Upstream,
-		Tracking: source.Tracking,
-		Remote:   source.Remote,
-		UnixTime: source.UnixTime,
-	}
-}
-
-func refSourceToGit(source RefSource) gitadapter.RefSource {
-	return gitadapter.RefSource{
-		ID: gitadapter.RefSourceID{
-			Kind: gitadapter.RefSourceKind(source.ID.Kind),
 			Name: source.ID.Name,
 		},
 		Label:    source.Label,

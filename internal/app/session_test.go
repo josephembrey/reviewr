@@ -72,6 +72,12 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 	t.Parallel()
 	original := NewWithSession(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), nil, session.State{
 		Active: "git",
+		Layout: session.Layout{
+			NavigatorWidth: 29, Customized: true, Swapped: true,
+			GitSourceWidth: 27, GitSourceCustom: true,
+			GitStashWidth: 24, GitStashCustom: true,
+			GitFilesSize: 31, GitFilesCustom: true,
+		},
 		Controls: session.Controls{
 			Files: "changed", Reader: "diff", Comparison: "branch",
 			Git: "stashes", Traversal: "first-parent", DiffHighlight: "background",
@@ -83,17 +89,29 @@ func TestWorktreeSessionRoundTripsEveryBrowserPlace(t *testing.T) {
 			ReviewFull:           map[string]bool{"a.go": true},
 			MarkdownPreviews:     []string{"README.md", "docs/design.md"},
 		},
-		History: session.Place{Items: []string{"commit-1"}, Focus: "reader", ReaderOffset: 5},
-		Refs: session.Refs{
-			Place:       session.Place{Items: []string{"ref-1"}, Focus: "reader", ReaderOffset: 3},
-			PreviewRows: []string{"commit-1", "commit-0"},
+		History: session.History{
+			SourcePlace:    session.Place{Items: []string{"source:all"}},
+			TimelinePlace:  session.Place{Items: []string{"commit-1"}, ReaderOffset: 5},
+			SelectedSource: "source:all", SourceFolds: map[string]bool{"remotes": true}, Focus: "timeline",
+			Inspecting: true, InspectionOID: "commit-1",
+			Inspection: session.ChangeInspection{
+				Place:      session.Place{Items: []string{"\x00a.go"}, Focus: "reader", ReaderOffset: 3, ReaderCursor: 4},
+				ReaderRows: []string{"commit-row"}, ContextExpanded: true,
+				ContextFoldOverrides: map[string]bool{"fold:1": false},
+				ReaderPlaces: map[string]session.ChangeReaderPlace{
+					"commit-1": {FileIdentity: "\x00a.go", FileTop: 1, ReaderOffset: 3, ReaderCursor: 4},
+				},
+			},
 		},
 		Stashes: session.Stashes{
-			Place:      session.Place{Items: []string{"stash-1"}, Focus: "reader", ReaderOffset: 7, ReaderCursor: 8},
-			ReaderRows: []string{"stash-row"}, ContextExpanded: true,
-			ContextFoldOverrides: map[string]bool{"fold:2": false},
-			ReaderPlaces: map[string]session.StashReaderPlace{
-				"stash-1": {FileIdentity: "\x00a.go", ReaderOffset: 7, ReaderColumn: 2, ReaderCursor: 9},
+			Place: session.Place{Items: []string{"stash-1"}}, Focus: "diff",
+			Inspection: session.ChangeInspection{
+				Place:      session.Place{Items: []string{"\x00a.go"}, Focus: "reader", ReaderOffset: 7, ReaderCursor: 8},
+				ReaderRows: []string{"stash-row"}, ContextExpanded: true,
+				ContextFoldOverrides: map[string]bool{"fold:2": false},
+				ReaderPlaces: map[string]session.ChangeReaderPlace{
+					"stash-1": {FileIdentity: "\x00a.go", ReaderOffset: 7, ReaderColumn: 2, ReaderCursor: 9},
+				},
 			},
 		},
 	})
@@ -138,47 +156,50 @@ func TestRestoredDestinationWarmsItsOwnDataAndNotesPlace(t *testing.T) {
 	}
 }
 
-func TestRestoredRefsReconcileSourceAndPreviewByOID(t *testing.T) {
+func TestRestoredHistoryReconcilesSourceAndTimelineByIdentity(t *testing.T) {
 	t.Parallel()
 	sourceID := repository.RefSourceID{Kind: repository.RefSourceLocalBranch, Name: "refs/heads/topic"}
 	model := NewWithSession(&fakeSource{}, herdr.Context{}, notes.NewMemoryStore(), nil, session.State{
 		Active:   "git",
-		Controls: session.Controls{Git: "refs"},
-		Refs: session.Refs{
-			Place: session.Place{
+		Controls: session.Controls{Git: "history", Traversal: "first-parent"},
+		History: session.History{
+			SourcePlace: session.Place{
 				Items:    []string{repository.AllRefsSource().ID.Key(), sourceID.Key()},
-				Selected: 1, Focus: "reader", ReaderOffset: 1,
+				Selected: 1,
 			},
-			PreviewRows: []string{"old-tip", "keep"},
+			TimelinePlace:  session.Place{Items: []string{"old-tip", "keep"}, Selected: 1, Top: 1},
+			SelectedSource: sourceID.Key(), Focus: "timeline",
 		},
 	})
 	batch := model.Init()().(tea.BatchMsg)
 	foundInitialLoad := false
 	for _, command := range batch {
-		if message, ok := command().(refSourcesLoadedMsg); ok {
-			foundInitialLoad = message.generation == model.refs.sourceGeneration
+		if message, ok := command().(historySourcesLoadedMsg); ok {
+			foundInitialLoad = message.generation == model.history.sourceGeneration
 		}
 	}
 	if !foundInitialLoad {
-		t.Fatal("restored Refs destination did not start its tagged load")
+		t.Fatal("restored History did not start its source load")
 	}
 	var pending effect
-	model.refs, pending = model.refs.landSources(refSourcesLoadedMsg{
-		generation: model.refs.sourceGeneration,
+	model.history, pending = model.history.landSources(historySourcesLoadedMsg{
+		generation: model.history.sourceGeneration,
 		sources: []repository.RefSource{
 			repository.AllRefsSource(),
 			{ID: sourceID, Label: "topic", OID: "new-tip"},
 		},
 	}, 10)
-	if model.refs.selected != sourceID || pending.kind != effectLoadRefCommits {
-		t.Fatalf("restored ref source = %+v effect %+v", model.refs.selected, pending)
+	if model.history.selectedSource != sourceID.Key() || pending.kind != effectLoadCommits || pending.query.SourceOID != "new-tip" ||
+		pending.query.Traversal != repository.CommitFirstParent {
+		t.Fatalf("restored history source = %q effect %+v", model.history.selectedSource, pending)
 	}
-	model.refs = model.refs.landPreview(refCommitsLoadedMsg{
-		generation: model.refs.previewGeneration, sourceID: sourceID,
-		commits: []repository.RefCommit{{OID: "new-tip"}, {OID: "old-tip"}, {OID: "keep"}},
+	model.history = model.history.landCommits(commitsLoadedMsg{
+		generation: pending.generation, query: pending.query,
+		commits: []repository.Commit{{OID: "new-tip"}, {OID: "keep"}, {OID: "new-root"}},
 	}, 1)
-	if model.refs.place.ReaderOffset != 2 || model.refs.place.Focus != navigation.FocusReader {
-		t.Fatalf("restored ref preview place = %+v", model.refs.place)
+	selected, _ := model.history.timelinePlace.SelectedIdentity()
+	if selected != "keep" || model.history.timelinePlace.Top != 1 || model.history.focus != workspace.GitTimeline {
+		t.Fatalf("restored history timeline = selected %q place %+v focus %v", selected, model.history.timelinePlace, model.history.focus)
 	}
 }
 
@@ -190,10 +211,13 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 		Active:   "git",
 		Controls: session.Controls{Git: "stashes"},
 		Stashes: session.Stashes{
-			Place:      session.Place{Items: []string{oid}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
-			ReaderRows: []string{"row-0", "keep-row"}, ContextExpanded: true,
-			ReaderPlaces: map[string]session.StashReaderPlace{
-				oid: {FileIdentity: file.Identity(), ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
+			Place: session.Place{Items: []string{oid}}, Focus: "diff",
+			Inspection: session.ChangeInspection{
+				Place:      session.Place{Items: []string{file.Identity()}, Focus: "reader", ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
+				ReaderRows: []string{"row-0", "keep-row"}, ContextExpanded: true,
+				ReaderPlaces: map[string]session.ChangeReaderPlace{
+					oid: {FileIdentity: file.Identity(), ReaderOffset: 4, ReaderColumn: 2, ReaderCursor: 5},
+				},
 			},
 		},
 	})
@@ -212,12 +236,13 @@ func TestRestoredStashReconcilesNestedFilePlace(t *testing.T) {
 		generation: model.stashes.listGeneration,
 		stashes:    []repository.Stash{{OID: oid, Source: repository.ChangeSource{OID: oid}}},
 	}, 10)
-	var readerEffect effect
-	model.stashes, readerEffect = model.stashes.landFiles(stashFilesLoadedMsg{
+	readerEffect := model.stashes.landFiles(stashFilesLoadedMsg{
 		generation: filesEffect.generation, oid: oid, files: []repository.ChangedFile{file},
 	})
-	if readerEffect.kind != effectLoadStashFile || model.stashes.selectedFileIdentity() != file.Identity() ||
-		model.stashes.place.ReaderOffset != 4 || model.stashes.place.ReaderCursor != 5 || !model.stashes.readerContext.defaultExpanded {
+	selected, _ := model.stashes.inspection.place.SelectedIdentity()
+	if readerEffect.kind != effectLoadStashFile || selected != file.Identity() ||
+		model.stashes.inspection.place.ReaderOffset != 4 || model.stashes.inspection.place.ReaderCursor != 5 ||
+		!model.stashes.inspection.readerContext.defaultExpanded || model.stashes.focus != workspace.GitDiff {
 		t.Fatalf("restored stash state = effect %+v state %+v", readerEffect, model.stashes)
 	}
 }

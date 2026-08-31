@@ -15,6 +15,7 @@ type readerContextOwner uint8
 
 const (
 	readerContextFiles readerContextOwner = iota + 1
+	readerContextCommit
 	readerContextStashes
 )
 
@@ -85,6 +86,9 @@ func (m *Model) changeActiveReaderContextFold(identity string, expanded *bool) e
 	var changed, animating bool
 	var owner readerContextOwner
 	switch {
+	case m.active == workspace.Git && m.controls.Git == workspace.GitHistory && m.history.inspecting:
+		changed, animating = m.history.inspection.changeReaderContextFold(identity, expanded)
+		owner = readerContextCommit
 	case m.gitStashesActive():
 		if expanded == nil {
 			changed, animating = m.stashes.toggleReaderContextFold(identity)
@@ -106,8 +110,10 @@ func (m *Model) changeActiveReaderContextFold(identity string, expanded *bool) e
 	document, _ := m.activeReaderDocument()
 	m.clampDocumentReader(m.activePlace(), document)
 	generation := m.files.readerContext.generation
-	if owner == readerContextStashes {
-		generation = m.stashes.readerContext.generation
+	if owner == readerContextCommit {
+		generation = m.history.inspection.readerContext.generation
+	} else if owner == readerContextStashes {
+		generation = m.stashes.inspection.readerContext.generation
 	}
 	return readerContextAnimationEffect(owner, generation, animating)
 }
@@ -120,10 +126,15 @@ func (m *Model) landReaderContextFrame(msg readerContextFrameMsg) effect {
 		if advanced {
 			m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 		}
+	case readerContextCommit:
+		advanced, animating = m.history.inspection.advanceReaderContext(msg.generation)
+		if advanced {
+			m.clampDocumentReader(&m.history.inspection.place, m.history.inspection.readerDocument())
+		}
 	case readerContextStashes:
 		advanced, animating = m.stashes.advanceReaderContext(msg.generation)
 		if advanced {
-			m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+			m.clampDocumentReader(&m.stashes.inspection.place, m.stashes.readerDocument())
 		}
 	}
 	if !advanced {

@@ -99,7 +99,7 @@ func TestEveryRichReaderSourceUsesSemanticRows(t *testing.T) {
 	stash := changeDiffDocument(repository.ChangeDocument{
 		Change: repository.ChangedFile{Path: "main.go"},
 		Patch:  repository.File{Path: "main.go", Kind: repository.FileReady, Content: patch},
-	})
+	}, "Stash")
 	incremental := reviewReaderDocument("main.go", review.Document{Exact: true, Lines: []review.Line{
 		{Identity: "old", Text: "- old", Kind: review.RemovedLine, OldLine: 30},
 		{Identity: "new", Text: "+ new", Kind: review.AddedLine, NewLine: 40},
@@ -179,14 +179,14 @@ func TestDiffHighlightToggleIsGlobalRenderOnlyAndEligibilityIsVisibleDocument(t 
 	}
 	model.active = workspace.Files
 	model.active = workspace.Git
-	model.controls.Git = workspace.GitLog
+	model.controls.Git = workspace.GitHistory
 	if model.diffHighlightEligible() {
-		t.Fatal("Git Log exposed diff highlight")
+		t.Fatal("Git History exposed diff highlight")
 	}
 	model.controls.Git = workspace.GitStashes
-	model.stashes.readerFileID = "main.go"
-	model.stashes.reader = repository.ChangeDocument{Change: repository.ChangedFile{Path: "main.go"}}
-	model.stashes.readerPresentation = &presentation
+	model.stashes.inspection.readerFileID = "main.go"
+	model.stashes.inspection.reader = repository.ChangeDocument{Change: repository.ChangedFile{Path: "main.go"}}
+	model.stashes.inspection.readerPresentation = &presentation
 	if !model.diffHighlightEligible() {
 		t.Fatal("Stash diff did not inherit global eligibility")
 	}
@@ -675,16 +675,16 @@ func TestStashReaderUsesSharedContextAnimation(t *testing.T) {
 	model.active = workspace.Git
 	model.controls.Git = workspace.GitStashes
 	document := foldableDiffDocument()
-	model.stashes.readerPresentation = &document
+	model.stashes.inspection.readerPresentation = &document
 	firstFold := model.stashes.readerDocument().Rows[0].Identity
 
 	pending := model.apply(Action{Kind: ExpandReaderFold})
-	if pending.readerContextOwner != readerContextStashes || model.stashes.readerContext.progress(firstFold) != 1 {
-		t.Fatalf("stash animation = effect %+v progress %d", pending, model.stashes.readerContext.progress(firstFold))
+	if pending.readerContextOwner != readerContextStashes || model.stashes.inspection.readerContext.progress(firstFold) != 1 {
+		t.Fatalf("stash animation = effect %+v progress %d", pending, model.stashes.inspection.readerContext.progress(firstFold))
 	}
 	finishReaderContextAnimation(&model, pending)
-	if !model.stashes.readerContext.target(firstFold) || model.stashes.readerContext.progress(firstFold) != readerContextAnimationSteps {
-		t.Fatalf("stash expansion finished at target %v progress %d", model.stashes.readerContext.target(firstFold), model.stashes.readerContext.progress(firstFold))
+	if !model.stashes.inspection.readerContext.target(firstFold) || model.stashes.inspection.readerContext.progress(firstFold) != readerContextAnimationSteps {
+		t.Fatalf("stash expansion finished at target %v progress %d", model.stashes.inspection.readerContext.target(firstFold), model.stashes.inspection.readerContext.progress(firstFold))
 	}
 }
 

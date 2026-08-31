@@ -53,11 +53,11 @@ func TestMultiStateControlsCycleInDisplayOrder(t *testing.T) {
 		comparison = comparison.Next()
 	}
 
-	view := GitLog
-	for _, want := range []string{"log", "refs", "stashes", "log"} {
-		if got := view.Label(); got != want {
-			t.Fatalf("Git view label = %q, want %q", got, want)
+	mode := GitHistory
+	for _, want := range []string{"history", "stashes", "history"} {
+		if got := mode.Label(); got != want {
+			t.Fatalf("Git mode label = %q, want %q", got, want)
 		}
-		view = view.Next()
+		mode = mode.Toggle()
 	}
 }

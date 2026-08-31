@@ -108,38 +108,29 @@ func (comparison Comparison) Next() Comparison {
 	}
 }
 
-// GitView selects the Git navigator surface.
-type GitView uint8
+// GitMode selects one of Git's two top-level read-only workspaces.
+type GitMode uint8
 
 const (
-	GitLog GitView = iota
-	GitRefs
+	GitHistory GitMode = iota
 	GitStashes
 )
 
-func (view GitView) Label() string {
-	switch view {
-	case GitRefs:
-		return "refs"
-	case GitStashes:
+func (mode GitMode) Label() string {
+	if mode == GitStashes {
 		return "stashes"
-	default:
-		return "log"
 	}
+	return "history"
 }
 
-func (view GitView) Next() GitView {
-	switch view {
-	case GitLog:
-		return GitRefs
-	case GitRefs:
-		return GitStashes
-	default:
-		return GitLog
+func (mode GitMode) Toggle() GitMode {
+	if mode == GitStashes {
+		return GitHistory
 	}
+	return GitStashes
 }
 
-// GitTraversal selects the Log history traversal.
+// GitTraversal selects the History traversal.
 type GitTraversal uint8
 
 const (
@@ -168,7 +159,7 @@ type Controls struct {
 	Files         FileSet
 	Reader        ReaderMode
 	Comparison    Comparison
-	Git           GitView
+	Git           GitMode
 	Traversal     GitTraversal
 	DiffHighlight DiffHighlight
 	// MarkdownPreviewEligible and MarkdownPreview are derived from the visible

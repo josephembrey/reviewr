@@ -1,9 +1,7 @@
 package git
 
 import (
-	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,11 +23,13 @@ const (
 	FirstParentTraversal
 )
 
-// HistoryQuery describes one bounded, read-only history request. StartOID is
-// used only by first-parent traversal; an empty value means HEAD.
+// HistoryQuery describes one bounded, read-only history request. SourceOID
+// limits either traversal to one immutable source tip. StartOID is retained as
+// the user-selected first-parent starting point when no source is selected.
 type HistoryQuery struct {
 	Traversal Traversal
 	StartOID  string
+	SourceOID string
 }
 
 // RefKind gives a decoration semantic meaning independent of its spelling.
@@ -58,16 +58,6 @@ type Commit struct {
 	Refs         []CommitRef
 	Merge        bool
 	Head         bool
-}
-
-// CommitSummary is bounded metadata and stat for one exact commit identity.
-type CommitSummary struct {
-	OID         string
-	AuthorName  string
-	AuthorEmail string
-	AuthoredAt  string
-	Message     string
-	Stat        string
 }
 
 // ListCommits returns a bounded structured traversal. Graph mode walks every
@@ -125,6 +115,12 @@ func historyArgs(root string, query HistoryQuery, hasCurrentHead bool) ([]string
 		if err != nil {
 			return nil, nil, err
 		}
+		if query.SourceOID != "" {
+			if !validObjectID(query.SourceOID) {
+				return nil, nil, fmt.Errorf("invalid history source object ID %q", query.SourceOID)
+			}
+			return []string{"--topo-order", "--end-of-options", query.SourceOID}, refs, nil
+		}
 		if !hasRefs && !hasCurrentHead {
 			return nil, refs, nil
 		}
@@ -136,7 +132,10 @@ func historyArgs(root string, query HistoryQuery, hasCurrentHead bool) ([]string
 		}
 		return args, refs, nil
 	case FirstParentTraversal:
-		start := query.StartOID
+		start := query.SourceOID
+		if start == "" {
+			start = query.StartOID
+		}
 		if start == "" {
 			if !hasCurrentHead {
 				return nil, nil, nil
@@ -149,50 +148,6 @@ func historyArgs(root string, query HistoryQuery, hasCurrentHead bool) ([]string
 	default:
 		return nil, nil, fmt.Errorf("unsupported history traversal %d", query.Traversal)
 	}
-}
-
-// ReadCommit returns bounded metadata and a first-parent changed-file stat.
-func (Client) ReadCommit(root, oid string, maxBytes int64) (CommitSummary, error) {
-	if !validObjectID(oid) {
-		return CommitSummary{}, fmt.Errorf("invalid commit object ID %q", oid)
-	}
-	if maxBytes <= 0 {
-		maxBytes = DefaultMaxHistoryBytes
-	}
-	captureLimit := maxBytes
-	if captureLimit <= math.MaxInt64-2 {
-		captureLimit += 2 // combined format adds one NUL and one separating newline
-	}
-	out, err := runBounded(
-		root,
-		captureLimit,
-		"show",
-		"--first-parent",
-		"--no-color",
-		"--no-show-signature",
-		"--format=%H%x00%an%x00%ae%x00%aI%x00%B%x00",
-		"--stat",
-		"--no-renames",
-		"--no-ext-diff",
-		"--no-textconv",
-		"--end-of-options",
-		oid,
-		"--",
-	)
-	if err != nil {
-		if errors.Is(err, ErrOutputTooLarge) {
-			return CommitSummary{}, fmt.Errorf("git show: %w (%d bytes)", ErrOutputTooLarge, maxBytes)
-		}
-		return CommitSummary{}, err
-	}
-	summary, metadataBytes, statBytes, err := parseCommitSummary(out)
-	if err != nil {
-		return CommitSummary{}, err
-	}
-	if metadataBytes >= maxBytes || metadataBytes+statBytes > maxBytes {
-		return CommitSummary{}, fmt.Errorf("git show: %w (%d bytes)", ErrOutputTooLarge, maxBytes)
-	}
-	return summary, nil
 }
 
 func resolveHead(root string) (string, bool, error) {

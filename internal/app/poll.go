@@ -101,10 +101,7 @@ func (m *Model) landRepositoryPoll(msg repositoryPolledMsg) tea.Cmd {
 	}
 	m.poll.turnBaselineDirty = false
 	if refsChanged {
-		commands = append(commands, m.command(tagRepositoryPoll(m.history.poll(m.controls.Traversal, m.selectedHistoryOID()), msg.activity)))
-		if m.refs.loaded {
-			commands = append(commands, m.command(tagRepositoryPoll(m.refs.poll(), msg.activity)))
-		}
+		commands = append(commands, m.command(tagRepositoryPoll(m.history.poll(), msg.activity)))
 		if m.stashes.loaded {
 			commands = append(commands, m.command(tagRepositoryPoll(m.stashes.poll(), msg.activity)))
 		}

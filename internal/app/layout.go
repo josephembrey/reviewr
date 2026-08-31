@@ -1,6 +1,9 @@
 package app
 
-import "github.com/josephembrey/reviewr/internal/ui"
+import (
+	"github.com/josephembrey/reviewr/internal/ui"
+	"github.com/josephembrey/reviewr/internal/workspace"
+)
 
 // layoutState owns user-controlled pane geometry. Once customized, each pane
 // keeps its semantic width even when the panes swap sides.
@@ -58,8 +61,10 @@ func (m *Model) applyLayoutAction(action Action) {
 	switch action.Kind {
 	case Resize:
 		m.geometry = m.layout.resize(action.Width, action.Height)
+		m.updateGitGeometry()
 		if !ui.MeetsMinimumSize(action.Width, action.Height) {
 			m.layout.finishDrag()
+			m.gitLayout.finish()
 			m.scrollbar.finish()
 			m.note.finishPointers()
 		}
@@ -67,21 +72,38 @@ func (m *Model) applyLayoutAction(action Action) {
 		m.note.resize(m.geometry)
 	case StartPaneResize:
 		m.scrollbar.finish()
-		m.layout.startDrag()
+		if m.active == workspace.Git && action.GitDivider != ui.GitDividerNone {
+			m.layout.finishDrag()
+			m.gitLayout.start(action.GitDivider)
+		} else {
+			m.gitLayout.finish()
+			m.layout.startDrag()
+		}
 	case ResizePanes:
-		if m.layout.dragging {
+		if m.active == workspace.Git && m.gitLayout.dragging != ui.GitDividerNone {
+			m.dragGitDivider(action.X, action.Y)
+		} else if m.layout.dragging {
 			m.geometry = m.layout.dragTo(action.Position, m.geometry.Screen.Width, m.geometry.Screen.Height)
 			m.resizeWorkspaceState()
 		}
 	case FinishPaneResize:
 		m.layout.finishDrag()
+		m.gitLayout.finish()
 	case SwapPanes:
+		if m.active == workspace.Git {
+			return
+		}
 		m.scrollbar.finish()
 		m.geometry = m.layout.swap(m.geometry.Screen.Width, m.geometry.Screen.Height)
 		m.resizeWorkspaceState()
 	case StartScrollbarDrag:
 		m.layout.finishDrag()
-		m.scrollbar.start(action.Pane, action.Grab)
+		m.gitLayout.finish()
+		if m.active == workspace.Git && action.GitFocus != 0 {
+			m.scrollbar.startGit(action.GitFocus, action.Grab)
+		} else {
+			m.scrollbar.start(action.Pane, action.Grab)
+		}
 		m.dragScrollbarTo(action.Position)
 	case DragScrollbar:
 		m.dragScrollbarTo(action.Position)
@@ -96,19 +118,28 @@ func (m *Model) resizeWorkspaceState() {
 	m.files.resizeMarkdownPreview(m.geometry.ReaderRows)
 	m.files.resizeCommentComposer(m.geometry)
 	m.files.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	m.history.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	m.refs.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
-	m.stashes.place.EnsureSelectionVisible(m.geometry.NavigatorRows.Height)
+	if m.active == workspace.Git {
+		switch {
+		case m.controls.Git == workspace.GitStashes:
+			m.stashes.place.EnsureSelectionVisible(m.gitGeometry.RailRows.Height)
+			m.stashes.ensureFileVisible(m.gitGeometry.FilesRows.Height)
+		case m.history.inspecting:
+			m.history.inspection.place.EnsureSelectionVisible(m.gitGeometry.FilesRows.Height)
+		default:
+			m.history.sourcePlace.EnsureSelectionVisible(m.gitGeometry.RailRows.Height)
+			m.history.timelinePlace.EnsureSelectionVisible(m.gitGeometry.ContentRows.Height)
+		}
+	}
 	if len(m.files.restoredReaderRows) == 0 &&
 		(m.files.reader.Kind != 0 || m.files.diff.Kind != 0 || m.files.displayedBounds != nil || m.files.readerDocument().Kind != ui.ReaderDocumentNone) {
 		m.clampDocumentReader(&m.files.place, m.files.readerDocument())
 	}
-	if m.history.summary.OID != "" {
-		m.history.place.ClampReader(len(commitSummaryLines(m.history.summary)), m.geometry.ReaderRows.Height)
+	if m.active == workspace.Git && m.controls.Git == workspace.GitHistory && m.history.inspecting &&
+		(m.history.inspection.readerFileID != "" || m.history.inspection.readerDocument().Kind != ui.ReaderDocumentNone) {
+		m.clampDocumentReader(&m.history.inspection.place, m.history.inspection.readerDocument())
 	}
-	m.refs.place.ClampReader(len(m.refs.commits), m.geometry.ReaderRows.Height)
-	if len(m.stashes.restoredReaderRows) == 0 &&
-		(m.stashes.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone) {
-		m.clampDocumentReader(&m.stashes.place, m.stashes.readerDocument())
+	if m.gitStashesActive() && len(m.stashes.inspection.restoredReaderRows) == 0 &&
+		(m.stashes.inspection.readerFileID != "" || m.stashes.readerDocument().Kind != ui.ReaderDocumentNone) {
+		m.clampDocumentReader(&m.stashes.inspection.place, m.stashes.readerDocument())
 	}
 }

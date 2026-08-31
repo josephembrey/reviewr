@@ -274,18 +274,9 @@ func TestRepositoryOperationsDoNotWriteGitState(t *testing.T) {
 	if err != nil || len(commits) != 1 {
 		t.Fatalf("ListCommits() = (%#v, %v)", commits, err)
 	}
-	if _, err := repo.ReadCommit(commits[0].OID); err != nil {
-		t.Fatal(err)
-	}
 	refSources, err := repo.ListRefSources()
 	if err != nil || len(refSources) < 2 {
 		t.Fatalf("ListRefSources() = (%#v, %v)", refSources, err)
-	}
-	for _, source := range refSources {
-		preview, previewErr := repo.ListRefCommits(source)
-		if previewErr != nil || len(preview) != 1 || preview[0].OID != commits[0].OID {
-			t.Fatalf("ListRefCommits(%+v) = (%#v, %v)", source.ID, preview, previewErr)
-		}
 	}
 	if lineage, err := repo.ListCommits(CommitQuery{Traversal: CommitFirstParent, StartOID: commits[0].OID}); err != nil || len(lineage) != 1 {
 		t.Fatalf("first-parent ListCommits() = (%#v, %v)", lineage, err)
@@ -361,9 +352,9 @@ func TestRefRepositoryBoundaryPreservesTypedSameTipSources(t *testing.T) {
 		t.Fatalf("same-tip sources lost type identity: %#v", sources)
 	}
 	for _, index := range []int{branch, tag} {
-		preview, previewErr := repo.ListRefCommits(sources[index])
-		if previewErr != nil || len(preview) != 1 || preview[0].OID != oid {
-			t.Fatalf("preview for %+v = (%#v, %v)", sources[index].ID, preview, previewErr)
+		history, historyErr := repo.ListCommits(CommitQuery{SourceOID: sources[index].OID})
+		if historyErr != nil || len(history) != 1 || history[0].OID != oid {
+			t.Fatalf("history for %+v = (%#v, %v)", sources[index].ID, history, historyErr)
 		}
 	}
 }
@@ -821,22 +812,6 @@ func TestCommitHistoryIncludesRootAndMergeSummaries(t *testing.T) {
 		t.Fatalf("selected first-parent lineage = (%#v, %v)", lineage, err)
 	}
 
-	rootSummary, err := repo.ReadCommit(rootOID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rootSummary.OID != rootOID || rootSummary.AuthorName != "Reviewr Tests" ||
-		rootSummary.AuthorEmail != "reviewr@example.invalid" || !strings.Contains(rootSummary.Message, "root body") ||
-		!strings.Contains(rootSummary.Stat, "root.txt") {
-		t.Fatalf("root summary = %+v", rootSummary)
-	}
-	mergeSummary, err := repo.ReadCommit(mergeOID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(mergeSummary.Message, "merge subject") || !strings.Contains(mergeSummary.Stat, "feature.txt") {
-		t.Fatalf("merge summary = %+v", mergeSummary)
-	}
 }
 
 func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
@@ -849,8 +824,8 @@ func TestCommitHistoryHandlesUnbornAndMissingObjects(t *testing.T) {
 	if err != nil || len(commits) != 0 {
 		t.Fatalf("unborn ListCommits() = (%#v, %v)", commits, err)
 	}
-	if _, err := repo.ReadCommit(strings.Repeat("f", 40)); err == nil {
-		t.Fatal("ReadCommit() accepted a missing object")
+	if _, err := repo.ListCommitFiles(strings.Repeat("f", 40)); err == nil {
+		t.Fatal("ListCommitFiles() accepted a missing object")
 	}
 }
 

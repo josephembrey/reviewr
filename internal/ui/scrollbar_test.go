@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
@@ -288,9 +289,10 @@ func TestFittingAndEmptySurfacesKeepTheirFinalContentColumn(t *testing.T) {
 	}
 }
 
-func TestGitModesUseSharedIndependentPaneScrollbars(t *testing.T) {
+func TestGitHistoryUsesIndependentRailAndTimelineScrollbars(t *testing.T) {
 	t.Parallel()
 	g := Calculate(72, 13)
+	gitGeometry := CalculateGitGeometry(g, GitHistoryLayout, GitWidths{})
 	navigatorRows := make([]NavigatorRow, 30)
 	readerLines := make([]Line, 40)
 	for index := range navigatorRows {
@@ -299,34 +301,26 @@ func TestGitModesUseSharedIndependentPaneScrollbars(t *testing.T) {
 	for index := range readerLines {
 		readerLines[index] = Line{Text: "detail"}
 	}
-	for _, mode := range []workspace.GitView{workspace.GitLog, workspace.GitRefs, workspace.GitStashes} {
-		mode := mode
-		t.Run(mode.Label(), func(t *testing.T) {
-			t.Parallel()
-			plain := ansi.Strip(Render(Model{
-				Geometry:       g,
-				Workspace:      workspace.Git,
-				Controls:       workspace.Controls{Git: mode},
-				NavigatorRows:  navigatorRows,
-				Top:            8,
-				Focus:          navigation.FocusReader,
-				ReaderLines:    readerLines,
-				ReaderOffset:   12,
-				NavigatorTitle: "items",
-				ReaderTitle:    "details",
-			}))
-			lines := strings.Split(plain, "\n")
-			for row := g.NavigatorRows.Y; row < g.NavigatorRows.Y+g.NavigatorRows.Height; row++ {
-				cells := []rune(lines[row])
-				gotNavigator := cells[g.NavigatorRows.X+g.NavigatorRows.Width-1]
-				if gotNavigator != '▕' && gotNavigator != '▐' {
-					t.Fatalf("unfocused navigator row %d glyph = %q", row, gotNavigator)
-				}
-				got := cells[g.ReaderRows.X+g.ReaderRows.Width-1]
-				if got != '▕' && got != '▐' {
-					t.Fatalf("focused reader row %d glyph = %q", row, got)
-				}
-			}
-		})
+	plain := ansi.Strip(Render(Model{
+		Geometry:  g,
+		Workspace: workspace.Git,
+		Controls:  workspace.Controls{Git: workspace.GitHistory},
+		Git: &GitModel{
+			Geometry: gitGeometry, Focus: workspace.GitTimeline,
+			RailRows: navigatorRows, RailTop: 8, RailTitle: "sources",
+			TimelineRows: make([]commitrow.Row, len(readerLines)), TimelineTop: 12, TimelineTitle: "history",
+		},
+	}))
+	lines := strings.Split(plain, "\n")
+	for row := gitGeometry.ContentRows.Y; row < gitGeometry.ContentRows.Y+gitGeometry.ContentRows.Height; row++ {
+		cells := []rune(lines[row])
+		gotNavigator := cells[gitGeometry.RailRows.X+gitGeometry.RailRows.Width-1]
+		if gotNavigator != '▕' && gotNavigator != '▐' {
+			t.Fatalf("unfocused navigator row %d glyph = %q", row, gotNavigator)
+		}
+		got := cells[gitGeometry.ContentRows.X+gitGeometry.ContentRows.Width-1]
+		if got != '▕' && got != '▐' {
+			t.Fatalf("focused reader row %d glyph = %q", row, got)
+		}
 	}
 }

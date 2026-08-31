@@ -129,9 +129,9 @@ func TestEveryBackgroundRepositoryResultUsesTheSharedActivityGate(t *testing.T) 
 		fileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 		diffLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 		commitsLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
-		commitLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
-		refSourcesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
-		refCommitsLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		historySourcesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		commitFilesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
+		commitFileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 		stashesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 		stashFilesLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
 		stashFileLoadedMsg{repositoryPollResult: repositoryPollResult{background: true, activity: 1}},
@@ -161,6 +161,8 @@ func TestRepositoryPollOnlyReloadsChangedDomainsWithoutLoadingState(t *testing.T
 	model.files.listLoading = false
 	model.history.loaded = true
 	model.history.listLoading = false
+	model.history.sourcesLoaded = true
+	model.history.sourceLoading = false
 	model.poll = repositoryPollState{
 		generation:  4,
 		ready:       true,
@@ -193,36 +195,35 @@ func TestRepositoryPollOnlyReloadsChangedDomainsWithoutLoadingState(t *testing.T
 		t.Fatal("unchanged fingerprint caused another reload")
 	}
 
-	model.refs.loaded = true
 	model.stashes.loaded = true
-	refsGeneration := model.refs.sourceGeneration
+	sourcesGeneration := model.history.sourceGeneration
 	stashesGeneration := model.stashes.listGeneration
 	_ = model.landRepositoryPoll(repositoryPolledMsg{
 		generation: 4,
 		state:      repository.StateFingerprint{Worktree: "new-worktree", Refs: "new-refs"},
 	})
-	if model.history.listGeneration != historyGeneration+1 || model.refs.sourceGeneration != refsGeneration+1 ||
+	if model.history.listGeneration != historyGeneration || model.history.sourceGeneration != sourcesGeneration+1 ||
 		model.stashes.listGeneration != stashesGeneration+1 {
 		t.Fatalf(
-			"ref poll generations = history %d refs %d stashes %d",
+			"ref poll generations = history %d sources %d stashes %d",
 			model.history.listGeneration,
-			model.refs.sourceGeneration,
+			model.history.sourceGeneration,
 			model.stashes.listGeneration,
 		)
 	}
-	if model.history.listLoading || model.refs.sourceLoading || model.stashes.listLoading {
+	if model.history.listLoading || model.history.sourceLoading || model.stashes.listLoading {
 		t.Fatal("ref poll exposed a Git-view loading state")
 	}
 
 	model.controls.Comparison = workspace.Branch
 	filesGeneration = model.files.listGeneration
-	historyGeneration = model.history.listGeneration
+	sourcesGeneration = model.history.sourceGeneration
 	_ = model.landRepositoryPoll(repositoryPolledMsg{
 		generation: 4,
 		state:      repository.StateFingerprint{Worktree: "new-worktree", Refs: "newer-refs"},
 	})
-	if model.files.listGeneration != filesGeneration+1 || model.history.listGeneration != historyGeneration+1 {
-		t.Fatalf("branch ref poll generations = files %d history %d", model.files.listGeneration, model.history.listGeneration)
+	if model.files.listGeneration != filesGeneration+1 || model.history.sourceGeneration != sourcesGeneration+1 {
+		t.Fatalf("branch ref poll generations = files %d sources %d", model.files.listGeneration, model.history.sourceGeneration)
 	}
 
 	model.controls.Comparison = workspace.LastTurn

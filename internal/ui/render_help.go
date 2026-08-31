@@ -57,11 +57,16 @@ var helpRows = []helpRow{
 	{
 		section: "Git",
 		entries: []footerEntry{
-			{key: "1", label: "view"},
-			{key: "2", label: "mode"},
+			{key: "1", label: "history/stashes"},
+			{key: "2", label: "graph/parent"},
+			{key: "tab", label: "focus"},
+		},
+	},
+	{
+		entries: []footerEntry{
 			{key: "j/k/↑↓", label: "nav"},
-			{key: "f/F", label: "files"},
-			{key: "h/l", label: "fold"},
+			{key: "enter/l", label: "inspect"},
+			{key: "h/esc", label: "back/fold"},
 		},
 	},
 	{
@@ -85,12 +90,6 @@ var helpRows = []helpRow{
 			{key: "ctrl+←/→", label: "word"},
 			{key: "home/end", label: "line"},
 			{key: "pgup/dn", label: "page"},
-		},
-	},
-	{
-		entries: []footerEntry{
-			{key: "backspace/delete", label: "edit"},
-			{key: "enter", label: "newline"},
 		},
 	},
 }

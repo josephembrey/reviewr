@@ -1,89 +1,215 @@
 package app
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/josephembrey/reviewr/internal/commitrow"
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
-	"github.com/josephembrey/reviewr/internal/ui"
 	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
+// historyState owns grouped sources, the filtered timeline, and an optional
+// immutable commit inspection. Overview place remains untouched while the
+// inspection is active.
 type historyState struct {
-	place      navigation.State
-	commits    []repository.Commit
-	rows       []commitrow.Row
-	summary    repository.CommitSummary
-	summaryOID string
-	traversal  workspace.GitTraversal
+	sourcePlace    navigation.State
+	timelinePlace  navigation.State
+	focus          workspace.GitFocus
+	sources        []repository.RefSource
+	sourceRows     []historySourceRow
+	selectedSource string
+	sourceFolds    map[historySourceGroup]bool
+	preferredOID   string
+	commits        []repository.Commit
+	rows           []commitrow.Row
+	traversal      workspace.GitTraversal
 
-	listGeneration    uint64
-	summaryGeneration uint64
-	loaded            bool
-	listLoading       bool
-	summaryLoading    bool
-	listError         error
-	summaryError      error
+	inspecting    bool
+	inspectionOID string
+	inspection    changeInspectionState
+
+	sourceGeneration uint64
+	listGeneration   uint64
+	sourcesLoaded    bool
+	loaded           bool
+	sourceLoading    bool
+	listLoading      bool
+	sourceError      error
+	listError        error
 }
 
 func newHistoryState() historyState {
 	return historyState{
-		place:          navigation.State{Focus: navigation.FocusNavigator},
-		listGeneration: 1,
-		listLoading:    true,
+		sourcePlace:      navigation.State{Focus: navigation.FocusNavigator},
+		timelinePlace:    navigation.State{Focus: navigation.FocusNavigator},
+		focus:            workspace.GitSource,
+		sourceFolds:      make(map[historySourceGroup]bool),
+		inspection:       newChangeInspectionState(),
+		sourceGeneration: 1,
+		sourceLoading:    true,
 	}
 }
 
-func (state *historyState) reload(traversal workspace.GitTraversal, startOID string) effect {
-	state.listGeneration++
-	state.listLoading = true
-	state.listError = nil
-	return effect{
-		kind:       effectLoadCommits,
-		generation: state.listGeneration,
-		query:      commitQuery(traversal, startOID),
+func (state *historyState) initialSourcesEffect() effect {
+	return effect{kind: effectLoadHistorySources, generation: state.sourceGeneration}
+}
+
+func (state *historyState) reload() effect {
+	state.sourceGeneration++
+	state.sourceLoading = true
+	state.sourceError = nil
+	return effect{kind: effectLoadHistorySources, generation: state.sourceGeneration}
+}
+
+func (state *historyState) poll() effect {
+	state.sourceGeneration++
+	return effect{kind: effectLoadHistorySources, generation: state.sourceGeneration, background: true}
+}
+
+func (state historyState) landSources(msg historySourcesLoadedMsg, visibleRows int) (historyState, effect) {
+	if msg.generation != state.sourceGeneration {
+		return state, effect{}
+	}
+	firstLoad := !state.sourcesLoaded
+	_, hadRestoredCursor := state.sourcePlace.SelectedIdentity()
+	state.sourcesLoaded = true
+	state.sourceLoading = false
+	if msg.err != nil {
+		if !msg.background {
+			state.sourceError = msg.err
+		}
+		return state, effect{}
+	}
+	state.sourceError = nil
+	state.sources = append([]repository.RefSource(nil), msg.sources...)
+	state.ensureAllRefsSource()
+	if firstLoad {
+		state.chooseInitialSource()
+	} else if !state.hasSource(state.selectedSource) {
+		state.selectedSource = repository.AllRefsSource().ID.Key()
+	}
+	oldRows := append([]string(nil), state.sourcePlace.Items...)
+	state.rebuildSourceRows()
+	state.sourcePlace.Items = oldRows
+	state.sourcePlace.Reconcile(historySourceRowIdentities(state.sourceRows))
+	if firstLoad && (!hadRestoredCursor || state.sourceCursorDoesNotNameRestoredRow()) {
+		state.selectSourceCursor(state.selectedSource, visibleRows)
+	}
+	state.sourcePlace.EnsureSelectionVisible(visibleRows)
+	return state, state.requestCommits(state.traversal, msg.background)
+}
+
+func (state *historyState) ensureAllRefsSource() {
+	all := repository.AllRefsSource()
+	if !state.hasSource(all.ID.Key()) {
+		state.sources = append([]repository.RefSource{all}, state.sources...)
 	}
 }
 
-func (state *historyState) poll(traversal workspace.GitTraversal, startOID string) effect {
+func (state *historyState) chooseInitialSource() {
+	if state.selectedSource != "" && state.hasSource(state.selectedSource) {
+		return
+	}
+	index := initialHistorySourceIndex(state.sources, state.preferredOID)
+	if index >= 0 && index < len(state.sources) {
+		state.selectedSource = state.sources[index].ID.Key()
+		return
+	}
+	state.selectedSource = repository.AllRefsSource().ID.Key()
+}
+
+func (state historyState) sourceCursorDoesNotNameRestoredRow() bool {
+	identity, ok := state.sourcePlace.SelectedIdentity()
+	return !ok || !historySourceRowExists(state.sourceRows, identity)
+}
+
+func (state *historyState) selectSourceCursor(identity string, visibleRows int) {
+	for index, row := range state.sourceRows {
+		if row.identity == identity {
+			state.sourcePlace.SelectIndex(index, visibleRows)
+			return
+		}
+	}
+}
+
+func (state historyState) hasSource(identity string) bool {
+	for _, source := range state.sources {
+		if source.ID.Key() == identity {
+			return true
+		}
+	}
+	return false
+}
+
+func initialHistorySourceIndex(sources []repository.RefSource, preferredOID string) int {
+	match := -1
+	if preferredOID != "" {
+		for index, source := range sources {
+			if source.ID.Kind == repository.RefSourceAll || source.OID != preferredOID {
+				continue
+			}
+			if match != -1 {
+				match = -1
+				break
+			}
+			match = index
+		}
+	}
+	if match >= 0 {
+		return match
+	}
+	for index, source := range sources {
+		if source.ID.Kind == repository.RefSourceAll {
+			return index
+		}
+	}
+	return 0
+}
+
+func (state *historyState) requestCommits(traversal workspace.GitTraversal, background bool) effect {
+	state.traversal = traversal
 	state.listGeneration++
+	state.listLoading = !background
+	if !background {
+		state.listError = nil
+	}
 	return effect{
 		kind: effectLoadCommits, generation: state.listGeneration,
-		query: commitQuery(traversal, startOID), background: true,
+		query: state.commitQuery(traversal), background: background,
 	}
 }
 
-func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) (historyState, effect) {
+func (state historyState) commitQuery(traversal workspace.GitTraversal) repository.CommitQuery {
+	source, _ := state.selectedSourceValue()
+	query := commitQuery(traversal, source.OID)
+	if traversal == workspace.GitFirstParent && source.ID.Kind == repository.RefSourceAll {
+		query.StartOID, _ = state.timelinePlace.SelectedIdentity()
+	}
+	return query
+}
+
+func (state historyState) landCommits(msg commitsLoadedMsg, visibleRows int) historyState {
 	if msg.generation != state.listGeneration {
-		return state, effect{}
+		return state
 	}
 	state.loaded = true
 	state.listLoading = false
 	state.traversal = traversalForQuery(msg.query)
 	if msg.err != nil {
-		if msg.background {
-			return state, effect{}
+		if !msg.background {
+			state.listError = msg.err
 		}
-		state.listError = msg.err
-		return state, effect{}
+		return state
 	}
 	state.listError = nil
-	oldSelection, hadSelection := state.place.SelectedIdentity()
+	_, hadSelection := state.timelinePlace.SelectedIdentity()
 	state.commits = append([]repository.Commit(nil), msg.commits...)
 	state.rows = buildCommitRows(state.commits, state.traversal)
-	state.place.Reconcile(commitIdentities(state.commits))
-	state.selectHeadOnFirstLoad(hadSelection, visibleRows)
-	state.place.EnsureSelectionVisible(visibleRows)
-	if _, ok := state.place.SelectedIdentity(); !ok {
-		state.clearSummary()
-		return state, effect{}
+	state.timelinePlace.Reconcile(commitIdentities(state.commits))
+	if !hadSelection {
+		state.selectInitialCommit(visibleRows)
 	}
-	if state.keepsLoadedSummary(msg.background, oldSelection, hadSelection) {
-		return state, effect{}
-	}
-	return state, state.requestSelectedSummary()
+	state.timelinePlace.EnsureSelectionVisible(visibleRows)
+	return state
 }
 
 func commitIdentities(commits []repository.Commit) []string {
@@ -94,111 +220,84 @@ func commitIdentities(commits []repository.Commit) []string {
 	return identities
 }
 
-func (state *historyState) selectHeadOnFirstLoad(hadSelection bool, visibleRows int) {
-	if hadSelection {
-		return
-	}
+func (state *historyState) selectInitialCommit(visibleRows int) {
 	for index, commit := range state.commits {
 		if commit.Head {
-			state.place.SelectIndex(index, visibleRows)
+			state.timelinePlace.SelectIndex(index, visibleRows)
 			return
 		}
 	}
+	state.timelinePlace.SelectIndex(0, visibleRows)
 }
 
-func (state *historyState) clearSummary() {
-	state.summaryGeneration++
-	state.summary = repository.CommitSummary{}
-	state.summaryOID = ""
-	state.summaryLoading = false
-	state.summaryError = nil
-	state.place.ReaderOffset = 0
-}
-
-func (state historyState) keepsLoadedSummary(background bool, oldSelection string, hadSelection bool) bool {
-	selected, ok := state.place.SelectedIdentity()
-	return background && ok && hadSelection && selected == oldSelection && state.summaryOID == selected &&
-		(state.summary.OID != "" || state.summaryLoading)
-}
-
-func (state historyState) landSummary(msg commitLoadedMsg, visibleRows int) historyState {
-	selectedOID, ok := state.place.SelectedIdentity()
-	if msg.generation != state.summaryGeneration || !ok || msg.oid != selectedOID || msg.oid != state.summaryOID {
-		return state
-	}
-	state.summaryLoading = false
-	state.summaryError = msg.err
-	if msg.err == nil {
-		state.summary = msg.summary
-	}
-	state.place.ClampReader(len(commitSummaryLines(state.summary)), visibleRows)
-	return state
-}
-
-func (state *historyState) requestSelectedSummary() effect {
-	oid, ok := state.place.SelectedIdentity()
-	if !ok {
+func (state *historyState) moveSource(delta, visibleRows int) effect {
+	if !state.sourcePlace.SelectDelta(delta, visibleRows) {
 		return effect{}
 	}
-	state.summaryGeneration++
-	if state.summaryOID != oid {
-		state.summary = repository.CommitSummary{}
-	}
-	state.summaryOID = oid
-	state.summaryLoading = true
-	state.summaryError = nil
-	return effect{kind: effectLoadCommit, generation: state.summaryGeneration, identity: oid}
+	return state.activateSourceCursor()
 }
 
-func (state historyState) viewModel(geometry ui.Geometry) ui.Model {
-	rows := make([]ui.NavigatorRow, len(state.commits))
-	for index, commit := range state.commits {
-		rows[index] = ui.NavigatorRow{Identity: commit.OID, Commit: &state.rows[index]}
+func (state *historyState) selectSourceIndex(index, visibleRows int) effect {
+	if !state.sourcePlace.SelectIndex(index, visibleRows) {
+		return effect{}
 	}
-	emptyNavigator := ui.Line{Text: "No commits", Tone: ui.ToneQuiet}
-	if state.listLoading {
-		emptyNavigator.Text = "Loading commits…"
-	} else if state.listError != nil {
-		emptyNavigator = ui.Line{Text: "Git error: " + state.listError.Error(), Tone: ui.ToneError}
-	}
+	return state.activateSourceCursor()
+}
 
-	readerTitle := "No selection"
-	if commit, ok := state.selectedCommit(); ok {
-		readerTitle = commit.ShortOID
+func (state *historyState) activateSourceCursor() effect {
+	row, ok := state.selectedSourceRow()
+	if !ok || row.source == nil || row.source.ID.Key() == state.selectedSource {
+		return effect{}
 	}
-	if state.summaryLoading {
-		readerTitle += "  loading…"
-	}
-	readerEmpty := ui.Line{Text: "Select a commit to inspect its summary.", Tone: ui.ToneQuiet}
-	if state.summaryLoading {
-		readerEmpty = ui.Line{Text: "Loading commit…", Tone: ui.ToneQuiet}
-	} else if state.summaryError != nil {
-		readerEmpty = ui.Line{Text: "Git error: " + state.summaryError.Error(), Tone: ui.ToneError}
-	}
+	state.selectedSource = row.source.ID.Key()
+	return state.requestCommits(state.traversal, false)
+}
 
-	navigatorTitle := fmt.Sprintf("commits · %d", len(rows))
-	if state.listLoading {
-		navigatorTitle += " · loading"
-	} else if state.listError != nil {
-		navigatorTitle += " · error"
+func (state *historyState) moveTimeline(delta, visibleRows int) {
+	state.timelinePlace.SelectDelta(delta, visibleRows)
+}
+
+func (state *historyState) selectTimelineIndex(index, visibleRows int) {
+	state.timelinePlace.SelectIndex(index, visibleRows)
+}
+
+func (state *historyState) setSourceGroupExpanded(expanded bool, visibleRows int) {
+	row, ok := state.selectedSourceRow()
+	if !ok || state.sourceFolds[row.group] == !expanded {
+		return
 	}
-	return ui.Model{
-		Geometry:       geometry,
-		NavigatorTitle: navigatorTitle,
-		NavigatorRows:  rows,
-		NavigatorEmpty: emptyNavigator,
-		Selected:       state.place.Selected,
-		Top:            state.place.Top,
-		Focus:          state.place.Focus,
-		ReaderTitle:    readerTitle,
-		ReaderLines:    commitSummaryLines(state.summary),
-		ReaderEmpty:    readerEmpty,
-		ReaderOffset:   state.place.ReaderOffset,
+	state.sourceFolds[row.group] = !expanded
+	old := append([]string(nil), state.sourcePlace.Items...)
+	state.rebuildSourceRows()
+	state.sourcePlace.Items = old
+	state.sourcePlace.Reconcile(historySourceRowIdentities(state.sourceRows))
+	state.sourcePlace.EnsureSelectionVisible(visibleRows)
+}
+
+func (state historyState) selectedSourceRow() (historySourceRow, bool) {
+	identity, ok := state.sourcePlace.SelectedIdentity()
+	if !ok {
+		return historySourceRow{}, false
 	}
+	for _, row := range state.sourceRows {
+		if row.identity == identity {
+			return row, true
+		}
+	}
+	return historySourceRow{}, false
+}
+
+func (state historyState) selectedSourceValue() (repository.RefSource, bool) {
+	for _, source := range state.sources {
+		if source.ID.Key() == state.selectedSource {
+			return source, true
+		}
+	}
+	return repository.RefSource{}, false
 }
 
 func (state historyState) selectedCommit() (repository.Commit, bool) {
-	oid, ok := state.place.SelectedIdentity()
+	oid, ok := state.timelinePlace.SelectedIdentity()
 	if !ok {
 		return repository.Commit{}, false
 	}
@@ -210,24 +309,52 @@ func (state historyState) selectedCommit() (repository.Commit, bool) {
 	return repository.Commit{}, false
 }
 
-func commitSummaryLines(summary repository.CommitSummary) []ui.Line {
-	if summary.OID == "" {
-		return nil
+func (state *historyState) enterInspection() effect {
+	commit, ok := state.selectedCommit()
+	if !ok {
+		return effect{}
 	}
-	lines := []ui.Line{
-		{Text: "commit " + summary.OID},
-		{Text: fmt.Sprintf("Author: %s <%s>", summary.AuthorName, summary.AuthorEmail)},
-		{Text: "Date:   " + summary.AuthoredAt},
-		{},
-	}
-	for _, line := range ui.SafeContentLines(summary.Message) {
-		lines = append(lines, ui.Line{Text: line})
-	}
-	if strings.TrimSpace(summary.Stat) != "" {
-		lines = append(lines, ui.Line{})
-		for _, line := range ui.SafeContentLines(summary.Stat) {
-			lines = append(lines, ui.Line{Text: line})
+	state.inspecting = true
+	state.inspectionOID = commit.OID
+	state.focus = workspace.GitFiles
+	generation := state.inspection.beginFiles(commit.OID, false)
+	return effect{kind: effectLoadCommitFiles, generation: generation, identity: commit.OID}
+}
+
+func (state *historyState) leaveInspection() {
+	state.inspection.saveReaderPlace()
+	state.inspecting = false
+	state.focus = workspace.GitTimeline
+}
+
+func (state historyState) inspectionCommit() (repository.Commit, bool) {
+	for _, commit := range state.commits {
+		if commit.OID == state.inspectionOID {
+			return commit, true
 		}
 	}
-	return lines
+	return repository.Commit{OID: state.inspectionOID, ShortOID: abbreviateOID(state.inspectionOID)}, state.inspectionOID != ""
+}
+
+func (state *historyState) landInspectionFiles(msg commitFilesLoadedMsg) effect {
+	accepted, loadReader := state.inspection.landFiles(msg.generation, msg.oid, msg.files, msg.err, msg.background)
+	if !accepted || !loadReader {
+		return effect{}
+	}
+	generation, file, ok := state.inspection.beginReader(msg.background)
+	if !ok {
+		return effect{}
+	}
+	return effect{
+		kind: effectLoadCommitFile, generation: generation,
+		identity: msg.oid, changedFile: file, background: msg.background,
+	}
+}
+
+func (state *historyState) requestSelectedInspectionFile() effect {
+	generation, file, ok := state.inspection.beginReader(false)
+	if !ok {
+		return effect{}
+	}
+	return effect{kind: effectLoadCommitFile, generation: generation, identity: state.inspectionOID, changedFile: file}
 }

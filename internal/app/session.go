@@ -51,25 +51,42 @@ func (m Model) sessionState() session.State {
 	}
 
 	stashes := m.stashes
-	stashes.readerPlaces = cloneStashPlaces(m.stashes.readerPlaces)
-	stashes.saveReaderPlace()
-	stashPlaces := make(map[string]session.StashReaderPlace, len(stashes.readerPlaces))
-	for oid, place := range stashes.readerPlaces {
-		stashPlaces[oid] = session.StashReaderPlace{
+	stashes.inspection.readerPlaces = cloneChangePlaces(m.stashes.inspection.readerPlaces)
+	stashes.inspection.saveReaderPlace()
+	stashPlaces := make(map[string]session.ChangeReaderPlace, len(stashes.inspection.readerPlaces))
+	for oid, place := range stashes.inspection.readerPlaces {
+		stashPlaces[oid] = session.ChangeReaderPlace{
 			FileIdentity: place.fileIdentity,
+			FileTop:      place.fileTop,
 			ReaderOffset: place.readerOffset,
 			ReaderColumn: place.readerColumn,
 			ReaderCursor: place.readerCursor,
 		}
 	}
-	stashRows := stashes.restoredReaderRows
+	stashRows := stashes.inspection.restoredReaderRows
 	if rows := readerRowIdentities(stashes.readerRows()); len(rows) != 0 {
 		stashRows = rows
 	}
 
-	refRows := m.refs.restoredPreviewRows
-	if len(m.refs.commits) != 0 {
-		refRows = refCommitIdentities(m.refs.commits)
+	historyInspection := m.history.inspection
+	historyInspection.readerPlaces = cloneChangePlaces(m.history.inspection.readerPlaces)
+	historyInspection.saveReaderPlace()
+	historyPlaces := make(map[string]session.ChangeReaderPlace, len(historyInspection.readerPlaces))
+	for oid, place := range historyInspection.readerPlaces {
+		historyPlaces[oid] = session.ChangeReaderPlace{
+			FileIdentity: place.fileIdentity, FileTop: place.fileTop,
+			ReaderOffset: place.readerOffset, ReaderColumn: place.readerColumn, ReaderCursor: place.readerCursor,
+		}
+	}
+	historyRows := historyInspection.restoredReaderRows
+	if rows := readerRowIdentities(historyInspection.readerRows()); len(rows) != 0 {
+		historyRows = rows
+	}
+	sourceFolds := make(map[string]bool)
+	for group, collapsed := range m.history.sourceFolds {
+		if collapsed {
+			sourceFolds[group.identity()] = true
+		}
 	}
 
 	return session.State{
@@ -83,6 +100,9 @@ func (m Model) sessionState() session.State {
 			NavigatorWidth: m.layout.navigatorWidth,
 			Customized:     m.layout.customized,
 			Swapped:        m.layout.swapped,
+			GitSourceWidth: m.gitLayout.sourceWidth, GitSourceCustom: m.gitLayout.sourceCustom,
+			GitStashWidth: m.gitLayout.stashWidth, GitStashCustom: m.gitLayout.stashCustom,
+			GitFilesSize: m.gitLayout.filesSize, GitFilesCustom: m.gitLayout.filesCustom,
 		},
 		Files: session.Files{
 			Place: placeSession(files.place), ReaderPath: files.readerEntry.Path,
@@ -92,12 +112,23 @@ func (m Model) sessionState() session.State {
 			Folds:                fileFolds, ReviewFull: cloneBools(files.reviewFull),
 			MarkdownPreviews: sortedTrueKeys(files.markdownPreviewPaths),
 		},
-		History: placeSession(m.history.place),
-		Refs:    session.Refs{Place: placeSession(m.refs.place), PreviewRows: refRows},
+		History: session.History{
+			SourcePlace: placeSession(m.history.sourcePlace), TimelinePlace: placeSession(m.history.timelinePlace),
+			SelectedSource: m.history.selectedSource, SourceFolds: sourceFolds, Focus: m.history.focus.Label(),
+			Inspecting: m.history.inspecting, InspectionOID: m.history.inspectionOID,
+			Inspection: session.ChangeInspection{
+				Place: placeSession(historyInspection.place), ReaderRows: historyRows,
+				ContextExpanded:      historyInspection.readerContext.defaultExpanded,
+				ContextFoldOverrides: historyInspection.readerContext.overrides(), ReaderPlaces: historyPlaces,
+			},
+		},
 		Stashes: session.Stashes{
-			Place: placeSession(stashes.place), ReaderRows: stashRows,
-			ContextExpanded:      stashes.readerContext.defaultExpanded,
-			ContextFoldOverrides: stashes.readerContext.overrides(), ReaderPlaces: stashPlaces,
+			Place: placeSession(stashes.place), Focus: stashes.focus.Label(),
+			Inspection: session.ChangeInspection{
+				Place: placeSession(stashes.inspection.place), ReaderRows: stashRows,
+				ContextExpanded:      stashes.inspection.readerContext.defaultExpanded,
+				ContextFoldOverrides: stashes.inspection.readerContext.overrides(), ReaderPlaces: stashPlaces,
+			},
 		},
 		Notes: session.Notes{
 			Scope:    noteScopeLabel(m.note.scope),
@@ -112,13 +143,19 @@ func (m *Model) restoreSession(state session.State) {
 	m.controls.Files = parseFileSet(state.Controls.Files)
 	m.controls.Reader = parseReaderMode(state.Controls.Reader)
 	m.controls.Comparison = parseComparison(state.Controls.Comparison)
-	m.controls.Git = parseGitView(state.Controls.Git)
+	m.controls.Git = parseGitMode(state.Controls.Git)
 	m.controls.Traversal = parseTraversal(state.Controls.Traversal)
+	m.history.traversal = m.controls.Traversal
 	m.controls.DiffHighlight = parseDiffHighlight(state.Controls.DiffHighlight)
 	m.layout = layoutState{
 		navigatorWidth: max(0, state.Layout.NavigatorWidth),
 		customized:     state.Layout.Customized && state.Layout.NavigatorWidth > 0,
 		swapped:        state.Layout.Swapped,
+	}
+	m.gitLayout = gitLayoutState{
+		sourceWidth: max(0, state.Layout.GitSourceWidth), sourceCustom: state.Layout.GitSourceCustom && state.Layout.GitSourceWidth > 0,
+		stashWidth: max(0, state.Layout.GitStashWidth), stashCustom: state.Layout.GitStashCustom && state.Layout.GitStashWidth > 0,
+		filesSize: max(0, state.Layout.GitFilesSize), filesCustom: state.Layout.GitFilesCustom && state.Layout.GitFilesSize > 0,
 	}
 
 	m.files.place = placeFromSession(state.Files.Place)
@@ -137,27 +174,37 @@ func (m *Model) restoreSession(state session.State) {
 		m.files.folds[parseFileSet(label)] = filetree.NewFoldState(folds.Known, folds.Collapsed)
 	}
 
-	m.history.place = placeFromSession(state.History)
-	m.refs.place = placeFromSession(state.Refs.Place)
-	m.refs.restoredPreviewRows = append([]string(nil), state.Refs.PreviewRows...)
-	m.stashes.place = placeFromSession(state.Stashes.Place)
-	m.stashes.readerContext.restore(state.Stashes.ContextExpanded, state.Stashes.ContextFoldOverrides)
-	m.stashes.restoredReaderRows = append([]string(nil), state.Stashes.ReaderRows...)
-	m.stashes.readerPlaces = make(map[string]stashReaderPlace, len(state.Stashes.ReaderPlaces))
-	for oid, place := range state.Stashes.ReaderPlaces {
-		m.stashes.readerPlaces[oid] = stashReaderPlace{
-			fileIdentity: place.FileIdentity,
-			readerOffset: max(0, place.ReaderOffset),
-			readerColumn: max(0, place.ReaderColumn),
-			readerCursor: max(0, place.ReaderCursor),
-		}
+	m.history.sourcePlace = placeFromSession(state.History.SourcePlace)
+	m.history.timelinePlace = placeFromSession(state.History.TimelinePlace)
+	m.history.selectedSource = state.History.SelectedSource
+	if oid, ok := m.history.timelinePlace.SelectedIdentity(); ok {
+		m.history.preferredOID = oid
 	}
+	m.history.sourceFolds = make(map[historySourceGroup]bool)
+	for _, group := range historySourceGroups {
+		m.history.sourceFolds[group] = state.History.SourceFolds[group.identity()]
+	}
+	m.history.focus = parseGitFocus(state.History.Focus, workspace.GitSource)
+	m.history.inspecting = state.History.Inspecting && state.History.InspectionOID != ""
+	m.history.inspectionOID = state.History.InspectionOID
+	m.history.inspection.place = placeFromSession(state.History.Inspection.Place)
+	m.history.inspection.readerContext.restore(state.History.Inspection.ContextExpanded, state.History.Inspection.ContextFoldOverrides)
+	m.history.inspection.restoredReaderRows = append([]string(nil), state.History.Inspection.ReaderRows...)
+	m.history.inspection.readerPlaces = restoreChangePlaces(state.History.Inspection.ReaderPlaces)
+	if m.history.inspecting {
+		m.history.focus = parseGitFocus(state.History.Focus, workspace.GitFiles)
+		m.history.inspection.ownerID = m.history.inspectionOID
+		m.history.inspection.filesGeneration++
+		m.history.inspection.filesLoading = true
+	}
+	m.stashes.place = placeFromSession(state.Stashes.Place)
+	m.stashes.focus = parseGitFocus(state.Stashes.Focus, workspace.GitStash)
+	m.stashes.inspection.place = placeFromSession(state.Stashes.Inspection.Place)
+	m.stashes.inspection.readerContext.restore(state.Stashes.Inspection.ContextExpanded, state.Stashes.Inspection.ContextFoldOverrides)
+	m.stashes.inspection.restoredReaderRows = append([]string(nil), state.Stashes.Inspection.ReaderRows...)
+	m.stashes.inspection.readerPlaces = restoreChangePlaces(state.Stashes.Inspection.ReaderPlaces)
 	if oid, ok := m.stashes.place.SelectedIdentity(); ok {
-		m.stashes.filesOID = oid
-		if place := m.stashes.readerPlaces[oid]; place.fileIdentity != "" {
-			m.stashes.readerOID = oid
-			m.stashes.readerFileID = place.fileIdentity
-		}
+		m.stashes.inspection.ownerID = oid
 	}
 
 	m.note.scope = m.note.normalize(parseNoteScope(state.Notes.Scope))
@@ -169,10 +216,6 @@ func (m *Model) restoreSession(state session.State) {
 		note := m.note.current()
 		note.loadGeneration++
 		note.loading = true
-	} else if m.gitRefsActive() {
-		m.refs.entered = true
-		m.refs.sourceGeneration++
-		m.refs.sourceLoading = true
 	} else if m.gitStashesActive() {
 		m.stashes.listGeneration++
 		m.stashes.listLoading = true
@@ -252,10 +295,21 @@ func sortedTrueKeys(source map[string]bool) []string {
 	return result
 }
 
-func cloneStashPlaces(source map[string]stashReaderPlace) map[string]stashReaderPlace {
-	result := make(map[string]stashReaderPlace, len(source))
+func cloneChangePlaces(source map[string]changeReaderPlace) map[string]changeReaderPlace {
+	result := make(map[string]changeReaderPlace, len(source))
 	for oid, place := range source {
 		result[oid] = place
+	}
+	return result
+}
+
+func restoreChangePlaces(source map[string]session.ChangeReaderPlace) map[string]changeReaderPlace {
+	result := make(map[string]changeReaderPlace, len(source))
+	for oid, place := range source {
+		result[oid] = changeReaderPlace{
+			fileIdentity: place.FileIdentity, fileTop: max(0, place.FileTop),
+			readerOffset: max(0, place.ReaderOffset), readerColumn: max(0, place.ReaderColumn), readerCursor: max(0, place.ReaderCursor),
+		}
 	}
 	return result
 }
@@ -307,14 +361,27 @@ func parseComparison(label string) workspace.Comparison {
 	}
 }
 
-func parseGitView(label string) workspace.GitView {
-	switch label {
-	case "refs":
-		return workspace.GitRefs
-	case "stashes":
+func parseGitMode(label string) workspace.GitMode {
+	if label == "stashes" {
 		return workspace.GitStashes
+	}
+	return workspace.GitHistory
+}
+
+func parseGitFocus(label string, fallback workspace.GitFocus) workspace.GitFocus {
+	switch label {
+	case "timeline":
+		return workspace.GitTimeline
+	case "stashes":
+		return workspace.GitStash
+	case "files":
+		return workspace.GitFiles
+	case "diff":
+		return workspace.GitDiff
+	case "source":
+		return workspace.GitSource
 	default:
-		return workspace.GitLog
+		return fallback
 	}
 }
 

@@ -4,47 +4,28 @@ import (
 	"github.com/josephembrey/reviewr/internal/navigation"
 	"github.com/josephembrey/reviewr/internal/repository"
 	"github.com/josephembrey/reviewr/internal/ui"
+	"github.com/josephembrey/reviewr/internal/workspace"
 )
 
-type stashReaderPlace struct {
-	fileIdentity string
-	readerOffset int
-	readerColumn int
-	readerCursor int
-}
-
-// stashState owns Stashes independently from Log and Files. Selectors are
-// presentation; all reconciliation and reader place use immutable OIDs.
+// stashState owns only the stash collection around the shared immutable
+// files/diff inspection state machine.
 type stashState struct {
-	place navigation.State
+	place      navigation.State
+	focus      workspace.GitFocus
+	stashes    []repository.Stash
+	inspection changeInspectionState
 
-	stashes            []repository.Stash
-	files              []repository.ChangedFile
-	fileSelected       int
-	filesOID           string
-	reader             repository.ChangeDocument
-	readerPresentation *ui.ReaderDocument
-	readerContext      readerContextState
-	restoredReaderRows []string
-	readerOID          string
-	readerFileID       string
-	readerPlaces       map[string]stashReaderPlace
-
-	listGeneration   uint64
-	filesGeneration  uint64
-	readerGeneration uint64
-	loaded           bool
-	listLoading      bool
-	filesLoading     bool
-	readerLoading    bool
-	listError        error
-	filesError       error
+	listGeneration uint64
+	loaded         bool
+	listLoading    bool
+	listError      error
 }
 
 func newStashState() stashState {
 	return stashState{
-		place:        navigation.State{Focus: navigation.FocusNavigator},
-		readerPlaces: make(map[string]stashReaderPlace),
+		place:      navigation.State{Focus: navigation.FocusNavigator},
+		focus:      workspace.GitStash,
+		inspection: newChangeInspectionState(),
 	}
 }
 
@@ -67,15 +48,14 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 	state.loaded = true
 	state.listLoading = false
 	if msg.err != nil {
-		if msg.background {
-			return state, effect{}
+		if !msg.background {
+			state.listError = msg.err
 		}
-		state.listError = msg.err
 		return state, effect{}
 	}
 	state.listError = nil
 	oldOID, hadSelection := state.place.SelectedIdentity()
-	state.saveReaderPlace()
+	state.inspection.saveReaderPlace()
 	state.stashes = append([]repository.Stash(nil), msg.stashes...)
 	identities := make([]string, len(state.stashes))
 	for index, stash := range state.stashes {
@@ -84,71 +64,24 @@ func (state stashState) landStashes(msg stashesLoadedMsg, visibleRows int) (stas
 	state.place.Reconcile(identities)
 	state.place.EnsureSelectionVisible(visibleRows)
 	if len(state.stashes) == 0 {
-		state.clearFiles()
+		state.inspection = newChangeInspectionState()
 		return state, effect{}
 	}
-	if selectedOID, ok := state.place.SelectedIdentity(); msg.background && ok && hadSelection && selectedOID == oldOID {
-		return state, state.requestSelectedFilesQuiet()
-	}
-	return state, state.requestSelectedFiles()
-}
-
-func (state stashState) landFiles(msg stashFilesLoadedMsg) (stashState, effect) {
 	selectedOID, selected := state.place.SelectedIdentity()
-	if msg.generation != state.filesGeneration || !selected || msg.oid != selectedOID || msg.oid != state.filesOID {
-		return state, effect{}
-	}
-	state.filesLoading = false
-	if msg.err != nil {
-		if msg.background {
-			return state, effect{}
-		}
-		state.filesError = msg.err
-		state.clearReader()
-		return state, effect{}
-	}
-	state.filesError = nil
-	oldFiles := state.files
-	oldIdentity := state.selectedFileIdentity()
-	state.files = append([]repository.ChangedFile(nil), msg.files...)
-	if len(state.files) == 0 {
-		state.fileSelected = 0
-		state.clearReader()
-		state.place.ReaderOffset = 0
-		state.place.ReaderColumn = 0
-		state.place.ReaderCursor = 0
-		return state, effect{}
-	}
-	identity := state.reconcileFilePlace(selectedOID, oldFiles, oldIdentity)
-	if msg.background && identity == oldIdentity {
-		return state, state.requestSelectedFileQuiet()
-	}
-	return state, state.requestSelectedFile()
+	quiet := msg.background && selected && hadSelection && selectedOID == oldOID
+	return state, state.requestSelectedFiles(quiet)
 }
 
-func (state *stashState) reconcileFilePlace(selectedOID string, oldFiles []repository.ChangedFile, oldIdentity string) string {
-	wanted := oldIdentity
-	saved := state.readerPlaces[selectedOID]
-	if saved.fileIdentity != "" {
-		wanted = saved.fileIdentity
+func (state *stashState) landFiles(msg stashFilesLoadedMsg) effect {
+	accepted, loadReader := state.inspection.landFiles(msg.generation, msg.oid, msg.files, msg.err, msg.background)
+	if !accepted || !loadReader {
+		return effect{}
 	}
-	oldIdentities := changedFileIdentities(oldFiles)
-	newIdentities := changedFileIdentities(state.files)
-	identity, ok := navigation.ReconcileIdentity(oldIdentities, wanted, newIdentities)
-	if !ok {
-		identity = newIdentities[0]
-	}
-	state.fileSelected = indexIdentity(newIdentities, identity)
-	if saved.fileIdentity == identity {
-		state.place.ReaderOffset = saved.readerOffset
-		state.place.ReaderColumn = saved.readerColumn
-		state.place.ReaderCursor = saved.readerCursor
-	} else if oldIdentity != identity {
-		state.place.ReaderOffset = 0
-		state.place.ReaderColumn = 0
-		state.place.ReaderCursor = 0
-	}
-	return identity
+	return state.requestSelectedFile(msg.background)
+}
+
+func (state *stashState) landReader(msg stashFileLoadedMsg) {
+	state.inspection.landReader(msg.generation, msg.oid, msg.fileIdentity, msg.document, msg.presentation)
 }
 
 func (state *stashState) selectStashDelta(delta, visibleRows int) effect {
@@ -156,81 +89,50 @@ func (state *stashState) selectStashDelta(delta, visibleRows int) effect {
 }
 
 func (state *stashState) selectStashIndex(index, visibleRows int) effect {
-	state.saveReaderPlace()
+	state.inspection.saveReaderPlace()
 	if !state.place.SelectIndex(index, visibleRows) {
 		return effect{}
 	}
-	return state.requestSelectedFiles()
+	return state.requestSelectedFiles(false)
 }
 
 func (state *stashState) selectFileDelta(delta, visibleRows int) effect {
-	if len(state.files) == 0 {
-		return effect{}
-	}
-	state.saveReaderPlace()
-	next := max(0, min(len(state.files)-1, state.fileSelected+delta))
-	if next == state.fileSelected {
-		return effect{}
-	}
-	state.fileSelected = next
-	state.place.ReaderOffset = 0
-	state.place.ReaderColumn = 0
-	state.place.ReaderCursor = 0
-	if oid, ok := state.place.SelectedIdentity(); ok {
-		if saved := state.readerPlaces[oid]; saved.fileIdentity == state.selectedFileIdentity() {
-			state.place.ReaderOffset = saved.readerOffset
-			state.place.ReaderColumn = saved.readerColumn
-			state.place.ReaderCursor = saved.readerCursor
-		}
-	}
-	return state.requestSelectedFile()
+	return state.selectFileIndex(state.inspection.place.Selected+delta, visibleRows)
 }
 
-func (state *stashState) requestSelectedFiles() effect {
-	stash, ok := state.selectedStash()
-	if !ok {
-		state.clearFiles()
+func (state *stashState) selectFileIndex(index, visibleRows int) effect {
+	if !state.inspection.selectIndex(index, visibleRows) {
 		return effect{}
 	}
-	state.filesGeneration++
-	state.filesLoading = true
-	state.filesError = nil
-	if state.filesOID != stash.OID {
-		state.files = nil
-		state.fileSelected = 0
-		state.clearReader()
-		state.place.ReaderOffset = 0
-		state.place.ReaderColumn = 0
-		state.place.ReaderCursor = 0
-	}
-	state.filesOID = stash.OID
-	return effect{kind: effectLoadStashFiles, generation: state.filesGeneration, identity: stash.OID, stashSource: stash.Source}
+	return state.requestSelectedFile(false)
 }
 
-func (state *stashState) requestSelectedFilesQuiet() effect {
+func (state *stashState) requestSelectedFiles(quiet bool) effect {
 	stash, ok := state.selectedStash()
 	if !ok {
+		state.inspection = newChangeInspectionState()
 		return effect{}
 	}
-	state.filesGeneration++
-	state.filesOID = stash.OID
+	generation := state.inspection.beginFiles(stash.OID, quiet)
 	return effect{
-		kind: effectLoadStashFiles, generation: state.filesGeneration,
-		identity: stash.OID, stashSource: stash.Source, background: true,
+		kind: effectLoadStashFiles, generation: generation, identity: stash.OID,
+		stashSource: stash.Source, background: quiet,
 	}
 }
 
-func (state *stashState) clearFiles() {
-	state.filesGeneration++
-	state.files = nil
-	state.fileSelected = 0
-	state.filesOID = ""
-	state.filesLoading = false
-	state.filesError = nil
-	state.clearReader()
-	state.place.ReaderOffset = 0
-	state.place.ReaderColumn = 0
-	state.place.ReaderCursor = 0
+func (state *stashState) requestSelectedFile(quiet bool) effect {
+	stash, ok := state.selectedStash()
+	if !ok {
+		return effect{}
+	}
+	generation, file, ok := state.inspection.beginReader(quiet)
+	if !ok {
+		return effect{}
+	}
+	return effect{
+		kind: effectLoadStashFile, generation: generation, identity: stash.OID,
+		stashSource: stash.Source, changedFile: file, background: quiet,
+	}
 }
 
 func (state stashState) selectedStash() (repository.Stash, bool) {
@@ -246,26 +148,26 @@ func (state stashState) selectedStash() (repository.Stash, bool) {
 	return repository.Stash{}, false
 }
 
-func (state stashState) selectedFileIdentity() string {
-	if state.fileSelected < 0 || state.fileSelected >= len(state.files) {
-		return ""
-	}
-	return state.files[state.fileSelected].Identity()
+func (state *stashState) ensureFileVisible(visibleRows int) {
+	state.inspection.place.EnsureSelectionVisible(visibleRows)
 }
 
-func changedFileIdentities(files []repository.ChangedFile) []string {
-	identities := make([]string, len(files))
-	for index, file := range files {
-		identities[index] = file.Identity()
-	}
-	return identities
+func (state stashState) readerDocument() ui.ReaderDocument {
+	return state.inspection.readerDocument()
 }
 
-func indexIdentity(identities []string, identity string) int {
-	for index, candidate := range identities {
-		if candidate == identity {
-			return index
-		}
-	}
-	return 0
+func (state stashState) readerRows() []ui.ReaderRow {
+	return state.inspection.readerRows()
+}
+
+func (state *stashState) toggleReaderContextFold(identity string) (bool, bool) {
+	return state.inspection.changeReaderContextFold(identity, nil)
+}
+
+func (state *stashState) setReaderContextFold(identity string, expanded bool) (bool, bool) {
+	return state.inspection.changeReaderContextFold(identity, &expanded)
+}
+
+func (state *stashState) advanceReaderContext(generation uint64) (bool, bool) {
+	return state.inspection.advanceReaderContext(generation)
 }

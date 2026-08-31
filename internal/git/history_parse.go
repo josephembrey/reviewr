@@ -82,24 +82,6 @@ func parseCommitLog(data []byte) ([]Commit, error) {
 	return commits, nil
 }
 
-func parseRefCommitLog(data []byte) ([]RefCommit, error) {
-	rows, err := parseHistoryRows(data, "git ref log")
-	if err != nil {
-		return nil, err
-	}
-	commits := make([]RefCommit, len(rows))
-	for index, row := range rows {
-		commits[index] = RefCommit{
-			OID:          row.oid,
-			ShortOID:     row.shortOID,
-			Subject:      row.subject,
-			Author:       row.author,
-			AuthoredUnix: row.authoredUnix,
-		}
-	}
-	return commits, nil
-}
-
 func parseCommitParents(data []byte, oids []string) ([][]string, error) {
 	cursor := 0
 	result := make([][]string, 0, len(oids))
@@ -192,26 +174,6 @@ func parseCommitRefs(data []byte) (map[string][]CommitRef, error) {
 		}
 	}
 	return result, nil
-}
-
-func parseCommitSummary(data []byte) (CommitSummary, int64, int64, error) {
-	fields := bytes.SplitN(data, []byte{0}, 6)
-	if len(fields) != 6 {
-		return CommitSummary{}, 0, 0, fmt.Errorf("parse git show: metadata has %d fields", len(fields))
-	}
-	stat := bytes.TrimPrefix(fields[5], []byte{'\n'})
-	metadataBytes := int64(4)
-	for _, field := range fields[:5] {
-		metadataBytes += int64(len(field))
-	}
-	return CommitSummary{
-		OID:         string(fields[0]),
-		AuthorName:  string(fields[1]),
-		AuthorEmail: string(fields[2]),
-		AuthoredAt:  string(fields[3]),
-		Message:     string(bytes.TrimSuffix(fields[4], []byte{'\n'})),
-		Stat:        string(bytes.TrimSuffix(stat, []byte{'\n'})),
-	}, metadataBytes, int64(len(stat)), nil
 }
 
 func validObjectID(oid string) bool {

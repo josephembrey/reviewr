@@ -63,6 +63,10 @@ const (
 	ClearCommentHover
 	FocusNavigator
 	FocusReader
+	FocusGitRegion
+	EnterGit
+	BackGit
+	ActivateGitRow
 	SwapPanes
 	ScrollReader
 	StartPaneResize
@@ -121,13 +125,15 @@ type Action struct {
 	Width    int
 	Height   int
 	// Position is an absolute terminal column for geometry actions.
-	Position  int
-	Pane      navigation.Focus
-	Grab      int
-	Text      string
-	X         int
-	Y         int
-	Selecting bool
+	Position   int
+	Pane       navigation.Focus
+	GitFocus   workspace.GitFocus
+	GitDivider ui.GitDividerKind
+	Grab       int
+	Text       string
+	X          int
+	Y          int
+	Selecting  bool
 }
 
 type notesRouteContext struct {
@@ -695,6 +701,9 @@ func (m *Model) route(msg tea.Msg) (Action, bool) {
 			scrollbarDragging: note.scrollbarDragging,
 			hasWorktree:       m.note.hasWorktree(),
 		})
+	}
+	if m.active == workspace.Git {
+		return m.routeGitMessage(msg)
 	}
 	place := m.activePlace()
 	readerOffset := place.ReaderOffset

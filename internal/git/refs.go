@@ -32,7 +32,7 @@ func (id RefSourceID) Key() string {
 	return strconv.Itoa(int(id.Kind)) + ":" + id.Name
 }
 
-// RefSource is one read-only source in the refs navigator.
+// RefSource is one read-only source in the History rail.
 type RefSource struct {
 	ID       RefSourceID
 	Label    string
@@ -54,33 +54,6 @@ func (source RefSource) Kind() RefSourceKind {
 // AllRefsSource returns the synthetic complete public-ref source.
 func AllRefsSource() RefSource {
 	return RefSource{ID: RefSourceID{Kind: RefSourceAll}, Label: "All refs"}
-}
-
-// RefDecorationKind classifies a public ref decorating a commit row.
-type RefDecorationKind uint8
-
-const (
-	RefDecorationBranch RefDecorationKind = iota + 1
-	RefDecorationRemote
-	RefDecorationTag
-)
-
-// RefDecoration is one public named ref pointing at a commit.
-type RefDecoration struct {
-	Kind  RefDecorationKind
-	Label string
-}
-
-// RefCommit is one compact source-preview row. Graph topology is deliberately
-// absent here; the UI seam accepts graph cells supplied by the Log component.
-type RefCommit struct {
-	OID          string
-	ShortOID     string
-	Subject      string
-	Author       string
-	AuthoredUnix int64
-	Decorations  []RefDecoration
-	Merge        bool
 }
 
 // ListRefSources returns All refs, the current worktree, linked worktrees,

@@ -187,31 +187,6 @@ func TestShallowBoundaryRetainsRawParent(t *testing.T) {
 	}
 }
 
-func TestReadCommitParsesSummaryAndEnforcesOutputLimit(t *testing.T) {
-	root := initGitTestRepository(t)
-	message := "subject\n\nbody line"
-	runGitTest(t, root, "commit", "--allow-empty", "-q", "-m", message)
-	client := New()
-	commits, err := client.ListCommits(root, HistoryQuery{})
-	if err != nil || len(commits) != 1 {
-		t.Fatalf("ListCommits() = (%#v, %v)", commits, err)
-	}
-	summary, err := client.ReadCommit(root, commits[0].OID, DefaultMaxHistoryBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.OID != commits[0].OID || summary.AuthorName != "Reviewr Tests" || summary.AuthorEmail != "reviewr@example.invalid" ||
-		!strings.Contains(summary.Message, "subject") || !strings.Contains(summary.Message, "body line") || summary.AuthoredAt == "" {
-		t.Fatalf("ReadCommit() = %+v", summary)
-	}
-	if _, err := client.ReadCommit(root, commits[0].OID, 32); !errors.Is(err, ErrOutputTooLarge) {
-		t.Fatalf("small ReadCommit() error = %v, want ErrOutputTooLarge", err)
-	}
-	if _, err := client.ReadCommit(root, "--help", DefaultMaxHistoryBytes); err == nil {
-		t.Fatal("ReadCommit() accepted a non-object identity")
-	}
-}
-
 func TestBoundedBufferCapsMemoryButConsumesWrites(t *testing.T) {
 	t.Parallel()
 	buffer := boundedBuffer{limit: 4}

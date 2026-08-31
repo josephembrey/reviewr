@@ -22,9 +22,9 @@ type Source interface {
 	ReadFile(entry repository.Entry) repository.File
 	ReadDiff(comparison repository.Comparison, entry repository.Entry) repository.Diff
 	ListCommits(query repository.CommitQuery) ([]repository.Commit, error)
-	ReadCommit(oid string) (repository.CommitSummary, error)
 	ListRefSources() ([]repository.RefSource, error)
-	ListRefCommits(source repository.RefSource) ([]repository.RefCommit, error)
+	ListCommitFiles(oid string) ([]repository.ChangedFile, error)
+	ReadCommitFile(oid string, file repository.ChangedFile) repository.ChangeDocument
 	ListStashes() ([]repository.Stash, error)
 	ListStashFiles(source repository.ChangeSource) ([]repository.ChangedFile, error)
 	ReadStashFile(source repository.ChangeSource, file repository.ChangedFile) repository.ChangeDocument
@@ -48,9 +48,10 @@ type Model struct {
 	modal          modalKind
 	settings       settingsState
 	geometry       ui.Geometry
+	gitGeometry    ui.GitGeometry
+	gitLayout      gitLayoutState
 	files          filesState
 	history        historyState
-	refs           refsState
 	stashes        stashState
 	note           scopedNotesState
 	poll           repositoryPollState
@@ -97,7 +98,6 @@ func NewWithSessionAndNotesScopes(source Source, host herdr.Context, stores note
 		settings:     newSettingsState(),
 		files:        newFilesState(),
 		history:      newHistoryState(),
-		refs:         newRefsState(),
 		stashes:      newStashState(),
 		note:         newScopedNotesState(stores),
 		sessionStore: store,
@@ -123,16 +123,15 @@ func NewWithReviewStateRoot(source Source, host herdr.Context, root string) Mode
 func (m Model) Init() tea.Cmd {
 	commands := []tea.Cmd{
 		m.command(effect{kind: effectLoadSnapshot, generation: m.files.listGeneration, reviewGeneration: m.files.reviewGeneration, scope: m.controls.Comparison.Label()}),
-		m.command(effect{
-			kind:       effectLoadCommits,
-			generation: m.history.listGeneration,
-			query:      commitQuery(m.controls.Traversal, ""),
-		}),
+		m.command(m.history.initialSourcesEffect()),
+	}
+	if m.history.inspecting && m.history.inspectionOID != "" {
+		commands = append(commands, m.command(effect{
+			kind: effectLoadCommitFiles, generation: m.history.inspection.filesGeneration, identity: m.history.inspectionOID,
+		}))
 	}
 	if m.active == workspace.Notes {
 		commands = append(commands, m.command(m.note.initialLoad()))
-	} else if m.gitRefsActive() {
-		commands = append(commands, m.command(effect{kind: effectLoadRefSources, generation: m.refs.sourceGeneration}))
 	} else if m.gitStashesActive() {
 		commands = append(commands, m.command(effect{kind: effectLoadStashes, generation: m.stashes.listGeneration}))
 	}
@@ -208,16 +207,25 @@ func (m Model) View() tea.View {
 			NotesHasWorktree:    m.note.hasWorktree(),
 		}
 	} else if m.gitStashesActive() {
+		var git ui.GitModel
 		if reader, ok := m.cachedActiveReaderViewport(); ok {
-			presentation = m.stashes.viewModelWithReader(m.geometry, time.Now(), reader.document, reader.foldable)
-			presentation.ReaderLayout = &reader.layout
+			git = m.stashes.viewModelWithReader(m.gitGeometry, time.Now(), reader.document, reader.foldable, &reader.layout)
 		} else {
-			presentation = m.stashes.viewModel(m.geometry, time.Now())
+			git = m.stashes.viewModel(m.gitGeometry, time.Now())
 		}
-	} else if m.gitRefsActive() {
-		presentation = m.refs.viewModel(m.geometry)
+		git.DividerDragging = m.gitLayout.dragging
+		presentation = ui.Model{Geometry: m.geometry, Git: &git}
 	} else if m.active == workspace.Git {
-		presentation = m.history.viewModel(m.geometry)
+		git := m.history.viewModel(m.gitGeometry, time.Now())
+		if m.history.inspecting {
+			if reader, ok := m.cachedActiveReaderViewport(); ok {
+				git.ReaderDocument = reader.document
+				git.ReaderContextFoldable = reader.foldable
+				git.ReaderLayout = &reader.layout
+			}
+		}
+		git.DividerDragging = m.gitLayout.dragging
+		presentation = ui.Model{Geometry: m.geometry, Git: &git}
 	} else {
 		if reader, ok := m.cachedActiveReaderViewport(); ok {
 			presentation = m.files.viewModelWithReader(m.geometry, reader.document, reader.foldable)

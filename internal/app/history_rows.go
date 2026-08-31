@@ -48,11 +48,10 @@ func buildCommitRows(commits []repository.Commit, traversal workspace.GitTravers
 	return rows
 }
 
-func commitQuery(traversal workspace.GitTraversal, startOID string) repository.CommitQuery {
-	query := repository.CommitQuery{}
+func commitQuery(traversal workspace.GitTraversal, sourceOID string) repository.CommitQuery {
+	query := repository.CommitQuery{SourceOID: sourceOID}
 	if traversal == workspace.GitFirstParent {
 		query.Traversal = repository.CommitFirstParent
-		query.StartOID = startOID
 	}
 	return query
 }
