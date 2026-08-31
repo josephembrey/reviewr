@@ -31,7 +31,6 @@ type readerCacheKey struct {
 	comparison       repository.Comparison
 	reviewComparison review.FileComparison
 	bounds           review.Bounds
-	freshnessBounds  review.Bounds
 }
 
 type readerCacheEntry struct {
@@ -40,7 +39,6 @@ type readerCacheEntry struct {
 	diff         repository.Diff
 	content      review.Content
 	document     review.Document
-	freshness    review.Document
 	presentation ui.ReaderDocument
 }
 
@@ -104,7 +102,6 @@ func (state filesState) readerKey(
 	entry repository.Entry,
 	comparison review.FileComparison,
 	bounds review.Bounds,
-	freshnessBounds review.Bounds,
 ) readerCacheKey {
 	repositoryComparison := state.snapshot.Comparison()
 	scope := repositoryComparison.Scope
@@ -118,7 +115,6 @@ func (state filesState) readerKey(
 		comparison:       repositoryComparison,
 		reviewComparison: comparison,
 		bounds:           bounds,
-		freshnessBounds:  freshnessBounds,
 	}
 }
 
@@ -142,13 +138,13 @@ func (state *filesState) restoreReader(key readerCacheKey) bool {
 		*state = state.landReviewDocument(reviewDocumentLoadedMsg{
 			generation: state.contentGeneration, entry: key.entry,
 			comparison: key.reviewComparison, bounds: key.bounds,
-			document: cached.document, freshness: cached.freshness, presentation: cached.presentation,
+			document: cached.document, presentation: cached.presentation,
 		})
 	case effectLoadReviewFile:
 		*state = state.landReviewFile(reviewFileLoadedMsg{
 			generation: state.contentGeneration, entry: key.entry,
 			comparison: key.reviewComparison, content: cached.content,
-			document: cached.document, freshness: cached.freshness, presentation: cached.presentation,
+			document: cached.document, presentation: cached.presentation,
 		})
 	default:
 		return false

@@ -66,7 +66,6 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	oldOffset := state.place.ReaderOffset
 	oldCursor := state.place.ReaderCursor
 	state.reviewDocument = msg.document
-	state.reviewFreshness = msg.freshness
 	comparison, bounds := msg.comparison, msg.bounds
 	state.displayedComparison = &comparison
 	state.displayedBounds = &bounds
@@ -91,7 +90,7 @@ func (state filesState) landReviewDocument(msg reviewDocumentLoadedMsg) filesSta
 	if msg.document.Exact {
 		state.rememberReader(readerCacheEntry{
 			key:      readerCacheKey{kind: effectLoadReviewDocument, entry: msg.entry},
-			document: msg.document, freshness: msg.freshness, presentation: msg.presentation,
+			document: msg.document, presentation: msg.presentation,
 		})
 	}
 	return state
@@ -118,7 +117,6 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	state.reviewFile = msg.content
 	state.reviewDocument = review.Document{}
 	state.reviewFileDiff = msg.document
-	state.reviewFreshness = msg.freshness
 	comparison := msg.comparison
 	bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
 	state.displayedComparison = &comparison
@@ -143,7 +141,7 @@ func (state filesState) landReviewFile(msg reviewFileLoadedMsg) filesState {
 	if msg.content.Endpoint == comparison.New && msg.document.Exact {
 		state.rememberReader(readerCacheEntry{
 			key:     readerCacheKey{kind: effectLoadReviewFile, entry: msg.entry},
-			content: msg.content, document: msg.document, freshness: msg.freshness, presentation: msg.presentation,
+			content: msg.content, document: msg.document, presentation: msg.presentation,
 		})
 	}
 	return state
@@ -233,7 +231,6 @@ func (state filesState) landReviewVerified(msg reviewVerifiedMsg) (filesState, e
 		return state, effect{}
 	}
 	state.rederiveReviews()
-	state.clearReviewFreshness()
 	state.reviewQueue = append(state.reviewQueue, delta)
 	if !state.reviewLoaded {
 		state.sessionDeltas = append(state.sessionDeltas, delta)
@@ -307,6 +304,7 @@ func (state filesState) fileFooterActions() ui.FileFooterActions {
 	return ui.FileFooterActions{
 		Review:       state.canToggleReview(),
 		ReviewBounds: state.canToggleReviewBounds(state.readerMode),
+		ReviewFull:   state.reviewFull[state.readerEntry.Path],
 		NextGap:      len(state.reviewGapPaths()) > 0,
 	}
 }

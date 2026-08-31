@@ -15,7 +15,6 @@ type ReaderGeometry struct {
 	Rows       Rect
 	Content    Rect
 	ChangeBar  Rect
-	ReviewBar  Rect
 	LineNumber Rect
 	Code       Rect
 	Scrollbar  Rect
@@ -340,18 +339,10 @@ func CalculateReaderGeometry(rows Rect, document ReaderDocument, scrollbar bool)
 		X: geometry.Content.X, Y: geometry.Content.Y,
 		Width: barWidth, Height: geometry.Content.Height,
 	}
-	reviewWidth := 0
-	if document.HasReviewFreshness() {
-		reviewWidth = min(1, max(0, geometry.Content.Width-barWidth))
-	}
-	geometry.ReviewBar = Rect{
-		X: geometry.ChangeBar.X + geometry.ChangeBar.Width, Y: geometry.Content.Y,
-		Width: reviewWidth, Height: geometry.Content.Height,
-	}
-	geometry.Prefix = 1 + reviewWidth + geometry.Digits + 1
-	numberWidth := min(geometry.Digits, max(0, geometry.Content.Width-barWidth-reviewWidth))
+	geometry.Prefix = 1 + geometry.Digits + 1
+	numberWidth := min(geometry.Digits, max(0, geometry.Content.Width-barWidth))
 	geometry.LineNumber = Rect{
-		X: geometry.ReviewBar.X + geometry.ReviewBar.Width, Y: geometry.Content.Y,
+		X: geometry.ChangeBar.X + geometry.ChangeBar.Width, Y: geometry.Content.Y,
 		Width: numberWidth, Height: geometry.Content.Height,
 	}
 	codeX := geometry.Content.X + min(geometry.Prefix, geometry.Content.Width)

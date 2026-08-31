@@ -84,7 +84,11 @@ func availableFileFooterEntries(controls workspace.Controls, actions FileFooterA
 		entries = append(entries, footerEntry{key: "x", label: "review"})
 	}
 	if actions.ReviewBounds {
-		entries = append(entries, footerEntry{key: "R", label: "bounds"})
+		label := "full diff"
+		if actions.ReviewFull {
+			label = "since reviewed"
+		}
+		entries = append(entries, footerEntry{key: "R", label: label})
 	}
 	if actions.NextGap {
 		entries = append(entries, footerEntry{key: "X", label: "next gap"})

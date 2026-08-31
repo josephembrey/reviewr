@@ -161,13 +161,10 @@ func TestLabReviewIndicatorsUseProductionRendering(t *testing.T) {
 	plain := ansi.Strip(frame)
 	for _, want := range []string{
 		"lab / review indicators", "unreviewed.go", "reviewed.go", "updated.go", "re-review.go",
-		"[ ]", "[x]", "[~]", "[!]", "cyan rail", "fresh after review",
+		"[ ]", "[x]", "[~]", "[!]", "ordinary incremental diff",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("review-indicator lab misses %q:\n%s", want, plain)
 		}
-	}
-	if !strings.Contains(frame, ";36m") {
-		t.Fatalf("review-indicator lab does not use the production cyan accent: %q", frame)
 	}
 }

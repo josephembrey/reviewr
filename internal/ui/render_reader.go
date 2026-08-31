@@ -24,8 +24,6 @@ var readerChangeBars = [...]readerBarPresentation{
 	ReaderDeletion:  {glyph: "▌", style: lipgloss.NewStyle().Foreground(errorColor).Bold(true)},
 }
 
-var readerReviewFreshnessStyle = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
-
 func renderReader(model Model) string {
 	g := model.Geometry
 	title := SafeSingleLine(model.ReaderTitle)
@@ -151,7 +149,6 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 	var line string
 	var bar string
 	var barStyle lipgloss.Style
-	var freshness string
 	if row.Kind == ReaderFold {
 		line = renderReaderFoldPayload(row.Text, width, row.FoldExpanded)
 	} else if row.Kind == ReaderFoldEnd {
@@ -176,7 +173,6 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		line = fit(renderReaderPayload(row, nil), width)
 	} else {
 		bar, barStyle = readerChangeBar(row, continuation)
-		freshness = readerReviewFreshnessBar(row, geometry.ReviewBar.Width > 0, continuation)
 		number := readerLineNumber(row, geometry.Digits, continuation)
 		numberStyle := mutedStyle
 		if row.CommentHover && !continuation {
@@ -184,10 +180,9 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		}
 		changed := row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 		if changed && highlight == workspace.DiffHighlightBackground {
-			line = renderReaderBackgroundRow(row, bar, freshness, number, width, row.VisualSelected)
+			line = renderReaderBackgroundRow(row, bar, number, width, row.VisualSelected)
 		} else {
-			line = barStyle.Render(bar) + readerReviewFreshnessStyle.Render(freshness) +
-				numberStyle.Render(number) + renderReaderPayloadSelection(row, nil, focused)
+			line = barStyle.Render(bar) + numberStyle.Render(number) + renderReaderPayloadSelection(row, nil, focused)
 			line = fit(line, width)
 		}
 	}
@@ -206,21 +201,15 @@ func renderReaderRowPartSelected(row ReaderRow, geometry ReaderGeometry, highlig
 		return line
 	}
 	plain := ansi.Strip(fit(line, width))
-	prefix := bar + freshness
+	prefix := bar
 	preserveChange := highlight == workspace.DiffHighlightSidebar && bar != "" && bar != " "
-	preserveFreshness := freshness != "" && freshness != " "
-	if (!preserveChange && !preserveFreshness) || !strings.HasPrefix(plain, prefix) {
+	if !preserveChange || !strings.HasPrefix(plain, prefix) {
 		return selectionStyle(focused).Render(plain)
 	}
 	selection := selectionStyle(focused)
 	selectedPrefix := selection.Render(bar)
 	if preserveChange {
 		selectedPrefix = selectedReaderBarStyle(barStyle, focused).Render(bar)
-	}
-	if preserveFreshness {
-		selectedPrefix += selectedReaderFreshnessStyle(focused).Render(freshness)
-	} else {
-		selectedPrefix += selection.Render(freshness)
 	}
 	return selectedPrefix + selection.Render(strings.TrimPrefix(plain, prefix))
 }
@@ -233,16 +222,6 @@ func selectedReaderBarStyle(style lipgloss.Style, focused bool) lipgloss.Style {
 		Foreground(style.GetBackground()).
 		Background(style.GetForeground()).
 		Bold(focused || style.GetBold()).
-		Reverse(true)
-}
-
-// selectedReaderFreshnessStyle retains the terminal accent as ink while the
-// reverse-video selection keeps its ordinary white background.
-func selectedReaderFreshnessStyle(focused bool) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(secondaryColor).
-		Background(accentColor).
-		Bold(focused || readerReviewFreshnessStyle.GetBold()).
 		Reverse(true)
 }
 
@@ -271,30 +250,6 @@ func readerBoundaryBar(row ReaderRow) (string, lipgloss.Style) {
 		bar = "▾"
 	}
 	return bar, lipgloss.NewStyle().Foreground(errorColor).Bold(true)
-}
-
-func readerReviewFreshnessBar(row ReaderRow, visible, continuation bool) string {
-	if !visible {
-		return ""
-	}
-	if continuation {
-		if row.ReviewFresh {
-			return "│"
-		}
-		return " "
-	}
-	switch {
-	case row.ReviewRemovedBefore > 0 && row.ReviewRemovedAfter > 0:
-		return "◆"
-	case row.ReviewRemovedBefore > 0:
-		return "▴"
-	case row.ReviewRemovedAfter > 0:
-		return "▾"
-	case row.ReviewFresh:
-		return "│"
-	default:
-		return " "
-	}
 }
 
 func readerLineNumber(row ReaderRow, digits int, continuation bool) string {
@@ -378,7 +333,7 @@ func renderCommentComposerHeader(text string, width int) string {
 		composerBorderStyle.Render("╭─") + commentTitleStyle.Render(label) + composerBorderStyle.Render(fill+"╮")
 }
 
-func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, width int, visualSelected bool) string {
+func renderReaderBackgroundRow(row ReaderRow, bar, number string, width int, visualSelected bool) string {
 	backgroundColor := addedColor
 	barColor := lipgloss.BrightGreen
 	if row.Kind == ReaderDeletion {
@@ -388,10 +343,6 @@ func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, wid
 	base := lipgloss.NewStyle().Background(backgroundColor).Foreground(lipgloss.Black).
 		Bold(visualSelected).Underline(visualSelected)
 	barStyle := base.Foreground(barColor).Bold(true)
-	freshnessStyle := base
-	if freshness != "" && freshness != " " {
-		freshnessStyle = base.Foreground(accentColor).Bold(true)
-	}
 	numberStyle := base
 	if row.CommentHover {
 		// Match the legacy affordance while retaining the changed-row fill.
@@ -401,7 +352,7 @@ func renderReaderBackgroundRow(row ReaderRow, bar, freshness, number string, wid
 	if visualSelected && !row.VisualCharacter {
 		payload = renderReaderBackgroundPayload(row, backgroundColor, true)
 	}
-	line := barStyle.Render(bar) + freshnessStyle.Render(freshness) + numberStyle.Render(number) + payload
+	line := barStyle.Render(bar) + numberStyle.Render(number) + payload
 	line = clip(line, width)
 	if padding := width - lipgloss.Width(line); padding > 0 {
 		line += base.Render(strings.Repeat(" ", padding))

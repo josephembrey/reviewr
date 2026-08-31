@@ -33,7 +33,7 @@ var helpRows = []helpRow{
 			{key: "1/2/3/4", label: "views"},
 			{key: "m", label: "render"},
 			{key: "x", label: "review"},
-			{key: "R", label: "bounds"},
+			{key: "R", label: "compare"},
 			{key: "X", label: "gap"},
 		},
 	},

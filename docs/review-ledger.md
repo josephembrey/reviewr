@@ -34,13 +34,12 @@ no badge or review mouse target.
 - `X` selects the next gap by Basis changed, Updated, Partial, Unreviewed priority and then full tree
   order, expanding only the required ancestors.
 
-The `since reviewed` comparison is the authoritative view of only the new work. In the full
-comparison and current-file readers, Updated since review files also reserve a narrow cyan rail
-beside the red/green change rail. It marks current lines introduced since the exact reviewed
-frontier and anchors newly removed lines at the nearest surviving boundary. Reversions remain
-visible even when they are ordinary context relative to the original Git base. The rail is derived,
-never stored, and is omitted for Unreviewed, Reviewed, and `[!]` files where that claim
-would be redundant or unsafe.
+The `since reviewed` comparison is the authoritative view of only the new work. It uses the same
+ordinary red/green diff presentation as every other comparison, with no secondary freshness signal
+to interpret. `R` exposes the full active comparison when earlier context is needed, and labels the
+available direction as `full diff` or `since reviewed`. Reversions remain visible in the incremental
+comparison even when they are ordinary context relative to the original Git base. Unreviewed,
+Reviewed, and `[!]` files continue to use their ordinary full comparison.
 
 Every mark is re-read and checked against the displayed comparison's exact right endpoint before a
 receipt is accepted. Rename, copy, deletion, kind, mode, executable-bit, symlink-target, and

@@ -299,8 +299,7 @@ func contextRunEnd(rows []ReaderRow, start int) int {
 }
 
 func changedReaderRow(row ReaderRow) bool {
-	return row.Kind == ReaderInsertion || row.Kind == ReaderDeletion ||
-		row.ReviewFresh || row.ReviewRemovedBefore > 0 || row.ReviewRemovedAfter > 0
+	return row.Kind == ReaderInsertion || row.Kind == ReaderDeletion
 }
 
 func foldableContextRow(row ReaderRow) bool {

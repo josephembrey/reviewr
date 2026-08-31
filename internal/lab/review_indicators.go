@@ -14,7 +14,7 @@ import (
 func (model Model) viewReviewIndicators(width, height int) string {
 	lines := []string{
 		title.Render("lab / review indicators"),
-		quiet.Render("tab next page  •  exact production rendering  •  cyan rail = fresh after review  •  ctrl+l or esc close"),
+		quiet.Render("tab next page  •  exact production rendering  •  updated files use an ordinary incremental diff  •  ctrl+l or esc close"),
 	}
 	previewHeight := max(0, height-len(lines))
 	preview := ui.Render(reviewIndicatorPreview(width, previewHeight))
@@ -50,8 +50,8 @@ func reviewIndicatorPreview(width, height int) ui.Model {
 			{Identity: "context:18", Kind: ui.ReaderContext, Text: "func total(items []Item) int {", OldLine: 18, NewLine: 18},
 			{Identity: "base-add:19", Kind: ui.ReaderInsertion, Text: "    subtotal := sum(items)", NewLine: 19},
 			{Identity: "context:20", Kind: ui.ReaderContext, Text: "    tax := calculateTax(items)", OldLine: 19, NewLine: 20},
-			{Identity: "fresh-add:21", Kind: ui.ReaderInsertion, Text: "    discount := activeDiscount(items)", NewLine: 21, ReviewFresh: true},
-			{Identity: "fresh-context:22", Kind: ui.ReaderContext, Text: "    return subtotal + tax - discount", OldLine: 20, NewLine: 22, ReviewFresh: true, ReviewRemovedBefore: 1},
+			{Identity: "fresh-add:21", Kind: ui.ReaderInsertion, Text: "    discount := activeDiscount(items)", NewLine: 21},
+			{Identity: "fresh-context:22", Kind: ui.ReaderContext, Text: "    return subtotal + tax - discount", OldLine: 20, NewLine: 22},
 			{Identity: "context:23", Kind: ui.ReaderContext, Text: "}", OldLine: 21, NewLine: 23},
 		}},
 		ReaderCursor: 3,

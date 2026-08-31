@@ -21,7 +21,7 @@ func TestFooterShowsOnlyAvailableWorkflowActions(t *testing.T) {
 	})
 	footer := strings.Split(frame, "\n")[geometry.Footer.Y]
 	plain := ansi.Strip(footer)
-	for _, expected := range []string{"m preview", "x review", "R bounds", "X next gap"} {
+	for _, expected := range []string{"m preview", "x review", "R full diff", "X next gap"} {
 		if !strings.Contains(plain, expected) {
 			t.Errorf("footer is missing available action %q: %q", expected, footer)
 		}
@@ -40,6 +40,14 @@ func TestFooterShowsOnlyAvailableWorkflowActions(t *testing.T) {
 	empty := strings.Split(Render(Model{Geometry: geometry, Workspace: workspace.Files}), "\n")[geometry.Footer.Y]
 	if got := strings.TrimSpace(ansi.Strip(empty)); got != "?" {
 		t.Fatalf("Files footer without specialized actions = %q, want only help", got)
+	}
+}
+
+func TestFileFooterNamesTheIncrementalComparisonFromFullView(t *testing.T) {
+	t.Parallel()
+	entries := availableFileFooterEntries(workspace.Controls{}, FileFooterActions{ReviewBounds: true, ReviewFull: true})
+	if got := ansi.Strip(renderFooterEntries(entries)); !strings.Contains(got, "R since reviewed") {
+		t.Fatalf("full-view footer = %q", got)
 	}
 }
 

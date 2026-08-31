@@ -66,16 +66,8 @@ type effect struct {
 	comparison       review.FileComparison
 	bounds           review.Bounds
 	retained         *string
-	freshness        *reviewFreshnessRequest
 	delta            review.Delta
 	store            *review.Store
-}
-
-// reviewFreshnessRequest is the retained, exact reviewed frontier used to
-// derive new-since-review paint alongside a full/file reader.
-type reviewFreshnessRequest struct {
-	bounds   review.Bounds
-	retained string
 }
 
 // repositoryPollResult tags asynchronous repository work without making
@@ -114,7 +106,6 @@ type reviewDocumentLoadedMsg struct {
 	comparison   review.FileComparison
 	bounds       review.Bounds
 	document     review.Document
-	freshness    review.Document
 	presentation ui.ReaderDocument
 }
 
@@ -125,7 +116,6 @@ type reviewFileLoadedMsg struct {
 	comparison   review.FileComparison
 	content      review.Content
 	document     review.Document
-	freshness    review.Document
 	presentation ui.ReaderDocument
 }
 
@@ -361,7 +351,7 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 		}
 	case effectLoadReviewDocument:
 		generation, entry := pending.generation, pending.entry
-		comparison, bounds, retained, freshnessRequest := pending.comparison, pending.bounds, pending.retained, pending.freshness
+		comparison, bounds, retained := pending.comparison, pending.bounds, pending.retained
 		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			var oldContent review.Content
@@ -372,32 +362,26 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 			}
 			newContent := provider.ReadReviewContent(comparison.NewSource, bounds.New)
 			document := review.BuildDocument(bounds, oldContent, newContent)
-			freshness := buildReviewFreshness(freshnessRequest, newContent)
-			presentation := annotateReviewFreshness(reviewReaderDocument(entry.Path, document), freshness)
+			presentation := reviewReaderDocument(entry.Path, document)
 			return reviewDocumentLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, entry: entry, comparison: comparison, bounds: bounds,
-				document: document, freshness: freshness, presentation: presentation,
+				document: document, presentation: presentation,
 			}
 		}
 	case effectLoadReviewFile:
 		generation, entry, comparison := pending.generation, pending.entry, pending.comparison
-		freshnessRequest := pending.freshness
 		background, activity := pending.background, pending.activity
 		return func() tea.Msg {
 			bounds := review.Bounds{Old: comparison.Old, New: comparison.New}
 			oldContent := provider.ReadReviewContent(comparison.OldSource, comparison.Old)
 			content := provider.ReadReviewContent(comparison.NewSource, comparison.New)
 			document := review.BuildDocument(bounds, oldContent, content)
-			freshness := buildReviewFreshness(freshnessRequest, content)
-			presentation := annotateReviewFreshness(
-				annotatedReviewFileReaderDocument(content, entry, comparison, document),
-				freshness,
-			)
+			presentation := annotatedReviewFileReaderDocument(content, entry, comparison, document)
 			return reviewFileLoadedMsg{
 				repositoryPollResult: repositoryPollResult{background: background, activity: activity},
 				generation:           generation, entry: entry, comparison: comparison, content: content, document: document,
-				freshness: freshness, presentation: presentation,
+				presentation: presentation,
 			}
 		}
 	case effectVerifyReview:
@@ -410,19 +394,6 @@ func (m Model) reviewCommand(pending effect) tea.Cmd {
 	default:
 		return nil
 	}
-}
-
-func buildReviewFreshness(request *reviewFreshnessRequest, current review.Content) review.Document {
-	if request == nil || current.Endpoint != request.bounds.New {
-		return review.Document{}
-	}
-	frontier := review.Content{
-		Endpoint: request.bounds.Old,
-		State:    review.ContentText,
-		Text:     request.retained,
-		Size:     int64(len(request.retained)),
-	}
-	return review.BuildDocument(request.bounds, frontier, current)
 }
 
 func (m Model) gitCommand(pending effect) tea.Cmd {
