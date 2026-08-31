@@ -51,7 +51,7 @@ func (model Model) Update(msg tea.Msg) (Model, tea.Cmd, bool) {
 		model, command := model.updateFoldMotion(key)
 		return model, command, true
 	}
-	if model.page == labPageANSIPalette {
+	if model.page == labPageANSIPalette || model.page == labPageReviewIndicators {
 		return model, nil, true
 	}
 	switch key.String() {

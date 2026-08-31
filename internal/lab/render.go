@@ -32,6 +32,7 @@ const (
 	labPageFolds
 	labPageFoldMotion
 	labPageANSIPalette
+	labPageReviewIndicators
 	labPageCount
 )
 
@@ -70,6 +71,8 @@ func (model Model) View(width, height int) string {
 		return model.viewFoldMotion(width, height)
 	case labPageANSIPalette:
 		return model.viewANSIPalette(width, height)
+	case labPageReviewIndicators:
+		return model.viewReviewIndicators(width, height)
 	default:
 		return model.viewSwitchers(width, height)
 	}

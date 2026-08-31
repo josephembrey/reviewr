@@ -146,3 +146,28 @@ func TestLabANSIPaletteShowsEveryTerminalSlot(t *testing.T) {
 		t.Fatalf("palette does not emit bright-black foreground/background slots: %q", frame)
 	}
 }
+
+func TestLabReviewIndicatorsUseProductionRendering(t *testing.T) {
+	t.Parallel()
+	model := New()
+	for range 4 {
+		model, _, _ = model.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	}
+	frame := model.View(100, 24)
+	width, height := lipgloss.Size(frame)
+	if width != 100 || height != 24 {
+		t.Fatalf("review-indicator lab size = %dx%d, want 100x24", width, height)
+	}
+	plain := ansi.Strip(frame)
+	for _, want := range []string{
+		"lab / review indicators", "unreviewed.go", "reviewed.go", "updated.go", "re-review.go",
+		"[ ]", "[x]", "[~]", "[!]", "cyan rail", "fresh after review",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("review-indicator lab misses %q:\n%s", want, plain)
+		}
+	}
+	if !strings.Contains(frame, ";36m") {
+		t.Fatalf("review-indicator lab does not use the production cyan accent: %q", frame)
+	}
+}
