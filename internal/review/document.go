@@ -132,10 +132,8 @@ func (builder *documentBuilder) appendLine(kind LineKind, text string, oldLine, 
 
 func comparisonNotice(bounds Bounds) (Line, bool) {
 	switch {
-	case bounds.Old.Kind == Absent && bounds.New.Kind != Absent:
-		return Line{Identity: "notice:kind", Text: "file added", Kind: NoticeLine}, true
-	case bounds.New.Kind == Absent && bounds.Old.Kind != Absent:
-		return Line{Identity: "notice:kind", Text: "file deleted", Kind: NoticeLine}, true
+	case bounds.Old.Kind == Absent || bounds.New.Kind == Absent:
+		return Line{}, false
 	case bounds.Old.Kind != bounds.New.Kind:
 		return Line{Identity: "notice:kind", Text: fmt.Sprintf("file type %s -> %s", bounds.Old.Kind, bounds.New.Kind), Kind: NoticeLine}, true
 	case bounds.Old.Mode != bounds.New.Mode:

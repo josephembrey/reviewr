@@ -72,24 +72,42 @@ func TestBuildDocumentIsExactAndReportsMetadata(t *testing.T) {
 	}
 }
 
-func TestComparisonNoticeUsesUserFacingAddDeleteLabels(t *testing.T) {
+func TestComparisonNoticeOmitsStatusAlreadyShownInFileTree(t *testing.T) {
 	t.Parallel()
 	regular := Endpoint{Kind: Regular}
 	for _, test := range []struct {
-		name   string
-		bounds Bounds
-		want   string
+		name       string
+		bounds     Bounds
+		want       string
+		wantNotice bool
 	}{
-		{name: "added", bounds: Bounds{Old: Endpoint{Kind: Absent}, New: regular}, want: "file added"},
-		{name: "deleted", bounds: Bounds{Old: regular, New: Endpoint{Kind: Absent}}, want: "file deleted"},
-		{name: "type conversion", bounds: Bounds{Old: regular, New: Endpoint{Kind: Symlink}}, want: "file type regular -> symlink"},
+		{name: "added", bounds: Bounds{Old: Endpoint{Kind: Absent}, New: regular}},
+		{name: "deleted", bounds: Bounds{Old: regular, New: Endpoint{Kind: Absent}}},
+		{name: "type conversion", bounds: Bounds{Old: regular, New: Endpoint{Kind: Symlink}}, want: "file type regular -> symlink", wantNotice: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			line, ok := comparisonNotice(test.bounds)
-			if !ok || line.Text != test.want || line.Kind != NoticeLine {
-				t.Fatalf("notice = (%+v, %v), want %q", line, ok, test.want)
+			if ok != test.wantNotice {
+				t.Fatalf("notice = (%+v, %v), want notice %v", line, ok, test.wantNotice)
+			}
+			if ok && (line.Text != test.want || line.Kind != NoticeLine) {
+				t.Fatalf("notice = %+v, want %q", line, test.want)
 			}
 		})
+	}
+}
+
+func TestAddedAndDeletedDocumentsContainOnlyTheContentDiff(t *testing.T) {
+	t.Parallel()
+	regular := ReadExactContent("a", Regular, 0o100644, strings.NewReader("line\n"), 100)
+	absent := AbsentContent("a")
+	for _, document := range []Document{
+		BuildDocument(Bounds{Old: absent.Endpoint, New: regular.Endpoint}, absent, regular),
+		BuildDocument(Bounds{Old: regular.Endpoint, New: absent.Endpoint}, regular, absent),
+	} {
+		if len(document.Lines) != 1 || document.Lines[0].Kind == NoticeLine {
+			t.Fatalf("add/delete document includes redundant status notice: %+v", document.Lines)
+		}
 	}
 }
 
